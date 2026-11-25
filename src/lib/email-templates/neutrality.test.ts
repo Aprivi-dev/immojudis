@@ -80,6 +80,11 @@ import { EMAIL_TEMPLATES } from "./registry";
  * défaut) au lieu de « Replicate (États-Unis) » écrit en dur : seule la parenthèse « Anthropic (Anthropic Ireland,
  * Limited, Irlande ; données stockées aux États-Unis) » du pied diffère (libellé de la politique 2026-11-22.1). Avec LLM_PROVIDER=replicate, le rendu redonne les empreintes d'avant
  * (vérifié). Le test fixe LLM_PROVIDER à vide pour ne pas dépendre de l'environnement.
+ *
+ * Mise à jour explicite du 25/11/2026 (passage en Réel du pilote, point 5, validé par le propriétaire) :
+ * l'empreinte de agent_request a changé, et SEULEMENT celle-là. Seul l'objet diffère : « Immojudis – question
+ * sur la vente … », sans « audience » ni date. Avec l'ancien objet, le rendu redonne l'empreinte d'avant
+ * (vérifié). agent_court_registry n'est pas concerné.
  */
 const BASELINE: Record<string, string> = {
   alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
@@ -94,7 +99,7 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
   operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
   replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "def7b6203ef8914bdffa275684a709c72ff8ae8c3842e3b614424fb7d9eb494c",
+  agent_request: "b4db542b67b08cd897044271078921e7e352d7a79b47034f31933e44e8f80b7b",
   agent_court_registry: "03b772680143d2d698239c06bca83be1a6f6be537a1ffc4308460c735cb9372e",
 };
 
