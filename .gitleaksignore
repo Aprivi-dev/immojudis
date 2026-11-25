@@ -24,3 +24,7 @@ ef03f7697beb655f2e56241991d7f19aefee8aa6:services/data-pipeline/src/commune_inse
 # parcourt toutes les branches et faisait donc échouer la CI de chaque PR.
 0ddffdcdbceaa5dd4db02d3d85749857128fe8f3:src/lib/document-fact-sources.test.ts:generic-api-key:59
 0ddffdcdbceaa5dd4db02d3d85749857128fe8f3:src/lib/document-fact-sources.test.ts:generic-api-key:60
+
+# Faux positif (accord du propriétaire, 25/11/2026) : le premier commentaire écrit pour les deux
+# exceptions ci-dessus recopiait la ligne de test et déclenchait lui-même la règle. Reformulé depuis.
+003bafcc94fa161924b8b1d1062e388f2d8d900b:.gitleaksignore:generic-api-key:23
