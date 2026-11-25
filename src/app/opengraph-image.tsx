@@ -1,6 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import {
+  BRAND_BODY_PATH,
+  BRAND_ROOF_DOT_RADIUS,
+  BRAND_ROOF_DOTS,
+  BRAND_TILE_PATH,
+} from "@/lib/brand-mark";
 
 export const alt = "Immojudis — les enchères immobilières, en toute clarté";
 export const size = { width: 1200, height: 630 };
@@ -50,14 +56,11 @@ export default async function OpenGraphImage() {
     >
       <div style={{ alignItems: "center", display: "flex" }}>
         <svg width="96" height="96" viewBox="0 0 64 64">
-          <path
-            d="M14 0h36a14 14 0 0 1 14 14v36a14 14 0 0 1-14 14H14A14 14 0 0 1 0 50V14A14 14 0 0 1 14 0Z"
-            fill={BORDEAUX}
-          />
-          <path
-            d="M32 15.47 51.41 27.69H12.59ZM14.75 29.84h34.5v2.16h-34.5ZM17.62 34.16h5.75v10.78h-5.75ZM29.12 34.16h5.75v10.78h-5.75ZM40.62 34.16h5.75v10.78h-5.75ZM12.59 47.09h38.81v3.59h-38.81Z"
-            fill={IVORY}
-          />
+          <path d={BRAND_TILE_PATH} fill={BORDEAUX} />
+          {BRAND_ROOF_DOTS.map(([cx, cy]) => (
+            <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={BRAND_ROOF_DOT_RADIUS} fill={IVORY} />
+          ))}
+          <path d={BRAND_BODY_PATH} fill={IVORY} />
         </svg>
         <div
           style={{ color: NAVY, display: "flex", fontSize: 60, fontWeight: 800, marginLeft: 28 }}
