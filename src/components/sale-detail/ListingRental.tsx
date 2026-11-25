@@ -220,7 +220,6 @@ export function ListingRental({
     <section className={styles.section} aria-labelledby={`${componentId}-title`}>
       <div className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Projection locative</p>
           <h2 id={`${componentId}-title`} className={styles.title}>
             Tester le scénario de location
           </h2>
@@ -297,7 +296,6 @@ export function ListingRental({
         </form>
 
         <aside className={styles.resultPanel} aria-labelledby={`${componentId}-results-title`}>
-          <p className={styles.panelKicker}>Lecture du scénario</p>
           <h3 id={`${componentId}-results-title`} className={styles.resultTitle}>
             Vos repères locatifs
           </h3>

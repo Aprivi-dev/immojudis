@@ -1,4 +1,3 @@
-import Wrench from "lucide-react/dist/esm/icons/wrench.js";
 import { estimateWorksBudget, WORKS_SCENARIOS, type WorksScenarioKey } from "@/lib/profitability";
 import { formatPrice, formatPricePerM2, formatSurface } from "@/lib/format";
 
@@ -55,13 +54,7 @@ export function WorksScenarioSelector({
     <div className="@container rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
-            <Wrench className="h-4 w-4" />
-            Scénario de travaux
-          </div>
-          <h3 className="mt-2 text-base font-semibold text-foreground">
-            Quels travaux prévoyez-vous ?
-          </h3>
+          <h3 className="text-base font-semibold text-foreground">Quels travaux prévoyez-vous ?</h3>
           <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
             Budget estimé sur les {formatSurface(surface)} du bien (surface × prix moyen au m²).
             Aucun montant n’est retenu tant que vous n’avez pas choisi.

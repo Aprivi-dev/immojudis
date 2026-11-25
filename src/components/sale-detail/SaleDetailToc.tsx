@@ -35,9 +35,9 @@ export function SaleDetailToc({ active }: { active: SaleDetailSection | null }) 
             >
               <span className={styles.tocNumber}>{section.number}</span>{" "}
               <span className={styles.tocLabel}>{section.label}</span>
-              {/* Le nom accessible reste le libellé complet, y compris sous la pilule courte du
-                  téléphone : le libellé long y est seulement masqué à l'écran, la forme courte est
-                  cachée aux lecteurs d'écran. Pas d'aria-label, qui ne reprendrait pas le numéro. */}
+              {/* Le nom accessible reste le libellé complet : il est seulement masqué à l'écran, et
+                  la forme courte affichée est cachée aux lecteurs d'écran. Pas d'aria-label, qui ne
+                  reprendrait pas le numéro. */}
               <span className={styles.tocShort} aria-hidden="true">
                 {section.shortLabel}
               </span>

@@ -15,7 +15,7 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
   id: SaleDetailSection;
   number: string;
   label: string;
-  /** Libellé court des pilules du sommaire sur téléphone. */
+  /** Libellé affiché dans le sommaire, qui n'a pas la place des libellés complets. */
   shortLabel: string;
 }> = [
   { id: "bien", number: "01", label: "Le bien", shortLabel: "Le bien" },

@@ -1197,28 +1197,33 @@ function SaleDetailWorkspace({
                   </p>
                 ) : null}
                 {startingPrice != null || priceSummaryValue || priceSummaryCeiling ? (
-                  <PriceSummaryCard
-                    startLabel={
-                      getSaleProcedure(displaySale).venueType === "state" ? (
-                        "Prix publié"
-                      ) : ceilingWording?.byOffers ? (
-                        <Terme terme="premiere-offre">Première offre possible</Terme>
-                      ) : (
-                        <Terme terme="mise-a-prix">Mise à prix</Terme>
-                      )
-                    }
-                    startingPrice={startingPrice}
-                    value={priceSummaryValue}
-                    valueWithheld={occupancyGapWithheld}
-                    ceilingLabel={
-                      <Terme terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}>
-                        {ceilingSummaryLabel}
-                      </Terme>
-                    }
-                    ceiling={priceSummaryCeiling}
-                    // Dans la section du prix, le calcul (ou le panneau de prix) suit juste en dessous.
-                    detailHref={null}
-                  />
+                  // Le panneau « Votre analyse » porte déjà ces montants : collant, il les garde à l'écran.
+                  <div className={analysisPanel ? layoutStyles.repeatedInSide : undefined}>
+                    <PriceSummaryCard
+                      startLabel={
+                        getSaleProcedure(displaySale).venueType === "state" ? (
+                          "Prix publié"
+                        ) : ceilingWording?.byOffers ? (
+                          <Terme terme="premiere-offre">Première offre possible</Terme>
+                        ) : (
+                          <Terme terme="mise-a-prix">Mise à prix</Terme>
+                        )
+                      }
+                      startingPrice={startingPrice}
+                      value={priceSummaryValue}
+                      valueWithheld={occupancyGapWithheld}
+                      ceilingLabel={
+                        <Terme
+                          terme={ceilingWording?.byOffers ? "offre-plafond" : "enchere-plafond"}
+                        >
+                          {ceilingSummaryLabel}
+                        </Terme>
+                      }
+                      ceiling={priceSummaryCeiling}
+                      // Dans la section du prix, le calcul (ou le panneau de prix) suit juste en dessous.
+                      detailHref={null}
+                    />
+                  </div>
                 ) : null}
                 <div id="summary" className="scroll-mt-2">
                   {valuationConflict ? (

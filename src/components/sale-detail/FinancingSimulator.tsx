@@ -455,7 +455,6 @@ export function FinancingSimulator({
     <section className={styles.section} aria-labelledby={`${componentId}-title`}>
       <div className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>Financement</p>
           <h2 id={`${componentId}-title`} className={styles.title}>
             Simulateur de financement
           </h2>
@@ -718,7 +717,6 @@ export function FinancingSimulator({
         </form>
 
         <aside className={styles.resultPanel} aria-labelledby={`${componentId}-results-title`}>
-          <p className={styles.panelKicker}>Résultat estimé</p>
           <h3 id={`${componentId}-results-title`} className={styles.resultTitle}>
             Votre mensualité
           </h3>
