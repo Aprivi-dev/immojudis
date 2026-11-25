@@ -15,6 +15,7 @@ import { markSaleViewed } from "@/hooks/use-viewed-sales";
 import { getSaleById, getSalePreviewById } from "@/lib/queries";
 import { withLawyerFactSources } from "@/lib/lawyer-fact-sources";
 import { getSaleLawyerFactSources } from "@/lib/sale-lawyer-fact-sources.client";
+import { withDocumentFactSources } from "@/lib/document-fact-sources";
 import { fetchSaleUnlockStatus } from "@/lib/client-api";
 import { useSalePurchaseReturn } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { loginPathWithRedirect, safeSalesReturnTo, saleDetailPath } from "@/lib/navigation";
@@ -240,24 +241,43 @@ function SaleDetailContent({
   // publique rendue par le serveur les porte déjà. Une lecture en échec reste une erreur de la requête
   // (relue plus tard), jamais un « aucune mention » gardé en cache ; la fiche s'affiche sans mention.
   const loadedListing = loadedSale ?? loadedPreview;
+  const readFactSources =
+    loadedListing != null &&
+    loadedListing !== initialData?.preview &&
+    loadedListing !== initialData?.sale;
   const lawyerSourcesQuery = useQuery({
     queryKey: ["sale-lawyer-fact-sources", id],
     queryFn: () => getSaleLawyerFactSources(id),
-    enabled:
-      loadedListing != null &&
-      loadedListing !== initialData?.preview &&
-      loadedListing !== initialData?.sale,
+    enabled: readFactSources,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+  // Valeurs relevées automatiquement dans les pièces (lot V3b-2) : même règle de lecture que ci-dessus. Le module
+  // de lecture n'est chargé qu'au besoin, hors du JavaScript initial de la fiche (la fiche publique rendue par le
+  // serveur porte déjà ces valeurs).
+  const documentSourcesQuery = useQuery({
+    queryKey: ["sale-document-fact-sources", id],
+    queryFn: () =>
+      import("@/lib/sale-document-fact-sources.client").then((module) =>
+        module.getSaleDocumentFactSources(id),
+      ),
+    enabled: readFactSources,
     staleTime: 5 * 60_000,
     retry: 1,
   });
   const lawyerSources = lawyerSourcesQuery.data;
+  const documentSources = documentSourcesQuery.data;
   const sale = useMemo(
-    () => loadedSale && withLawyerFactSources(loadedSale, lawyerSources),
-    [loadedSale, lawyerSources],
+    () =>
+      loadedSale &&
+      withDocumentFactSources(withLawyerFactSources(loadedSale, lawyerSources), documentSources),
+    [loadedSale, lawyerSources, documentSources],
   );
   const preview = useMemo(
-    () => loadedPreview && withLawyerFactSources(loadedPreview, lawyerSources),
-    [loadedPreview, lawyerSources],
+    () =>
+      loadedPreview &&
+      withDocumentFactSources(withLawyerFactSources(loadedPreview, lawyerSources), documentSources),
+    [loadedPreview, lawyerSources, documentSources],
   );
   // The listing may already be in the cache (read while the rights were being checked): it only
   // counts as viewed once it can be displayed.

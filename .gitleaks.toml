@@ -9,6 +9,7 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "secret"
 paths = [
+'''(?:^|/)\.gitleaksignore''',
 '''(?:^|/)docs/audits/backoffice-2026-10-04\.patch''',
 '''(?:^|/)docs/audits/information-agent-mail-2026-10-04/release\.patch''',
 '''(?:^|/)e2e/admin-information-agent\.spec\.ts''',

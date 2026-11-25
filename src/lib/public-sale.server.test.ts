@@ -166,6 +166,88 @@ describe("public sale lookup", () => {
     warn.mockRestore();
   });
 
+  it("reads the values read automatically in the pieces with the sale, in its cache entry, without any digest", async () => {
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_document_fact_sources"
+              ? {
+                  data: [
+                    {
+                      fact_key: "rooms_count",
+                      document_type: "cahier_conditions_vente",
+                      page_number: 12,
+                      // The database never gives it to anon; the server drops it anyway.
+                      document_key: "a".repeat(64),
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: null, error: null },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+    const result = await lookupPublicSale(ID);
+    if (result.status !== "found") throw new Error("expected a found sale");
+    expect(result.sale.document_fact_sources).toEqual([
+      {
+        key: "rooms_count",
+        documentType: "cahier_conditions_vente",
+        documentLabel: "Cahier des conditions",
+        page: 12,
+        documentKey: null,
+      },
+    ]);
+    // One cache entry for the sale and its mentions: they expire together.
+    const cached = mocks.store.get(`public-sale-lookup/${ID}`)?.value as {
+      sale: { document_fact_sources?: Array<{ documentKey: unknown }> };
+    };
+    expect(cached.sale.document_fact_sources).toHaveLength(1);
+    expect(cached.sale.document_fact_sources?.some((source) => source.documentKey != null)).toBe(
+      false,
+    );
+    expect([...mocks.store.keys()].some((key) => key.includes("document-fact-sources"))).toBe(
+      false,
+    );
+  });
+
+  it("keeps the sale without mention until its next read when the mentions cannot be read", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_document_fact_sources"
+              ? {
+                  data: null,
+                  error: { code: "57014", message: "canceling statement due to statement timeout" },
+                }
+              : { data: null, error: null },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+
+    const failed = await lookupPublicSale(ID);
+    if (failed.status !== "found") throw new Error("expected a found sale");
+    expect(failed.sale).not.toHaveProperty("document_fact_sources");
+    const traces = warn.mock.calls.map(([line]) => JSON.parse(String(line)));
+    expect(traces).toContainEqual({
+      scope: "public-sale-document-fact-sources",
+      level: "warn",
+      event: "rpc_failed",
+      code: "57014",
+    });
+    expect(JSON.stringify(traces)).not.toContain("statement timeout");
+    warn.mockRestore();
+  });
+
   it("does not read the lawyer values of a sale that is not public", async () => {
     const supabase = client({ rpc: { data: [], error: null } });
     mocks.client.mockReturnValue(supabase);
@@ -430,7 +512,8 @@ describe("public sale lookup", () => {
       await lookupPublicSale(ID.toUpperCase());
       expect(publicSaleCacheTag(ID.toUpperCase())).toBe(`sale-${ID}`);
       // Two entries since the lawyer values have their own cache (20261114100000): the sale and those
-      // values, both tagged sale-<id> and public-sales, both revalidated after the same window.
+      // values, both tagged sale-<id> and public-sales, both revalidated after the same window. The values
+      // read automatically in the pieces (20261210100000) are in the entry of the sale.
       expect([...mocks.store.keys()]).toEqual([
         `public-sale-lookup/${ID}`,
         `public-sale-lawyer-fact-sources/${ID}`,

@@ -158,7 +158,10 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // (13/11/2026) : relèvement à 6 890 000.
 // 24/11/2026 : 6 900 000 avec l'accord du propriétaire (6 891 991 mesurés) : la mise à jour de sécurité de
 // Next.js 16.4.3 vers 16.4.6 alourdit le socle commun.
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_900_000;
+// 25/11/2026 : 6 910 000, relevé de 10 000 le 25/11 sur décision du propriétaire, lecture des pièces V3b-2
+// (total mesuré 6 904 683 pour 6 896 779 sur main : la mention, recopiée dans le chunk de la fiche et dans
+// celui de /annonce-exemple, pèse à elle seule plus que la marge de 3 221 octets ; plafonds par page tenus).
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_910_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 // Refonte de l'accueil du 24/11/2026 : neuf peintures et leurs boucles vidéo (3,7 Mo, chargées à

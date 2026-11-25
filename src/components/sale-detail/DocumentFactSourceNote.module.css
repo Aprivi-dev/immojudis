@@ -1,0 +1,19 @@
+/* Mention « Surface relevée automatiquement dans la pièce …, page N » sous une valeur de la fiche. Texte
+   courant (ni couleur seule, ni icône seule), lisible de 320 à 1440 px : il passe à la ligne librement. */
+.mention {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* La pièce et sa page, quand la fiche sert déjà la pièce : lien de texte vers le PDF. */
+.pieceLink {
+  color: var(--gold-text);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

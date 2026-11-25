@@ -767,3 +767,80 @@ describe("source « avocat poursuivant » sur la fiche des comptes", () => {
     expect(mentions()).toEqual([]);
   });
 });
+
+describe("surface relevée automatiquement dans une pièce, sous le titre de la fiche des comptes", () => {
+  const PIECE_URL = "https://example.test/pieces/cahier.pdf";
+  const MENTION =
+    "Surface relevée automatiquement dans la pièce « Cahier des conditions », page 12.";
+  const withSurfaceSource = (
+    values: Partial<AuctionSale> = {},
+    documentKey: string | null = null,
+  ) =>
+    item({
+      documents: [],
+      documents_rich: [],
+      document_fact_sources: [
+        {
+          key: "app_surface_m2",
+          documentType: "cahier_conditions_vente",
+          documentLabel: "Cahier des conditions",
+          page: 12,
+          documentKey,
+        },
+      ],
+      ...values,
+    });
+  const surfaceBlocked = {
+    auction_sale_id: "sale-1",
+    field_key: "property.habitable_surface_m2" as const,
+    review_state: "unresolved" as const,
+    citation_status: "not_required" as const,
+    is_publishable: false,
+    source_name: "Avoventes",
+    source_url: "https://avoventes.fr/vente/1",
+  };
+
+  it("dit la pièce et la page de la surface du titre, en texte quand la vue ne sert pas la pièce", () => {
+    render(<SaleDetailHeading sale={withSurfaceSource()} />);
+    const mention = screen.getByTestId("document-fact-source");
+    expect(mention.textContent).toBe(MENTION);
+    expect(within(mention).queryByRole("link")).toBeNull();
+  });
+
+  it("mène à la page de la pièce quand la vue la sert (offre Analyse, vente débloquée)", async () => {
+    // Empreinte SHA-256 de l'adresse, telle que la base la rend (`get_public_sale_document_fact_sources`).
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(PIECE_URL));
+    const key = Array.from(new Uint8Array(digest), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("");
+    render(
+      <SaleDetailHeading
+        sale={withSurfaceSource(
+          {
+            documents_rich: [
+              {
+                url: PIECE_URL,
+                label: "CCV",
+                type: "cahier_conditions_vente",
+                extraction_status: null,
+              },
+            ],
+          },
+          key,
+        )}
+      />,
+    );
+    const link = await within(screen.getByTestId("document-fact-source")).findByRole("link");
+    expect(link.getAttribute("href")).toBe(`${PIECE_URL}#page=12`);
+  });
+
+  it("ne dit rien pour une surface en cours de vérification, ni sur la page d'exemple", () => {
+    const blocked = render(
+      <SaleDetailHeading sale={withSurfaceSource()} aiReviewProjections={[surfaceBlocked]} />,
+    );
+    expect(screen.queryByTestId("document-fact-source")).toBeNull();
+    blocked.unmount();
+    render(<SaleDetailHeading sale={withSurfaceSource()} publicDemo />);
+    expect(screen.queryByTestId("document-fact-source")).toBeNull();
+  });
+});

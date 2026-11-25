@@ -51,6 +51,12 @@ export type AuctionSale = {
    * there is none.
    */
   lawyer_fact_sources?: LawyerFactSource[];
+  /**
+   * Displayed columns whose value was read automatically in a piece of the case, still unchanged
+   * (`get_public_sale_document_fact_sources`): column, type of the piece, page and digest of its address
+   * only. Absent when there is none.
+   */
+  document_fact_sources?: DocumentFactSource[];
   source_checks?: Record<string, { checked_at?: string }> | null;
   source_conflicts?: Array<{
     field?: string;
@@ -440,4 +446,23 @@ export type LawyerFactSource = {
   key: LawyerFactKey;
   receivedOn: string;
   mode: "manual" | "auto";
+};
+
+/** Displayed columns that the automatic reading of the pieces may fill (lot V3b-2). */
+export type DocumentFactKey = "app_surface_m2" | "land_surface_m2" | "rooms_count";
+
+/**
+ * Public projection of one value read automatically in a piece (`get_public_sale_document_fact_sources`):
+ * the column, the type of the piece (a code such as `cahier_conditions_vente`, or `null`), its page and the
+ * SHA-256 digest (hex) of the address of the piece, given only to an account the views already serve the
+ * pieces to (Analyse offer, unlocked sale), `null` otherwise (always on the public page). Never the value,
+ * the quote or the address.
+ */
+export type DocumentFactSource = {
+  key: DocumentFactKey;
+  documentType: string | null;
+  /** Label of that type in the list of pieces (`documentTypeLabel`), set when the row is read. */
+  documentLabel: string | null;
+  page: number;
+  documentKey: string | null;
 };
