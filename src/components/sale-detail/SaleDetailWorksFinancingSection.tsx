@@ -31,7 +31,7 @@ const ListingRental = dynamic(() =>
   import("@/components/sale-detail/ListingRental").then((module) => module.ListingRental),
 );
 
-/** Section 05 de la fiche, « Travaux et financement » : travaux, financement, simulation locative. */
+/** Section 06 de la fiche, « Travaux et financement » : travaux, financement, simulation locative. */
 export function SaleDetailWorksFinancingSection({
   saleId,
   displaySale,

@@ -21,15 +21,15 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "bien", number: "01", label: "Le bien", shortLabel: "Le bien" },
   { id: "prix", number: "02", label: "Prix et plafond", shortLabel: "Plafond" },
-  { id: "marche", number: "03", label: "Marché et comparables", shortLabel: "Comparables" },
-  { id: "urbanisme-risques", number: "04", label: "Urbanisme et risques", shortLabel: "Urbanisme" },
+  { id: "pieces", number: "03", label: "Pièces du dossier", shortLabel: "Pièces" },
+  { id: "marche", number: "04", label: "Marché et comparables", shortLabel: "Comparables" },
+  { id: "urbanisme-risques", number: "05", label: "Urbanisme et risques", shortLabel: "Urbanisme" },
   {
     id: "travaux-financement",
-    number: "05",
+    number: "06",
     label: "Travaux et financement",
     shortLabel: "Financement",
   },
-  { id: "pieces", number: "06", label: "Pièces du dossier", shortLabel: "Pièces" },
   { id: "demarches", number: "07", label: "Démarches", shortLabel: "Démarches" },
 ];
 

@@ -51,7 +51,6 @@ import { Terme } from "@/components/ceiling/Terme";
 import { buildValuePreview, type ValuePreview } from "@/lib/value-preview";
 import { marketGapWithheldReason, type PublicMarketGapBand } from "@/lib/market-gap-band";
 import { loginPathWithRedirect, saleDetailPath } from "@/lib/navigation";
-import { POINTS_TO_VERIFY_ANCHOR } from "@/lib/search/points-to-verify";
 import { UNLOCK_PANEL_ID } from "@/components/sale-detail/UnlockCallToAction";
 import { ListingBudget } from "@/components/sale-detail/ListingBudget";
 import { ListingCharacteristics } from "@/components/sale-detail/ListingCharacteristics";
@@ -132,6 +131,7 @@ import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenari
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
+import { financingReference } from "@/components/sale-detail/FinancingReference";
 import { SaleDetailLandSection } from "@/components/sale-detail/SaleDetailLandSection";
 import { SaleDetailMarketSection } from "@/components/sale-detail/SaleDetailMarketSection";
 import { SaleDetailPiecesSection } from "@/components/sale-detail/SaleDetailPiecesSection";
@@ -874,6 +874,11 @@ function SaleDetailWorkspace({
   ).blocked;
   // Offre Analyse, vente dont le plafond existe : le panneau collant devient « Votre analyse ».
   const analysisPanel = access === "analysis" && ceilingPromised;
+  // Le panneau suit la section lue : pendant « Travaux et financement », les montants qu'elle fait varier.
+  const sectionReference =
+    analysisPanel && activeSection === "travaux-financement"
+      ? financingReference(retainedWorks, activeFinancingResult?.monthlyPayment ?? null)
+      : null;
   const dossierInPanel = analysisPanel && Boolean(user) && !publicDemo;
   const dateBlocked = getAiReviewFieldResult(
     resolvedAiReviewProjections,
@@ -949,7 +954,8 @@ function SaleDetailWorkspace({
                   aiReviewProjections={resolvedAiReviewProjections}
                   aiReviewStatus={aiReviewStatus}
                   marketReference={
-                    valueGuarded ? null : (
+                    sectionReference ??
+                    (valueGuarded ? null : (
                       <MarketReference
                         startingPrice={startingPrice}
                         preview={valuePreview}
@@ -960,7 +966,7 @@ function SaleDetailWorkspace({
                           ceilingWording?.byOffers ? "La première offre possible" : "La mise à prix"
                         }
                       />
-                    )
+                    ))
                   }
                   showSecondaryAction={!summaryFooter}
                   lead={
@@ -1062,6 +1068,23 @@ function SaleDetailWorkspace({
                 />
               ) : null}
 
+              {/* Avant le sommaire : une aide au parcours, pas une information sur le bien. */}
+              {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
+                <div className="mt-6">
+                  <FirstAuctionGuide
+                    ceilingHref={ceilingDetailHref}
+                    eligibleBar={getSaleProcedure(displaySale).eligibleBar}
+                    onHide={() => {
+                      guide.hide();
+                      // Le focus passe au sommaire, juste dessous, au lieu de se perdre avec le bouton.
+                      window.requestAnimationFrame(() =>
+                        document.querySelector<HTMLElement>("[data-sale-tabs] a")?.focus(),
+                      );
+                    }}
+                  />
+                </div>
+              ) : null}
+
               <SaleDetailToc active={activeSection} />
 
               <DetailSection id="bien">
@@ -1094,19 +1117,6 @@ function SaleDetailWorkspace({
                   access={access}
                   userKey={user?.id}
                 />
-                {isTribunalSale && guide.visible && !listingSaleStatus(displaySale) ? (
-                  <FirstAuctionGuide
-                    ceilingHref={ceilingDetailHref}
-                    eligibleBar={getSaleProcedure(displaySale).eligibleBar}
-                    onHide={() => {
-                      guide.hide();
-                      // Le focus passe au bloc suivant au lieu de se perdre avec le bouton.
-                      window.requestAnimationFrame(() =>
-                        document.getElementById(`${POINTS_TO_VERIFY_ANCHOR}-title`)?.focus(),
-                      );
-                    }}
-                  />
-                ) : null}
                 <ListingChecks
                   sale={displaySale}
                   points={pointsToVerify(displaySale, { occupancyVisible: true })}
@@ -1368,6 +1378,18 @@ function SaleDetailWorkspace({
                 </WhenNear>
               </DetailSection>
 
+              <SaleDetailPiecesSection
+                saleId={sale.id}
+                sale={displaySale}
+                documentsOpen={Boolean(expandedDetails.documents)}
+                onDocumentsOpenChange={(open) => setDetailOpen("documents", open)}
+                locked={!fullData}
+                force={forced("pieces")}
+                readingEnabled={!publicDemo && !authLoading && Boolean(user)}
+                access={access}
+                userKey={user?.id}
+              />
+
               <SaleDetailMarketSection
                 sale={sale}
                 displaySale={displaySale}
@@ -1427,18 +1449,6 @@ function SaleDetailWorkspace({
                 monthlyDebtService={activeFinancingResult?.monthlyPayment ?? null}
                 rentalDraft={rentalDraft}
                 onRentalDraftChange={setRentalDraft}
-              />
-
-              <SaleDetailPiecesSection
-                saleId={sale.id}
-                sale={displaySale}
-                documentsOpen={Boolean(expandedDetails.documents)}
-                onDocumentsOpenChange={(open) => setDetailOpen("documents", open)}
-                locked={!fullData}
-                force={forced("pieces")}
-                readingEnabled={!publicDemo && !authLoading && Boolean(user)}
-                access={access}
-                userKey={user?.id}
               />
 
               <SaleDetailStepsSection

@@ -616,10 +616,10 @@ describe("integrated listing", () => {
     for (const name of [
       "01 Le bien",
       "02 Prix et plafond",
-      "03 Marché et comparables",
-      "04 Urbanisme et risques",
-      "05 Travaux et financement",
-      "06 Pièces du dossier",
+      "03 Pièces du dossier",
+      "04 Marché et comparables",
+      "05 Urbanisme et risques",
+      "06 Travaux et financement",
       "07 Démarches",
     ]) {
       expect(within(nav).getByRole("link", { name })).toBeTruthy();
@@ -636,10 +636,10 @@ describe("integrated listing", () => {
     const sections = [
       "bien",
       "prix",
+      "pieces",
       "marche",
       "urbanisme-risques",
       "travaux-financement",
-      "pieces",
       "demarches",
     ].map((id) => container.querySelector<HTMLElement>(`section#${id}`));
     sections.forEach((section, index) => {

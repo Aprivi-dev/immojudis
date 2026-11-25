@@ -22,7 +22,7 @@ const ListingStatistics = dynamic(
     ),
   },
 );
-/** Section 03 de la fiche, « Marché et comparables » : marché, marché locatif, statistiques. */
+/** Section 04 de la fiche, « Marché et comparables » : marché, marché locatif, statistiques. */
 export function SaleDetailMarketSection({
   sale,
   displaySale,

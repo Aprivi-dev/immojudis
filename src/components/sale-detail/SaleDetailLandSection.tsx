@@ -59,7 +59,7 @@ function Fold({
 }
 
 /**
- * Section 04 de la fiche, « Urbanisme et risques » : cadastre et règles d'urbanisme, risques de la
+ * Section 05 de la fiche, « Urbanisme et risques » : cadastre et règles d'urbanisme, risques de la
  * commune. Des données de contexte, longues : repliées à l'arrivée.
  */
 export function SaleDetailLandSection({
