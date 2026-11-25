@@ -5,6 +5,13 @@ import styles from "./SalePublicPreview.module.css";
  * Internal links of the public page: they carry the visitor from one sale to the pages that
  * explain how a sale works, and give crawlers a path from every sale to the guides.
  */
+/** Un article du blog proposé en bas de fiche, choisi par le serveur (page `/sales/[id]`). */
+export interface SaleGuideLink {
+  href: string;
+  label: string;
+  hint: string;
+}
+
 const FURTHER_READING_LINKS = [
   {
     href: "/ventes-immobilieres-judiciaires",
@@ -28,8 +35,20 @@ const FURTHER_READING_LINKS = [
   },
 ] as const;
 
+const COMMON_HREFS: readonly string[] = FURTHER_READING_LINKS.map((link) => link.href);
+
 /** Bas de la fiche publique : les guides, puis la suite de la recherche. Chargé à part, rendu par le serveur. */
-export function SalePublicFurther({ returnTo }: { returnTo: string }) {
+export function SalePublicFurther({
+  returnTo,
+  guides = [],
+}: {
+  returnTo: string;
+  /**
+   * Articles du blog propres à cette fiche, à la suite des liens communs à toutes les fiches ; un
+   * article déjà dans les liens communs n'est pas répété.
+   */
+  guides?: readonly SaleGuideLink[];
+}) {
   return (
     <>
       <section className={styles.further} aria-labelledby="public-further-title">
@@ -37,7 +56,10 @@ export function SalePublicFurther({ returnTo }: { returnTo: string }) {
           Pour aller plus loin
         </h2>
         <ul className={styles.furtherList}>
-          {FURTHER_READING_LINKS.map((link) => (
+          {[
+            ...FURTHER_READING_LINKS,
+            ...guides.filter((guide) => !COMMON_HREFS.includes(guide.href)),
+          ].map((link) => (
             <li key={link.href}>
               <Link href={link.href}>{link.label}</Link>
               <span>{link.hint}</span>

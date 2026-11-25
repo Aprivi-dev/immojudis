@@ -39,7 +39,8 @@ vi.mock("@/lib/public-sitemap.server", async () => {
 });
 
 import sitemap, { maxDuration } from "./sitemap";
-import robots from "./robots";
+import { robotsRules as robots, robotsTxt } from "./robots.txt/rules";
+import { GET as robotsRoute } from "./robots.txt/route";
 import resourcesSitemap from "./ressources/sitemap";
 import salesSitemap, { generateSitemaps as generateSalesSitemaps } from "./sales/sitemap";
 import nextConfig from "../../next.config";
@@ -500,6 +501,36 @@ describe("robots.txt", () => {
     vi.unstubAllEnvs();
   });
 
+  it("is served as text that crawlers may keep for an hour", async () => {
+    mocks.loadSitemapSaleTotal.mockResolvedValue(2276);
+    const response = await robotsRoute();
+    expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=3600, s-maxage=300, stale-while-revalidate=3600",
+    );
+    expect(await response.text()).toBe(
+      [
+        "User-Agent: *",
+        "Allow: /",
+        "Disallow: /admin/",
+        "Disallow: /api/",
+        "Disallow: /publish",
+        "Disallow: /reports/shared/",
+        "",
+        "Sitemap: https://immojudis.com/sitemap.xml",
+        "Sitemap: https://immojudis.com/ressources/sitemap.xml",
+        "Sitemap: https://immojudis.com/sales/sitemap/0.xml",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("writes a closed deployment as a single Disallow, without a sitemap", () => {
+    expect(robotsTxt({ rules: { userAgent: "*", disallow: "/" } })).toBe(
+      "User-Agent: *\nDisallow: /\n",
+    );
+  });
+
   it("lists the pages, the articles and one sales file per block of 5 000 sales", async () => {
     mocks.loadSitemapSaleTotal.mockResolvedValue(2276);
     expect((await robots()).sitemap).toEqual([
@@ -540,8 +571,8 @@ describe("robots.txt", () => {
   it("drops the obsolete host directive and lets /login be crawled (its noindex must be seen)", async () => {
     mocks.loadSitemapSaleTotal.mockResolvedValue(10);
     const result = await robots();
-    expect(result.host).toBeUndefined();
-    const rules = Array.isArray(result.rules) ? result.rules[0] : result.rules;
+    expect(robotsTxt(result)).not.toMatch(/^Host:/im);
+    const rules = result.rules;
     expect(rules.disallow).toEqual(["/admin/", "/api/", "/publish", "/reports/shared/"]);
   });
 

@@ -18,7 +18,7 @@ import {
   tribunalSampleLabel,
   type PublicTribunalActivity,
 } from "@/lib/public-tribunal-activity";
-import { understandingResources } from "@/lib/resource-related";
+import { understandingAndRotatingResources } from "@/lib/resource-related";
 import { saleHearingTime, seoSurface } from "@/lib/seo";
 import {
   TRIBUNAL_PAGES_PATH,
@@ -302,7 +302,7 @@ export function TribunalView({
         />
 
         <UnderstandBlock
-          articles={understandingResources(tribunal.code)}
+          articles={understandingAndRotatingResources(tribunal.code)}
           nearbyTitle={
             where ? `${where.charAt(0).toUpperCase()}${where.slice(1)}` : "Autres tribunaux"
           }

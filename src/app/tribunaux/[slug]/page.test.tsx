@@ -520,7 +520,7 @@ describe("page d'un tribunal : contenu", () => {
     ).toBe("/sales?tribunal=TJ+Bobigny");
   });
 
-  it("ajoute le bloc « Pour comprendre » avec le guide, deux articles et les autres tribunaux du département", async () => {
+  it("ajoute le bloc « Pour comprendre » avec le guide, trois articles et les autres tribunaux du département", async () => {
     render(await Page(params("tribunal-judiciaire-bobigny")));
 
     const block = screen.getByRole("region", { name: "Pour comprendre" });
@@ -528,7 +528,7 @@ describe("page d'un tribunal : contenu", () => {
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"));
     expect(hrefs[0]).toBe("/ventes-immobilieres-judiciaires");
-    expect(hrefs.filter((href) => href?.startsWith("/ressources/"))).toHaveLength(2);
+    expect(hrefs.filter((href) => href?.startsWith("/ressources/"))).toHaveLength(3);
     // Seine-Saint-Denis : la page du département et l'autre tribunal du 93, pas ceux d'ailleurs.
     expect(hrefs).toContain("/ventes-encheres-immobilieres/seine-saint-denis");
     expect(hrefs).toContain("/tribunaux/tribunal-judiciaire-nanterre");

@@ -21,7 +21,7 @@ import { formatDate, formatStartingPrice, formatWeekday } from "@/lib/format";
 import { pathWithSearch } from "@/lib/navigation";
 import type { PublicTribunalActivity } from "@/lib/public-tribunal-activity";
 import { EXISTING_GUIDE } from "@/lib/resource-articles";
-import { understandingResources } from "@/lib/resource-related";
+import { understandingAndRotatingResources } from "@/lib/resource-related";
 import { saleHearingTime } from "@/lib/seo";
 import { hasReadableTribunalName, tribunalPagePath } from "@/lib/tribunal-pages";
 import { cn } from "@/lib/utils";
@@ -310,18 +310,20 @@ export function DepartmentView({
               Pour comprendre
             </h2>
             <ul className="mt-3 divide-y divide-line-soft">
-              {[EXISTING_GUIDE, ...understandingResources(department.code)].map((article) => (
-                <li key={article.slug} className="py-2.5">
-                  <Link href={article.href} className="font-semibold text-gold-text underline">
-                    {article.slug === EXISTING_GUIDE.slug
-                      ? "Le guide des ventes immobilières judiciaires"
-                      : article.title}
-                  </Link>
-                  <span className="block text-caption text-ink-soft">
-                    {article.readingMinutes} min de lecture
-                  </span>
-                </li>
-              ))}
+              {[EXISTING_GUIDE, ...understandingAndRotatingResources(department.code)].map(
+                (article) => (
+                  <li key={article.slug} className="py-2.5">
+                    <Link href={article.href} className="font-semibold text-gold-text underline">
+                      {article.slug === EXISTING_GUIDE.slug
+                        ? "Le guide des ventes immobilières judiciaires"
+                        : article.title}
+                    </Link>
+                    <span className="block text-caption text-ink-soft">
+                      {article.readingMinutes} min de lecture
+                    </span>
+                  </li>
+                ),
+              )}
             </ul>
           </section>
 

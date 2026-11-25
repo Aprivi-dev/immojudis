@@ -1,12 +1,15 @@
-import type { MetadataRoute } from "next";
 import { isSiteIndexable } from "@/lib/seo-indexing";
 import { isNonProductionVercelDeployment, siteOrigin } from "@/lib/site-url";
-import { generateSitemaps as salesSitemaps } from "./sales/sitemap";
+import { generateSitemaps as salesSitemaps } from "../sales/sitemap";
 
-// Lists the three kinds of sitemap: the pages, the articles and the sales files.
-export const dynamic = "force-dynamic";
+/** What `/robots.txt` says: one group of rules for every crawler, and the sitemaps when the site is open. */
+export interface RobotsRules {
+  rules: { userAgent: string; allow?: string; disallow: string | string[] };
+  sitemap?: string[];
+}
 
-export default async function robots(): Promise<MetadataRoute.Robots> {
+/** Lists the three kinds of sitemap: the pages, the articles and the sales files. */
+export async function robotsRules(): Promise<RobotsRules> {
   // A preview or development deployment is never a page to index (the same decision is sent as
   // an `X-Robots-Tag` header by src/proxy.ts), and it must not advertise a sitemap.
   if (isNonProductionVercelDeployment()) {
@@ -39,4 +42,16 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       ...(await salesSitemaps()).map(({ id }) => `${origin}/sales/sitemap/${id}.xml`),
     ],
   };
+}
+
+/** The text of `/robots.txt` for these rules (Robots Exclusion Standard). */
+export function robotsTxt({ rules, sitemap = [] }: RobotsRules): string {
+  const lines = [
+    `User-Agent: ${rules.userAgent}`,
+    ...(rules.allow ? [`Allow: ${rules.allow}`] : []),
+    ...[rules.disallow].flat().map((path) => `Disallow: ${path}`),
+    "",
+    ...sitemap.map((url) => `Sitemap: ${url}`),
+  ];
+  return `${lines.join("\n").trimEnd()}\n`;
 }

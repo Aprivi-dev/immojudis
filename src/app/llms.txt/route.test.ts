@@ -13,7 +13,7 @@ import {
 } from "@/lib/llms-txt";
 import nextConfig from "../../../next.config";
 import { config, proxy } from "../../proxy";
-import robots from "../robots";
+import { robotsRules as robots } from "../robots.txt/rules";
 import { GET, dynamic } from "./route";
 
 const APP = path.resolve(__dirname, "..");
