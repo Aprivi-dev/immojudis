@@ -7,11 +7,15 @@
 -- « Relevée automatiquement dans la pièce …, page N » à côté de la valeur affichée, et rien d'autre :
 --   * fact_key : la colonne affichée (app_surface_m2, la surface de la fiche, qui se déduit de la surface habitable
 --     ou Carrez écrite ; land_surface_m2 ; rooms_count) ;
---   * document_type : le type de la pièce, s'il a la forme d'un code (cahier_conditions_vente…) ;
+--   * document_type : le type de la pièce, s'il est dans la liste fermée des types que le pipeline donne aux pièces
+--     (services/data-pipeline/src/pdf_document_types.py, hors types génériques pdf et other) ; sinon nul ;
 --   * page_number : la page de la pièce ;
---   * document_key : l'empreinte SHA-256 (hexadécimal) de l'adresse de la pièce, jamais l'adresse. Le navigateur
---     la compare aux pièces que sa vue lui sert déjà (offre Analyse, vente débloquée) pour faire du type de la pièce
---     un lien : la règle d'accès aux pièces reste celle des vues, elle n'est pas recopiée ici.
+--   * document_key : l'empreinte SHA-256 (hexadécimal) de l'adresse de la pièce, jamais l'adresse, et seulement pour
+--     un appelant à qui les vues servent déjà les pièces de la vente : offre Analyse (public.has_analysis_access(),
+--     essai de l'offre de lancement et administrateurs compris, comme v_auction_sales_app) ou vente débloquée
+--     (app_private.current_user_unlocked_sale, comme v_auction_sales_unlocked). Nulle sinon, notamment pour anon :
+--     la fiche publique, rendue par le serveur et mise en cache, ne la porte jamais. Le navigateur la compare aux
+--     pièces que sa vue lui sert pour faire de la pièce un lien.
 -- Jamais la valeur, la citation, l'adresse de la pièce, les modèles, la version du prompt ni la date de lecture.
 --
 -- Une colonne n'a de mention que si sa valeur est encore celle de la trace (une valeur réécrite depuis par un autre
@@ -42,11 +46,16 @@ as $function$
   select
     trace.key as fact_key,
     case
-      when trace.value ->> 'document_type' ~ '^[a-z][a-z0-9_]{0,63}$' then trace.value ->> 'document_type'
+      when trace.value ->> 'document_type' in (
+        'annonce_vente', 'bail', 'cadastre', 'cahier_conditions_vente', 'conditions_vente', 'copropriete',
+        'diagnostics_techniques', 'procedure_saisie', 'proces_verbal', 'pv_huissier', 'pv_notaire',
+        'titre_propriete'
+      ) then trace.value ->> 'document_type'
     end as document_type,
     (trace.value ->> 'page_number')::integer as page_number,
     case
       when trace.value ->> 'document_url' ~* '^https?://'
+        and ((select public.has_analysis_access()) or app_private.current_user_unlocked_sale(s.id))
         then pg_catalog.encode(
           pg_catalog.sha256(pg_catalog.convert_to(trace.value ->> 'document_url', 'UTF8')), 'hex'
         )
@@ -85,7 +94,7 @@ as $function$
 $function$;
 
 comment on function app_private.get_public_sale_document_fact_sources(uuid) is
-  'Lecture automatique des pièces (lot V3b-2) : pour une vente du catalogue public, les colonnes affichées (app_surface_m2, land_surface_m2, rooms_count) dont la valeur est encore celle écrite par la lecture, avec le type de la pièce, sa page et l''empreinte SHA-256 de son adresse. Ni valeur, ni citation, ni adresse.';
+  'Lecture automatique des pièces (lot V3b-2) : pour une vente du catalogue public, les colonnes affichées (app_surface_m2, land_surface_m2, rooms_count) dont la valeur est encore celle écrite par la lecture, avec le type de la pièce (liste fermée), sa page et, pour un compte qui reçoit déjà les pièces (offre Analyse, vente débloquée), l''empreinte SHA-256 de son adresse. Ni valeur, ni citation, ni adresse.';
 
 revoke all on function app_private.get_public_sale_document_fact_sources(uuid)
   from public, anon, authenticated;
@@ -107,7 +116,7 @@ grant execute on function public.get_public_sale_document_fact_sources(uuid)
   to anon, authenticated, service_role;
 
 comment on function public.get_public_sale_document_fact_sources(uuid) is
-  'Colonnes de la fiche publique dont la valeur affichée a été relevée automatiquement dans une pièce (lecture des pièces par Claude) : colonne, type de la pièce, page, empreinte de l''adresse de la pièce. Ni valeur, ni citation, ni adresse.';
+  'Colonnes de la fiche publique dont la valeur affichée a été relevée automatiquement dans une pièce (lecture des pièces par Claude) : colonne, type de la pièce, page, et empreinte de l''adresse de la pièce pour un compte qui reçoit déjà les pièces. Ni valeur, ni citation, ni adresse.';
 
 notify pgrst, 'reload schema';
 

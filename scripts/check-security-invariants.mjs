@@ -1122,24 +1122,25 @@ for (const [policy, statement] of lastSavedReportsPolicy) {
 // traces of raw_payload.pdf_fact_provenance through one SECURITY DEFINER function that projects four columns
 // (column, type of the piece, page, digest of its address). It only reads the traces of the reading itself
 // (reader = document_vision) and only the trace keys the mention needs: never the quote (`evidence`), the
-// address of the piece in clear, the models, the prompt version nor the reading date.
-const documentFactSourcesName = "20261210100000_public_sale_document_fact_sources.sql";
-const documentFactSourcesSql = (migrationSources.get(documentFactSourcesName) ?? "").replace(
-  /--[^\n]*/g,
-  "",
-);
-if (!documentFactSourcesSql) {
-  failures.push("The document fact sources migration is missing");
-} else {
-  const reader =
-    /create\s+or\s+replace\s+function\s+app_private\.get_public_sale_document_fact_sources\(p_sale_id\s+uuid\)[\s\S]*?\$function\$;/i.exec(
-      documentFactSourcesSql,
-    )?.[0] ?? "";
+// address of the piece in clear, the models, the prompt version nor the reading date. The digest only goes to
+// a caller the views already serve the pieces to (Analyse offer, unlocked sale). The LAST definition of the
+// function, all migrations considered, is the one checked; every grant on it, in any migration, is checked.
+{
+  const readerPattern =
+    /create\s+or\s+replace\s+function\s+app_private\.get_public_sale_document_fact_sources\s*\(\s*p_sale_id\s+uuid\s*\)[\s\S]*?\$function\$[\s\S]*?\$function\$\s*;/gi;
+  let reader = "";
+  const allDocumentFactSourcesSql = [];
+  for (const [, source] of migrationSources) {
+    const sql = source.replace(/--[^\n]*/g, "");
+    if (/get_public_sale_document_fact_sources/i.test(sql)) allDocumentFactSourcesSql.push(sql);
+    for (const match of sql.matchAll(readerPattern)) reader = match[0];
+  }
+  const documentFactSourcesSql = allDocumentFactSourcesSql.join("\n");
   if (!reader) {
     failures.push("app_private.get_public_sale_document_fact_sources is not defined");
   } else {
     if (
-      !/returns\s+table\s*\(\s*fact_key\s+text,\s*document_type\s+text,\s*page_number\s+integer,\s*document_key\s+text\s*\)/i.test(
+      !/returns\s+table\s*\(\s*fact_key\s+text\s*,\s*document_type\s+text\s*,\s*page_number\s+integer\s*,\s*document_key\s+text\s*\)/i.test(
         reader,
       )
     ) {
@@ -1147,7 +1148,7 @@ if (!documentFactSourcesSql) {
         "get_public_sale_document_fact_sources returns more than the four mention columns",
       );
     }
-    if (!/security\s+definer/i.test(reader) || !/set\s+search_path\s*=\s*''/i.test(reader)) {
+    if (!/\bsecurity\s+definer\b/i.test(reader) || !/set\s+search_path\s*=\s*''/i.test(reader)) {
       failures.push(
         "get_public_sale_document_fact_sources is not SECURITY DEFINER with an empty search_path",
       );
@@ -1160,32 +1161,34 @@ if (!documentFactSourcesSql) {
         "get_public_sale_document_fact_sources answers for a sale outside the public catalogue",
       );
     }
+    // Every use of the trace is `trace.value ->> '<allowed key>'` (or its type test): no cast of the whole trace
+    // (`trace.value::text`), no subscript (`trace.value['evidence']`), no other key.
     const allowedTraceKeys = ["document_type", "document_url", "page_number", "reader", "value"];
-    const readTraceKeys = [...reader.matchAll(/\btrace\.value\s*(?:->>?|#>>?)\s*'([^']+)'/gi)].map(
-      (match) => match[1],
-    );
-    const unexpectedTraceKeys = [...new Set(readTraceKeys)].filter(
-      (key) => !allowedTraceKeys.includes(key),
-    );
-    if (unexpectedTraceKeys.length > 0) {
+    const traceUses = [...reader.matchAll(/\btrace\.value\b/gi)].map((match) => {
+      const before = reader.slice(Math.max(0, match.index - 40), match.index);
+      const after = reader.slice(match.index + match[0].length);
+      if (/jsonb_typeof\(\s*$/i.test(before) && /^\s*\)/.test(after)) return null;
+      const key = /^\s*->>\s*'([^']+)'/.exec(after)?.[1];
+      return key && allowedTraceKeys.includes(key) ? null : (key ?? after.slice(0, 20).trim());
+    });
+    const unexpectedTraceUses = [...new Set(traceUses.filter((use) => use !== null))];
+    if (unexpectedTraceUses.length > 0) {
       failures.push(
-        `get_public_sale_document_fact_sources reads ${unexpectedTraceKeys.join(",")} from a trace, outside the allow-list`,
+        `get_public_sale_document_fact_sources reads ${unexpectedTraceUses.join(",")} from a trace, outside the allow-list`,
       );
     }
-    // The address of the piece only leaves the function as a digest.
+    // The address of the piece only leaves the function as a digest, and only to a caller that already receives
+    // the pieces, through the functions of the views (not a copy of their rule).
     if (
-      !/pg_catalog\.sha256\(pg_catalog\.convert_to\(trace\.value\s*->>\s*'document_url'/i.test(
+      !/when\s+trace\.value\s*->>\s*'document_url'[^;]*?and\s*\(\s*\(\s*select\s+public\.has_analysis_access\(\)\s*\)\s*or\s+app_private\.current_user_unlocked_sale\(s\.id\)\s*\)\s*then\s+pg_catalog\.encode\(\s*pg_catalog\.sha256\(pg_catalog\.convert_to\(trace\.value\s*->>\s*'document_url'/i.test(
         reader,
       )
     ) {
       failures.push(
-        "get_public_sale_document_fact_sources must only return a digest of the piece address",
+        "get_public_sale_document_fact_sources must only return a digest of the piece address, to a caller that receives the pieces",
       );
     }
-    const rawPayloadReads = [
-      ...reader.matchAll(/\bs\.raw_payload\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
-    ].map((match) => match[1]);
-    if ([...new Set(rawPayloadReads)].some((key) => key !== "pdf_fact_provenance")) {
+    if (/\braw_payload\b(?!\s*->\s*'pdf_fact_provenance')/i.test(reader)) {
       failures.push(
         "get_public_sale_document_fact_sources reads raw_payload outside pdf_fact_provenance",
       );
@@ -1202,6 +1205,15 @@ if (!documentFactSourcesSql) {
     failures.push(
       "get_public_sale_document_fact_sources is not closed to public before its grants",
     );
+  }
+  for (const grant of documentFactSourcesSql.match(
+    /grant\s[^;]*\bon\s+function\s+(?:app_private|public)\.get_public_sale_document_fact_sources\b[^;]*;/gi,
+  ) ?? []) {
+    if (
+      /\bto\s+[^;]*\bpublic\b/i.test(grant.replace(/\bon\s+function\s+public\./i, "on function "))
+    ) {
+      failures.push("get_public_sale_document_fact_sources is granted to public");
+    }
   }
 }
 
