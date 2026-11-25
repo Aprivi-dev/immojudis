@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { LEGAL_DOCUMENTS } from "@/lib/legal-documents";
 import {
@@ -10,6 +11,8 @@ import { informationAgentPortalSecret } from "@/lib/information-agent-signed-lin
 import { assertInformationAgentControllerIdentity } from "@/lib/information-agent/message-guards";
 import { informationAgentOutboundEnabled } from "@/lib/information-agent/config";
 import { informationAgentCaseReference } from "@/lib/information-agent/case-reference";
+import type { InformationAgentEmailTemplateContent } from "@/lib/information-agent-email-template";
+import { getPublishedInformationAgentEmailTemplate } from "@/lib/admin-information-agent-email-template";
 
 /**
  * Version minimale de la politique de confidentialité sans laquelle le mode réel est REFUSÉ : celle qui décrit
@@ -58,6 +61,41 @@ type AutopilotReadinessCheck = { key: string; label: string; ok: boolean; detail
  * automatiquement à un dossier envoyé (`reply`, avec ce dossier). Le garde SQL du mode réel lit la même fonction.
  * Jamais d'adresse.
  */
+/**
+ * Modèle de message figé pour le mode réel (audit du 24/11/2026) : le pilote n'envoie qu'avec le modèle dont
+ * l'empreinte (objet et blocs, sans le nom) est inscrite dans `INFORMATION_AGENT_AUTOPILOT_APPROVED_TEMPLATE`. Une
+ * nouvelle révision publiée change l'empreinte : le mode réel s'arrête de lui-même (`template_approved`) jusqu'à ce
+ * que le propriétaire l'approuve en inscrivant la nouvelle empreinte. L'empreinte porte sur le contenu et non sur le
+ * numéro de révision, pour couvrir aussi le modèle du code utilisé en secours.
+ */
+export function informationAgentTemplateFingerprint(
+  content: InformationAgentEmailTemplateContent,
+): string {
+  return createHash("sha256")
+    .update(JSON.stringify({ subjectTemplate: content.subjectTemplate, blocks: content.blocks }))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+export function autopilotTemplateApproved(
+  fingerprint: string,
+  env: Readonly<Record<string, string | undefined>>,
+): boolean {
+  const approved = env.INFORMATION_AGENT_AUTOPILOT_APPROVED_TEMPLATE?.trim().toLowerCase();
+  return Boolean(approved) && approved === fingerprint;
+}
+
+export type AutopilotPublishedTemplate = { revision: number; fingerprint: string };
+
+/** Révision et empreinte du modèle que le pilote utiliserait maintenant. Lecture seule. */
+export async function loadPublishedTemplateFingerprint(): Promise<AutopilotPublishedTemplate> {
+  const template = await getPublishedInformationAgentEmailTemplate();
+  return {
+    revision: template.revision,
+    fingerprint: informationAgentTemplateFingerprint(template.content),
+  };
+}
+
 export type AutopilotRoundtripProof = {
   provenAt: string;
   source: "attestation" | "reply";
@@ -76,6 +114,8 @@ export type AutopilotReadinessInput = {
   privacyVersion: string;
   /** Domaines Resend vérifiés (noms) ; `null` : liste illisible, donc non vérifiable. */
   verifiedResendDomains: ReadonlySet<string> | null;
+  /** Modèle publié, comparé à l'empreinte approuvée pour l'envoi automatique. */
+  publishedTemplate: AutopilotPublishedTemplate;
 };
 
 /** Compare deux versions `AAAA-MM-JJ.n` (ordre lexicographique, `n` numérique). */
@@ -269,6 +309,18 @@ export function evaluateAutopilotReadiness(input: AutopilotReadinessInput): Auto
       "Au moins 7 jours de simulation, dont 5 jours effectifs, sans anomalie",
       simulationOk,
       `${Math.floor(simulationDays)} jour(s) de simulation, ${stats.cleanSimulationDays} jour(s) effectif(s) (envoi simulé, aucun passage en erreur), ${stats.anomaliesSinceSimulation} anomalie(s).`,
+    ),
+  );
+
+  const templateOk = autopilotTemplateApproved(input.publishedTemplate.fingerprint, env);
+  checks.push(
+    check(
+      "template_approved",
+      "Modèle de message approuvé pour l’envoi automatique",
+      templateOk,
+      templateOk
+        ? `Révision ${input.publishedTemplate.revision} approuvée (empreinte ${input.publishedTemplate.fingerprint}).`
+        : `Révision ${input.publishedTemplate.revision} publiée, empreinte ${input.publishedTemplate.fingerprint} non approuvée : après relecture, inscrire cette empreinte dans INFORMATION_AGENT_AUTOPILOT_APPROVED_TEMPLATE et redéployer.`,
     ),
   );
 

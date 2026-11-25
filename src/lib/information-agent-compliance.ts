@@ -431,7 +431,7 @@ const INFORMATION_AGENT_AUTOMATIC_SEND_STATEMENT = [
   "Le texte est un modèle fixe : il n’est pas rédigé par une IA.",
   "Cet envoi ne produit aucun effet juridique à votre égard et ne vous affecte d’aucune autre manière importante : ce n’est pas une décision prise à votre sujet au sens de l’article 22 du RGPD. Répondre est facultatif ; ne pas répondre n’a aucune conséquence pour vous.",
   "Vos réponses sont lues avec l’aide d’un outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour de la fiche : rien n’est publié automatiquement.",
-  "Si ce message ne vous concerne pas, répondez « mauvais destinataire » : l’outil ne vous écrira plus pendant 24 mois, et l’envoi automatique est arrêté jusqu’à vérification.",
+  "Si ce message ne vous concerne pas, répondez « mauvais destinataire » : l’envoi automatique ne vous écrira plus pendant 24 mois, et il est arrêté jusqu’à vérification.",
 ].join(" ");
 
 /** Complément de la conservation, variante automatique (identités exclues : 24 mois ; journal du pilote sans adresse). */

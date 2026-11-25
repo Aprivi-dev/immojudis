@@ -127,6 +127,34 @@ describe("possible opposition : drapeau de relecture sans opposition", () => {
     }
   });
 
+  it.each([
+    "Inutile de me relancer.",
+    "Inutile de relancer, merci.",
+    "Je vous saurais gré de m'oublier.",
+    "Je ne donne pas suite à ce type de demande.",
+    "Nous ne donnerons pas suite à votre sollicitation.",
+    "Je ne souhaite pas donner suite.",
+    "Je ne souhaite pas répondre.",
+    "Nous ne souhaitons pas répondre à votre questionnaire.",
+  ])("signale un refus implicite : %s", (reply) => {
+    expect(detectPossibleInformationAgentContactOptOut(reply), reply).toBe(true);
+    expect(detectInformationAgentContactOptOut(reply), reply).toBe(false);
+  });
+
+  it("enregistre « Merci de ne plus m'écrire » comme une opposition explicite", () => {
+    expect(detectInformationAgentContactOptOut("Merci de ne plus m'écrire.")).toBe(true);
+  });
+
+  it.each([
+    "Je ne donne pas suite à l'offre précédente mais voici la date de visite : le 12 mars.",
+    "Je ne souhaite pas répondre sur ce point, mais le bien est libre.",
+    "Je ne souhaite pas répondre à cette question ; la surface est de 84 m².",
+    "N'oubliez pas la visite du 12 mars.",
+    "Inutile de vous déplacer, le cahier des conditions de vente est en ligne.",
+  ])("ne prend pas une réponse utile pour un refus : %s", (reply) => {
+    expect(detectPossibleInformationAgentContactOptOut(reply), reply).toBe(false);
+  });
+
   it("ne signale ni une réponse ordinaire ni une opposition explicite (déjà enregistrée)", () => {
     expect(detectPossibleInformationAgentContactOptOut("La surface est de 84 m².")).toBe(false);
     expect(detectPossibleInformationAgentContactOptOut("Ne plus me contacter, c'est du spam")).toBe(

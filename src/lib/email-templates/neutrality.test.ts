@@ -86,6 +86,11 @@ import { EMAIL_TEMPLATES } from "./registry";
  * codes couleur de `EMAIL_COLORS` (copies des jetons de `src/styles.css`) et l'adresse du logo (fichiers
  * `immojudis-logo-email-v2.png` et `-dark-v2.png`). Vérifié gabarit par gabarit : en remettant les anciens
  * codes couleur et l'ancien nom de fichier dans le HTML rendu, chaque rendu redonne l'empreinte d'avant.
+ *
+ * Mise à jour explicite du 25/11/2026 (passage en Réel du pilote, point 5, validé par le propriétaire) :
+ * l'empreinte de agent_request a de nouveau changé (après la refonte du 24/11), et SEULEMENT celle-là. Seul l'objet diffère : « Immojudis – question
+ * sur la vente … », sans « audience » ni date. Avec l'ancien objet, le rendu redonne l'empreinte de la refonte (ae664543…)
+ * (vérifié). agent_court_registry n'est pas concerné.
  */
 const BASELINE: Record<string, string> = {
   alert: "e5edf96964d49e74667515e78a52b1853863b288b42023e733b41bc5090c1b0f",
@@ -100,7 +105,7 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "13e2a2e884e8138a6afb70af09f463d85401002d5e4028961adbff98c21a6e89",
   operations_incident: "1e060cf4fa5ff9c44ea4d501b95f3962eea981cd5aadb410f39d6e446f3dd5cc",
   replies_review_digest: "f7297b7ee825ceccae19102bbff8a98ffd01ae4c55e07ae4a1f8b0eb268a0852",
-  agent_request: "ae664543a034c8d556bc8d66326ac1214c5734e3981a6fd76bf4e36b6ae6c8b5",
+  agent_request: "ab04a4ffa91349ba24009ed3b05bd2051244c7ee476c7594a5a1c37e04370fc9",
   agent_court_registry: "d404b8cd9c0b7c7cc77d94b02110b1d2d47ef9b77d9f68a207d64414af648c24",
 };
 
