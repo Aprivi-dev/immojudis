@@ -1014,3 +1014,95 @@ $$;
     );
   });
 });
+
+describe("invariants de sécurité : origine « lecture automatique des pièces » (lot V3b-2)", () => {
+  const name = "20261210100000_public_sale_document_fact_sources.sql";
+  const original = readFileSync(join(repo, "supabase/migrations", name), "utf8");
+  const mutated = (from, to) => {
+    expect(original).toContain(from);
+    return runInvariants({ [name]: original.replace(from, to) }, [name]);
+  };
+  const readerFilter = "and trace.value ->> 'reader' = 'document_vision'";
+  const digest = "pg_catalog.sha256(pg_catalog.convert_to(trace.value ->> 'document_url', 'UTF8'))";
+  const accessGate =
+    "and ((select public.has_analysis_access()) or app_private.current_user_unlocked_sale(s.id))";
+
+  it.each([
+    [
+      "une lecture de la citation",
+      readerFilter,
+      `${readerFilter} and trace.value ->> 'evidence' is not null`,
+      "get_public_sale_document_fact_sources reads evidence from a trace, outside the allow-list",
+    ],
+    [
+      "la trace entière en texte",
+      readerFilter,
+      `${readerFilter} and trace.value::text <> ''`,
+      "from a trace, outside the allow-list",
+    ],
+    [
+      "une clé de la trace par indice",
+      readerFilter,
+      `${readerFilter} and trace.value['evidence'] is null`,
+      "from a trace, outside the allow-list",
+    ],
+    [
+      "les traces des autres lecteurs",
+      readerFilter,
+      "",
+      "get_public_sale_document_fact_sources reads traces of other readers",
+    ],
+    [
+      "l'adresse de la pièce en clair",
+      digest,
+      "pg_catalog.convert_to(trace.value ->> 'document_url', 'UTF8')",
+      "get_public_sale_document_fact_sources must only return a digest of the piece address",
+    ],
+    [
+      "l'empreinte servie à tout appelant",
+      accessGate,
+      "",
+      "get_public_sale_document_fact_sources must only return a digest of the piece address",
+    ],
+    [
+      "la suppression de security definer",
+      "stable\nsecurity definer\nset search_path = ''\nas $function$\n  select\n    trace.key",
+      "stable\nset search_path = ''\nas $function$\n  select\n    trace.key",
+      "get_public_sale_document_fact_sources is not SECURITY DEFINER with an empty search_path",
+    ],
+    [
+      "une table de retour élargie",
+      "returns table (fact_key text, document_type text, page_number integer, document_key text)\nlanguage sql\nstable\nsecurity definer",
+      "returns table (fact_key text, document_type text, page_number integer, document_key text, evidence text)\nlanguage sql\nstable\nsecurity definer",
+      "get_public_sale_document_fact_sources returns more than the four mention columns",
+    ],
+    [
+      "un droit donné à public",
+      "grant execute on function public.get_public_sale_document_fact_sources(uuid)\n  to anon, authenticated, service_role;",
+      "grant execute on function public.get_public_sale_document_fact_sources(uuid)\n  to public, anon, authenticated, service_role;",
+      "get_public_sale_document_fact_sources is granted to public",
+    ],
+  ])("refuse %s", (_label, from, to, failure) => {
+    const result = mutated(from, to);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(failure);
+  });
+
+  it("contrôle la dernière définition de la fonction, toutes migrations confondues", () => {
+    const reader =
+      /create or replace function app_private\.get_public_sale_document_fact_sources[\s\S]*?\$function\$;/.exec(
+        original,
+      )?.[0];
+    expect(reader).toBeTruthy();
+    const result = runInvariants({
+      "99990101000000_document_fact_sources_redefined.sql": reader.replace(
+        readerFilter,
+        `${readerFilter} and trace.value ->> 'evidence' is not null`,
+      ),
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "get_public_sale_document_fact_sources reads evidence from a trace, outside the allow-list",
+    );
+  });
+});

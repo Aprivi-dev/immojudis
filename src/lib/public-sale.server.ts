@@ -11,6 +11,11 @@ import {
   withLawyerFactSources,
   type LawyerFactSource,
 } from "@/lib/lawyer-fact-sources";
+import { withDocumentFactSources, type DocumentFactSource } from "@/lib/document-fact-sources";
+import {
+  fetchDocumentFactSources,
+  warnDocumentFactSourcesFailure,
+} from "@/lib/document-fact-sources-read";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
@@ -85,11 +90,16 @@ async function readPublicSale(
 ): Promise<PublicSaleLookup> {
   // Le contenu d'une source retirée (photo d'une vente fusionnée) ne sort pas, y compris côté serveur.
   await loadWithdrawnSources(client);
-  const summary = await fetchPublicSaleSummary(client, id, { withIndexability: true });
+  // Les valeurs relevées automatiquement dans les pièces sont lues avec la vente, dans la même entrée du cache :
+  // la valeur et sa mention expirent ensemble (un retrait les emporte toutes deux à la même relecture).
+  const [summary, documentSources] = await Promise.all([
+    fetchPublicSaleSummary(client, id, { withIndexability: true }),
+    readDocumentFactSources(client, id),
+  ]);
   if (summary.kind === "missing") return missingOrMerged(client, id);
   return {
     status: "found",
-    sale: summary.sale,
+    sale: withDocumentFactSources(summary.sale, documentSources),
     ...(summary.indexable === undefined ? {} : { indexable: summary.indexable }),
   };
 }
@@ -168,6 +178,30 @@ async function cachedLawyerFactSources(
     )();
   } catch (error) {
     warnLawyerFactSourcesFailure(error);
+    return [];
+  }
+}
+
+/**
+ * Valeurs de la fiche relevées automatiquement dans les pièces (lot V3b-2), lues par `readPublicSale` dans l'entrée
+ * du cache de la vente. Le serveur lit en anon : la base ne rend jamais l'empreinte de la pièce (`documentKey` nul).
+ * Une lecture en échec est tracée (code seul) et la vente est gardée sans mention jusqu'à sa prochaine relecture
+ * (au plus {@link PUBLIC_SALE_REVALIDATE_SECONDS} secondes) : la valeur reste affichée sans sa source, plutôt
+ * qu'une fiche en erreur pour un enrichissement.
+ */
+async function readDocumentFactSources(
+  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
+  id: string,
+): Promise<DocumentFactSource[]> {
+  try {
+    // La fiche publique est servie à tous depuis le cache : aucune empreinte de pièce n'y entre, même si la base
+    // en rendait une.
+    return (await fetchDocumentFactSources(client, id)).map((source) => ({
+      ...source,
+      documentKey: null,
+    }));
+  } catch (error) {
+    warnDocumentFactSourcesFailure(error);
     return [];
   }
 }

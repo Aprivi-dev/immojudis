@@ -216,7 +216,8 @@ def _verdict(value: object, page: int = 2) -> Verdict:
 DOCUMENTS = {1: ReadingDocument(1, "Cahier", PIECE_URL, "cahier_conditions_vente", {1: FILLER, 2: DESCRIPTION})}
 
 
-SOURCE = vision.ReadingSource(DOCUMENTS, MODELS, vision.manifest_digests(MANIFEST))
+READ_AT = "2026-11-21T09:00:00+00:00"
+SOURCE = vision.ReadingSource(DOCUMENTS, MODELS, READ_AT, vision.manifest_digests(MANIFEST))
 
 
 def _plan(
@@ -338,6 +339,27 @@ def test_write_fills_empty_cells_and_traces_them_without_any_quote(monkeypatch: 
     dumped = json.dumps(sale.raw_payload, default=str)
     assert QUOTE not in dumped and "loue par bail" not in dumped
     assert store.states[SOURCE_URL]["mode"] == "write"
+    # Lot V3b-2 : la date de la lecture, celle de l'état, est dans chaque trace de cette lecture.
+    assert {item["read_at"] for item in traces.values()} == {store.states[SOURCE_URL]["read_at"]}
+
+
+def test_a_trace_holds_what_the_mention_needs_and_nothing_quoted() -> None:
+    """Lot V3b-2 : par colonne écrite, lecteur, version du prompt, date, type, index, adresse et empreinte de la
+    pièce, page ; et seulement les clés connues de la trace (aucune ne peut porter une citation)."""
+    sale = _written_sale()
+    traces = sale.raw_payload["pdf_fact_provenance"]
+    assert vision.vision_traces(sale) == set(traces)
+    for column, trace in traces.items():
+        assert trace["reader"] == TRACE_READER, column
+        assert trace["prompt_version"] == PROMPT_VERSION and trace["read_at"] == READ_AT
+        assert trace["document_type"] == "cahier_conditions_vente" and trace["document_index"] == 1
+        assert trace["document_url"] == PIECE_URL and trace["document_sha256"] == MANIFEST[0]["sha256"]
+        assert trace["page_number"] == 2
+        assert set(trace) <= {
+            "value", "source", "fingerprint", "payload_keys", "document_url", "page_number", "baseline",
+            "reader", "prompt_version", "models", "read_at", "document_index", "document_type", "document_sha256",
+            "derived_from",
+        }, column
 
 
 def test_a_filled_cell_is_never_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:

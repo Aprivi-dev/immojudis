@@ -16499,6 +16499,15 @@ export type Database = {
         Args: { p_sale_id: string };
         Returns: boolean;
       };
+      get_public_sale_document_fact_sources: {
+        Args: { p_sale_id: string };
+        Returns: {
+          document_key: string;
+          document_type: string;
+          fact_key: string;
+          page_number: number;
+        }[];
+      };
       get_public_sale_lawyer_fact_sources: {
         Args: { p_sale_id: string };
         Returns: {

@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   hint: false,
   lawyerSources: [] as Array<{ key: string; receivedOn: string; mode: string }>,
   lawyerReads: [] as string[],
+  documentSources: [] as Array<{ key: string; documentType: string | null; page: number }>,
+  documentReads: [] as string[],
 }));
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
@@ -42,6 +44,12 @@ vi.mock("@/lib/sale-lawyer-fact-sources.client", () => ({
   getSaleLawyerFactSources: async (id: string) => {
     mocks.lawyerReads.push(id);
     return mocks.lawyerSources;
+  },
+}));
+vi.mock("@/lib/sale-document-fact-sources.client", () => ({
+  getSaleDocumentFactSources: async (id: string) => {
+    mocks.documentReads.push(id);
+    return mocks.documentSources;
   },
 }));
 vi.mock("@/components/SimplifiedSaleDetailView", () => ({
@@ -74,7 +82,11 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     </div>
   ),
   UnlockedSaleDetailView: () => <div>Vente débloquée</div>,
-  AnalysisSaleDetailView: ({ sale }: { sale: { lawyer_fact_sources?: unknown[] } }) => (
+  AnalysisSaleDetailView: ({
+    sale,
+  }: {
+    sale: { lawyer_fact_sources?: unknown[]; document_fact_sources?: unknown[] };
+  }) => (
     <div
       id="proofs"
       ref={(node) => {
@@ -83,6 +95,7 @@ vi.mock("@/components/SimplifiedSaleDetailView", () => ({
     >
       Analyse premium
       <span data-testid="lawyer-sources">{sale.lawyer_fact_sources?.length ?? 0}</span>
+      <span data-testid="document-sources">{sale.document_fact_sources?.length ?? 0}</span>
     </div>
   ),
 }));
@@ -115,6 +128,8 @@ afterEach(() => {
   mocks.hint = false;
   mocks.lawyerSources = [];
   mocks.lawyerReads = [];
+  mocks.documentSources = [];
+  mocks.documentReads = [];
 });
 describe("listing access resolution", () => {
   it("restores a deep-link anchor after asynchronous access and listing resolution", async () => {
@@ -171,6 +186,22 @@ describe("listing access resolution", () => {
     expect(mocks.lawyerReads).toEqual(["sale"]);
   });
 
+  it("joins the values read automatically in the pieces to the listing it reads", async () => {
+    mocks.authenticated = true;
+    mocks.entitlements.mockResolvedValue({ plan: { hasAnalysisAccess: true } });
+    mocks.sale.mockResolvedValue({ ...EXAMPLE_SALE, id: "sale" });
+    mocks.documentSources = [{ key: "rooms_count", documentType: "bail", page: 2 }];
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SaleDetailPage id="sale" />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Analyse premium");
+    await waitFor(() => expect(screen.getByTestId("document-sources").textContent).toBe("1"));
+    expect(mocks.documentReads).toEqual(["sale"]);
+  });
+
   it("does not read the lawyer values of a sale it did not find, nor those the server already sent", async () => {
     mocks.authenticated = false;
     mocks.preview.mockResolvedValue(null);
@@ -183,6 +214,7 @@ describe("listing access resolution", () => {
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledWith("sale"));
     await screen.findByText(/Connectez-vous pour vérifier/);
     expect(mocks.lawyerReads).toEqual([]);
+    expect(mocks.documentReads).toEqual([]);
     missing.unmount();
 
     render(
@@ -195,6 +227,7 @@ describe("listing access resolution", () => {
     );
     await screen.findByText("Aperçu public");
     expect(mocks.lawyerReads).toEqual([]);
+    expect(mocks.documentReads).toEqual([]);
   });
 
   it("does not reuse a preview belonging to another listing", async () => {

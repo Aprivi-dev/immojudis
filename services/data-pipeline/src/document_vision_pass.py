@@ -49,9 +49,11 @@ reprojection du vidage des pièces. Si la déduction touche une autre colonne d�
 seule un fait déjà rempli de la fiche (règles qui ont changé depuis la dernière écriture), rien n'est écrit.
 
 Trace : ``raw_payload.pdf_fact_provenance[colonne]`` (``src.pdf_fact_scope.pdf_record_fact_projection``), avec
-``reader: "document_vision"``, la version du prompt, les deux modèles, l'index et le type de la pièce, sa page et la
-valeur d'avant (``baseline``, nulle pour un champ écrit), l'adresse et l'empreinte du PDF de la pièce. Jamais de
-citation, ni dans la trace ni dans le journal. Une relecture de la fiche par la collecte garde ces valeurs
+``reader: "document_vision"``, la version du prompt, les deux modèles, le moment de la lecture (``read_at``), l'index et
+le type de la pièce, sa page et la valeur d'avant (``baseline``, nulle pour un champ écrit), l'adresse et l'empreinte
+du PDF de la pièce. Jamais de citation, ni dans la trace ni dans le journal. La fiche n'en montre que le type de la
+pièce et sa page, par ``public.get_public_sale_document_fact_sources`` (migration 20261210100000), tant que la
+valeur affichée est celle de la trace. Une relecture de la fiche par la collecte garde ces valeurs
 (``src.known_document_backfill``) ; une relecture complète des pièces aussi, tant que la pièce est lue telle quelle
 (``src.document_vision.vision_traces_kept``) ; une pièce remplacée, retirée ou révoquée les emporte.
 
@@ -275,11 +277,13 @@ class Candidate:
 
 @dataclass(frozen=True)
 class ReadingSource:
-    """D'où viennent les valeurs d'une lecture, pour leurs traces : les pièces lues (par index), les deux modèles et
-    l'empreinte du PDF de chaque pièce (par URL, telle que le manifeste la donne)."""
+    """D'où viennent les valeurs d'une lecture, pour leurs traces : les pièces lues (par index), les deux modèles, le
+    moment de la lecture (ISO 8601, le ``read_at`` de l'état) et l'empreinte du PDF de chaque pièce (par URL, telle
+    que le manifeste la donne)."""
 
     documents: Mapping[int, ReadingDocument]
     models: Mapping[str, str]
+    read_at: str
     digests: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -411,6 +415,7 @@ def _record_trace(
         "reader": TRACE_READER,
         "prompt_version": PROMPT_VERSION,
         "models": dict(source.models),
+        "read_at": source.read_at,
         "document_index": page.document if page is not None else None,
         "document_type": document.document_type if document is not None else None,
     }
@@ -774,11 +779,12 @@ def run_pass(
             # Budget partagé ou plafond : la vente n'est pas comptée, son état ne change pas.
             report.stop_reason = str(exc)
             break
+        read_at = _now()
         new_state: dict[str, object] = {
             "prompt_version": PROMPT_VERSION,
             "fingerprint": fingerprint,
             "mode": settings.mode,
-            "read_at": _now(),
+            "read_at": read_at,
             "text_at": text_at,
         }
         if reading is None and skipped not in (NO_FIELD_PAGE, PRIMARY_FAILED):
@@ -792,7 +798,7 @@ def run_pass(
         if reading is None and skipped != NO_FIELD_PAGE:
             failure = skipped
         if failure is None and reading is not None:
-            source = ReadingSource(reading.documents, models, manifest_digests(candidate.manifest))
+            source = ReadingSource(reading.documents, models, read_at, manifest_digests(candidate.manifest))
             try:
                 plan = _apply(db_url, candidate.source_url, sale, settings, reading.final, source, fingerprint)
             except CatalogueLockTimeout:

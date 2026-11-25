@@ -1765,9 +1765,64 @@ describe("source « avocat poursuivant » sur la fiche publique", () => {
     expect(screen.queryByTestId("lawyer-fact-source")).toBeNull();
   });
 
+  it("dit, sous le bloc « Le bien », la pièce et la page des valeurs relevées automatiquement", () => {
+    renderPreview({
+      ...facts,
+      document_fact_sources: [
+        {
+          key: "app_surface_m2",
+          documentType: "cahier_conditions_vente",
+          documentLabel: "Cahier des conditions",
+          page: 12,
+          documentKey: "a".repeat(64),
+        },
+        {
+          key: "rooms_count",
+          documentType: "pv_descriptif",
+          documentLabel: "PV descriptif",
+          page: 3,
+          documentKey: "b".repeat(64),
+        },
+      ],
+    });
+    const mentions = screen.getAllByTestId("document-fact-source");
+    expect(mentions.map((node) => node.textContent)).toEqual([
+      "Surface relevée automatiquement dans la pièce « Cahier des conditions », page 12.",
+      "Nombre de pièces relevé automatiquement dans la pièce « PV descriptif », page 3.",
+    ]);
+    // La fiche publique ne sert pas les pièces : aucun lien.
+    for (const mention of mentions) expect(within(mention).queryByRole("link")).toBeNull();
+  });
+
+  it("ne dit rien d'une valeur relevée qui n'est plus affichée", () => {
+    renderPreview({
+      ...facts,
+      rooms_count: null,
+      document_fact_sources: [
+        {
+          key: "rooms_count",
+          documentType: "pv_descriptif",
+          documentLabel: "PV descriptif",
+          page: 3,
+          documentKey: null,
+        },
+      ],
+    });
+    expect(screen.queryByTestId("document-fact-source")).toBeNull();
+  });
+
   it("reste accessible avec les mentions", async () => {
     const { container } = renderPreview({
       ...facts,
+      document_fact_sources: [
+        {
+          key: "app_surface_m2",
+          documentType: "bail",
+          documentLabel: "Bail / occupation",
+          page: 2,
+          documentKey: null,
+        },
+      ],
       lawyer_fact_sources: [
         manual("property_type"),
         manual("sale_date"),
