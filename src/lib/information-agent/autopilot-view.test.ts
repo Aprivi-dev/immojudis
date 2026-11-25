@@ -208,3 +208,66 @@ describe("article 14 dans la vue", () => {
     );
   });
 });
+
+describe("contrôle de préparation dans la vue", () => {
+  /** Clés écrites par `evaluateAutopilotReadiness` : chacune doit avoir sa phrase d'action. */
+  const readinessKeys = [
+    ...readFileSync(
+      join(process.cwd(), "src/lib/information-agent/autopilot-readiness.ts"),
+      "utf8",
+    ).matchAll(/\bcheck\(\s*"([a-z0-9_]+)",/g),
+  ].map((match) => match[1]);
+
+  function readinessView(checks: Array<{ key: string; ok: boolean }>) {
+    return buildAutopilotView({
+      settings: settings(),
+      stats: parseAutopilotStats({}),
+      readiness: {
+        ready: checks.every((check) => check.ok),
+        checks: checks.map(({ key, ok }) => ({
+          key,
+          ok,
+          label: `Condition ${key}`,
+          detail: "Détail",
+        })),
+      },
+      env: {},
+      now: new Date("2026-11-16T08:41:00Z"),
+      events: [],
+      lastRunAt: null,
+      prepared: { total: 0, items: [] },
+    }).readiness;
+  }
+
+  it("trouve les conditions du contrôle", () => {
+    expect(readinessKeys).toEqual(expect.arrayContaining(["aipd", "roundtrip", "acting_admin"]));
+  });
+
+  it.each(readinessKeys)("donne une phrase d'action à la condition %s", (key) => {
+    const [check] = readinessView([{ key, ok: false }]).checks;
+    expect(check.action).toEqual(expect.any(String));
+    expect(check.action).not.toBe("Détail");
+    expect(check.action).not.toContain("—");
+  });
+
+  it("une condition remplie n'a pas d'action ; l'AIPD renvoie au champ de l'écran", () => {
+    const readiness = readinessView([
+      { key: "aipd", ok: false },
+      { key: "roundtrip", ok: true },
+    ]);
+    expect(readiness.ready).toBe(false);
+    expect(readiness.checks).toEqual([
+      {
+        label: "Condition aipd",
+        ok: false,
+        detail: "Détail",
+        action: "Attestez l’AIPD ci-dessous.",
+      },
+      { label: "Condition roundtrip", ok: true, detail: "Détail", action: null },
+    ]);
+  });
+
+  it("une condition inconnue n'a pas d'action : son détail ne s'affiche pas deux fois", () => {
+    expect(readinessView([{ key: "nouvelle", ok: false }]).checks[0].action).toBeNull();
+  });
+});
