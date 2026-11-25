@@ -60,7 +60,7 @@ export function SaleComparisonBar({
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-extrabold text-brand-navy">Comparateur gratuit</h2>
+            <h2 className="text-sm font-semibold text-brand-navy">Comparateur gratuit</h2>
             <p role="status" className="mt-0.5 text-xs text-ink-soft">
               {items.length === 0
                 ? `Choisissez jusqu’à ${MAX_COMPARED_SALES} biens dans la liste.`
@@ -69,7 +69,7 @@ export function SaleComparisonBar({
           </div>
           <div className="flex items-center gap-2">
             {userId ? (
-              <Link href="/favoris" className="px-2 py-3 text-sm font-bold underline">
+              <Link href="/favoris" className="px-2 py-3 text-sm font-semibold underline">
                 Mes favoris
               </Link>
             ) : null}
@@ -77,7 +77,7 @@ export function SaleComparisonBar({
               <button
                 type="button"
                 onClick={onClear}
-                className="min-h-11 rounded-md px-2 text-xs font-bold text-ink-soft hover:bg-white focus-visible:outline-2 focus-visible:outline-gold-soft"
+                className="min-h-11 rounded-md px-2 text-xs font-semibold text-ink-soft hover:bg-white focus-visible:outline-2 focus-visible:outline-gold-soft"
               >
                 Effacer la sélection
               </button>
@@ -90,7 +90,7 @@ export function SaleComparisonBar({
                 setHasOpened(true);
                 setOpen(true);
               }}
-              className="min-h-11 rounded-full bg-ink-black px-3 text-sm font-bold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-full bg-ink-black px-3 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
               {items.length === 0 && userId ? "Mes comparaisons" : `Comparer (${items.length})`}
             </button>

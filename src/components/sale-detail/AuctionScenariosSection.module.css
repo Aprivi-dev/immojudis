@@ -18,7 +18,7 @@
 .card h3 {
   color: var(--brand-navy);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .lead {
@@ -67,7 +67,7 @@
 .headline strong {
   color: var(--brand-navy);
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .headline small {
@@ -164,7 +164,7 @@
 .court dd {
   margin-top: 3px;
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .note {

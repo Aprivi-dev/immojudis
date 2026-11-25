@@ -75,7 +75,7 @@ export function MapThumbnail({
         className="h-full w-full object-cover"
       />
       {markerLabel ? (
-        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-xl border-2 border-white bg-brand-navy px-3 py-2 text-base font-bold text-white shadow-md">
+        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-[130%] whitespace-nowrap rounded-xl border-2 border-white bg-brand-navy px-3 py-2 text-base font-semibold text-white shadow-md">
           {markerLabel}
         </span>
       ) : null}

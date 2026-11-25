@@ -13,7 +13,6 @@ import {
   HomeAnswers,
   HomeClosing,
   HomeDossier,
-  HomeFrieze,
   HomePath,
   HomeRules,
 } from "@/components/home/HomeScenes";
@@ -97,7 +96,6 @@ export default async function Page() {
           />
           <HomeFaq trialOpen={trialOpen} openFeeRegimes={openFeeRegimes} />
           <HomeClosing summary={summary} departments={departments} />
-          <HomeFrieze />
           <HomeMotion />
           <HomeScrollScenes />
         </main>

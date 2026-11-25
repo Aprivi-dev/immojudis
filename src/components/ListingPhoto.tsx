@@ -66,7 +66,7 @@ function Photo({
         aria-hidden={alt ? undefined : true}
         className="flex h-full min-h-20 w-full items-center justify-center bg-muted px-4 text-center text-sm text-foreground"
       >
-        {compactFallback ? <ImageOff className="h-5 w-5" aria-hidden /> : "Photo indisponible"}
+        {compactFallback ? <ImageOff className="h-4 w-4" aria-hidden /> : "Photo indisponible"}
       </span>
     );
   }

@@ -4,9 +4,7 @@ export default function NotFound() {
   return (
     <main id="contenu" className="min-h-screen bg-surface px-4 py-16 text-foreground sm:px-6">
       <section className="mx-auto max-w-2xl rounded-md border border-border bg-white p-8 text-center shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
-          Fiche indisponible
-        </p>
+        <p className="text-xs font-semibold text-gold-text">Fiche indisponible</p>
         <h1 className="mt-3 font-display text-4xl">Bien introuvable</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           Cette fiche n'existe pas dans les données locales ou n'est plus disponible.

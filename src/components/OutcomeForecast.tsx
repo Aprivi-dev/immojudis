@@ -158,7 +158,7 @@ function OutcomeForecastReady({
           </div>
         </div>
 
-        <div className="mt-8 overflow-hidden rounded-lg border border-brand-navy/18 bg-white shadow-[0_18px_45px_rgba(72,104,132,0.08)]">
+        <div className="mt-8 overflow-hidden rounded-lg border border-brand-navy/18 bg-white shadow-[var(--shadow-float)]">
           <div className="grid lg:grid-cols-[minmax(250px,0.72fr)_minmax(0,1.65fr)]">
             <div className="border-b border-brand-navy/12 p-5 sm:p-7 lg:border-b-0 lg:border-r">
               <label
@@ -271,7 +271,7 @@ function FlowStep({
       <span
         className={`relative z-10 grid h-11 w-11 place-items-center rounded-full border ${toneClass} md:mx-auto`}
       >
-        <Icon className="h-5 w-5" aria-hidden />
+        <Icon className="h-4 w-4" aria-hidden />
       </span>
       <div className="pt-0.5 md:mt-3 md:pt-0">
         <p
@@ -428,7 +428,7 @@ function CeilingCurve({
                 x={padding.left - 8}
                 y={y(tick) + 4}
                 textAnchor="end"
-                className="fill-brand-navy/70 text-[13px]"
+                className="fill-brand-navy/70 text-caption"
               >
                 {formatShareAsPercent(tick)}
               </text>
@@ -437,7 +437,7 @@ function CeilingCurve({
           <text
             transform={`translate(14 ${(padding.top + axisBottom) / 2}) rotate(-90)`}
             textAnchor="middle"
-            className="fill-brand-navy/70 text-[12px]"
+            className="fill-brand-navy/70 text-xs"
           >
             Probabilité cumulée
           </text>
@@ -481,7 +481,7 @@ function CeilingCurve({
               x={x(tick)}
               y={axisBottom + 16}
               textAnchor={index === 0 ? "start" : index === ticks.length - 1 ? "end" : "middle"}
-              className="fill-brand-navy/70 text-[12px]"
+              className="fill-brand-navy/70 text-xs"
             >
               {formatPrice(euros(tick))}
             </text>
@@ -490,7 +490,7 @@ function CeilingCurve({
             x={Math.min(width - 50, Math.max(50, markerX))}
             y={axisBottom + 34}
             textAnchor="middle"
-            className="fill-gold-text text-[13px] font-semibold"
+            className="fill-gold-text text-caption font-semibold"
           >
             Plafond {formatPrice(euros(ceilingCents))}
           </text>
@@ -498,7 +498,7 @@ function CeilingCurve({
             x={(padding.left + width - padding.right) / 2}
             y={height - 8}
             textAnchor="middle"
-            className="fill-brand-navy/70 text-[12px]"
+            className="fill-brand-navy/70 text-xs"
           >
             Prix définitif, en euros
           </text>

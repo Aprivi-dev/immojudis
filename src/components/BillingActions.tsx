@@ -252,7 +252,7 @@ export function BillingActions({
             onClick={openPortal}
             ref={checkoutTriggerRef}
             disabled={loading || Boolean(busy)}
-            className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+            className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
           >
             <CreditCard className="h-4 w-4" />
             {portalLabel}
@@ -262,7 +262,7 @@ export function BillingActions({
               type="button"
               onClick={openPortal}
               disabled={loading || Boolean(busy)}
-              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Settings className="h-4 w-4" />
               {busy === "portal" ? "Ouverture..." : (expiryLabel ?? "Voir mes paiements")}
@@ -273,7 +273,7 @@ export function BillingActions({
               type="button"
               onClick={openCancellation}
               disabled={loading || Boolean(busy)}
-              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+              className="ij-login-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
             >
               <CircleX className="h-4 w-4" aria-hidden />
               {busy === "cancel" ? "Ouverture..." : "Résilier mon abonnement"}
@@ -318,7 +318,7 @@ export function BillingActions({
                 onClick={openCheckoutReview}
                 ref={checkoutTriggerRef}
                 disabled={loading || Boolean(busy)}
-                className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
+                className="ij-signup-button inline-flex items-center justify-center gap-2 px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CreditCard className="h-4 w-4" />
                 {purchaseLabel}
@@ -450,7 +450,7 @@ export function BillingActions({
               disabled={
                 !termsAccepted || !immediatePerformanceAccepted || Boolean(busy) || !offerOpen
               }
-              className="ij-signup-button inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-50"
+              className="ij-signup-button inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
             >
               <CreditCard className="h-4 w-4" />
               {busy === "checkout" ? "Redirection…" : "Commander avec obligation de paiement"}

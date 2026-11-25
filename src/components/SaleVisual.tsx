@@ -323,7 +323,7 @@ export function SaleVisual({
           }
           markUrlReady(candidate.url);
         }}
-        className={`h-full w-full object-cover text-transparent transition duration-500 group-hover:scale-[1.025] ${
+        className={`h-full w-full object-cover text-transparent transition duration-500 ${
           revealed ? "opacity-100" : "opacity-0"
         }`}
       />

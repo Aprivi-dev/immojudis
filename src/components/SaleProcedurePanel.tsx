@@ -97,9 +97,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
               )}
             </span>
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-                Organisation de la vente
-              </p>
+              <p className="text-xs font-semibold text-gold-text">Organisation de la vente</p>
               <h2
                 id="sale-procedure-title"
                 className="mt-1 text-2xl font-semibold leading-tight text-brand-navy"
@@ -236,7 +234,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
           <ol className="mt-5 space-y-4">
             {steps.map((step, index) => (
               <li key={step.title} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3">
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-gold-soft text-xs font-bold text-white">
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-gold-soft text-xs font-semibold text-white">
                   {index + 1}
                 </span>
                 <div>
@@ -249,9 +247,7 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
 
           {procedure.organizerName || procedure.organizerContact ? (
             <div className="mt-6 rounded-md border border-gold/25 bg-surface p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-brand-navy/75">
-                Contact de la vente
-              </p>
+              <p className="text-xs font-semibold text-brand-navy/75">Contact de la vente</p>
               <p className="mt-2 font-semibold text-brand-navy">
                 {procedure.organizerName ?? "Coordonnées disponibles"}
               </p>
@@ -283,7 +279,7 @@ function ProcedureFact({
 }) {
   return (
     <dl className="rounded-md border border-brand-navy/10 p-4">
-      <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
+      <dt className="flex items-center gap-2 text-xs font-semibold text-brand-navy/75">
         <Icon className="h-4 w-4 text-gold-text" aria-hidden />
         {label}
       </dt>
@@ -296,9 +292,7 @@ function ProcedureFact({
 function CompactFact({ label, value }: { label: string; value: string }) {
   return (
     <dl>
-      <dt className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-        {label}
-      </dt>
+      <dt className="text-xs font-semibold text-brand-navy/75">{label}</dt>
       <dd className="mt-1 text-sm font-semibold text-brand-navy">{value}</dd>
     </dl>
   );
@@ -342,9 +336,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
             the column is left out rather than shown empty. */}
         {listedSources.length ? (
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-              Sources contrôlées
-            </p>
+            <p className="text-xs font-semibold text-brand-navy/75">Sources contrôlées</p>
             <ul className="mt-3 space-y-2">
               {listedSources.map((source) => (
                 <li key={source.key}>
@@ -356,7 +348,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
                       className="inline-flex items-start gap-2 text-sm font-semibold text-brand-navy underline decoration-gold/45 underline-offset-4 hover:text-gold-text"
                     >
                       <span>{source.label}</span>
-                      <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <ArrowUpRight className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
                     </a>
                   ) : (
                     <span className="text-sm font-semibold text-brand-navy">{source.label}</span>
@@ -370,9 +362,7 @@ function VerificationDetails({ procedure }: { procedure: SaleProcedurePresentati
           </div>
         ) : null}
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-brand-navy/75">
-            Points encore ouverts
-          </p>
+          <p className="text-xs font-semibold text-brand-navy/75">Points encore ouverts</p>
           {procedure.issues.length ? (
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-brand-navy/75">
               {procedure.issues.map((issue) => (

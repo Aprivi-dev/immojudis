@@ -148,7 +148,7 @@ export function OfferOpeningRequest({
         disabled={openingBusy || loading}
         className={`${
           primary
-            ? "ij-signup-button px-5 py-3 font-bold"
+            ? "ij-signup-button px-5 py-3 font-semibold"
             : "ij-login-button px-4 py-2 font-semibold"
         } inline-flex w-full items-center justify-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-60`}
       >

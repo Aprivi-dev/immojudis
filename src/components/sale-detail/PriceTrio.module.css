@@ -71,7 +71,6 @@
   font-size: 26px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -127,7 +126,7 @@
   transform: translateX(-50%);
   color: var(--brand-navy);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 

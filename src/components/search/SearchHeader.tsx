@@ -135,7 +135,7 @@ export function SearchHeader({
     <>
       Tous les filtres
       {activeFiltersCount > 0 && (
-        <span className="rounded-full bg-brand-navy px-2 py-0.5 text-xs text-white">
+        <span className="rounded-md bg-brand-navy px-2 py-0.5 text-xs text-white">
           {activeFiltersCount}
         </span>
       )}
@@ -279,7 +279,7 @@ function GeographicSearch({
       }}
       className="relative flex min-w-0 basis-0 flex-1 items-center gap-1 rounded-md border border-field-border bg-white focus-within:outline-2 focus-within:outline-gold-soft sm:basis-auto sm:flex-1"
     >
-      <SearchIcon className="ml-3 h-5 w-5 shrink-0" />
+      <SearchIcon className="ml-3 h-4 w-4 shrink-0" />
       <input
         aria-label="Ville, département ou région"
         value={value}
@@ -456,7 +456,7 @@ export function BedsBathsFilter({
   }
   return (
     <div className="inline-flex h-10 shrink-0 items-center overflow-hidden rounded-md border border-line bg-white shadow-sm">
-      <span className="px-3 text-sm font-bold text-brand-navy">Chambres / bains</span>
+      <span className="px-3 text-sm font-semibold text-brand-navy">Chambres / bains</span>
       <input
         aria-label="Nombre minimum de chambres"
         inputMode="numeric"
@@ -496,7 +496,7 @@ export function HomeTypeFilter({
             homeTypes: event.target.value === "all" ? [] : [event.target.value],
           }))
         }
-        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-bold text-brand-navy outline-none"
+        className="h-full cursor-pointer appearance-none bg-transparent py-0 pl-2 pr-9 text-sm font-semibold text-brand-navy outline-none"
       >
         <option value="all">Tous biens</option>
         {HOME_TYPE_OPTIONS.map((option) => (
@@ -594,7 +594,7 @@ export function ResultsViewToggle({
               type="button"
               aria-pressed={active}
               onClick={() => onChange(value)}
-              className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-bold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
+              className={`inline-flex min-h-11 shrink-0 cursor-pointer items-center gap-1.5 px-3 text-sm font-semibold focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gold-soft ${
                 active
                   ? `bg-brand-navy text-white ${FORCED_COLORS_SELECTED}`
                   : "bg-white text-brand-navy hover:bg-surface-tint"

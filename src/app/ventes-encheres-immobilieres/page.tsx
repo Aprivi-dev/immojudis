@@ -93,7 +93,7 @@ function TopDepartments({
                 {department.name}{" "}
                 <span className="font-medium text-ink-soft">({department.code})</span>
               </span>
-              <span className="font-bold tabular-nums">
+              <span className="font-semibold tabular-nums">
                 {count.format(department.count)}
                 <span className="sr-only">
                   {" "}

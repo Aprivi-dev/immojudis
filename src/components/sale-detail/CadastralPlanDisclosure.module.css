@@ -75,7 +75,7 @@
   background: none;
   color: var(--info);
   font: inherit;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   cursor: pointer;
 }
@@ -106,7 +106,7 @@
   justify-self: start;
   color: var(--info);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: none;
 }
 

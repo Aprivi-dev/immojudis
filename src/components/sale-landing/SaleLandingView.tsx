@@ -176,7 +176,7 @@ export function SaleLandingView({
 
           <aside aria-label="Pour aller plus loin" className="grid gap-3 lg:sticky lg:top-24">
             <Card as="section" aria-labelledby="autres-ventes">
-              <h2 id="autres-ventes" className="text-lg font-bold">
+              <h2 id="autres-ventes" className="text-lg font-semibold">
                 Autres ventes
               </h2>
               <ul className="mt-3 grid gap-2">
@@ -200,7 +200,7 @@ export function SaleLandingView({
               </ul>
             </Card>
             <Card as="section" aria-labelledby="comprendre">
-              <h2 id="comprendre" className="text-lg font-bold">
+              <h2 id="comprendre" className="text-lg font-semibold">
                 Pour comprendre
               </h2>
               <ul className="mt-3 divide-y divide-line-soft">

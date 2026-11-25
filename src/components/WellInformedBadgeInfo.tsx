@@ -39,7 +39,7 @@ export function WellInformedBadgeInfo() {
   return (
     <>
       <span className="inline-flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/10 py-1 pl-2.5 pr-1.5 text-xs font-semibold text-gold-text">
-        <FileText className="h-3.5 w-3.5" aria-hidden />
+        <FileText className="h-4 w-4" aria-hidden />
         <span>{WELL_INFORMED_BADGE_LABEL}</span>
         <button
           ref={trigger}
@@ -50,7 +50,7 @@ export function WellInformedBadgeInfo() {
           onClick={() => setOpen((current) => !current)}
           className="relative z-20 inline-flex size-6 shrink-0 items-center justify-center rounded-full hover:bg-gold/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft after:absolute after:-inset-3 after:content-['']"
         >
-          <Info className="h-3.5 w-3.5" aria-hidden />
+          <Info className="h-4 w-4" aria-hidden />
         </button>
       </span>
       {open ? (

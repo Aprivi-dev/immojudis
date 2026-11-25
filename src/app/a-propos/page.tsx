@@ -164,10 +164,8 @@ function AboutCard({
 }) {
   return (
     <Card as="article">
-      <Icon className="h-5 w-5 text-gold-text" />
-      <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-        {title}
-      </h2>
+      <Icon className="h-4 w-4 text-gold-text" />
+      <h2 className="mt-4 text-sm font-semibold text-foreground">{title}</h2>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{text}</p>
     </Card>
   );
@@ -184,10 +182,8 @@ function AboutBlock({
 }) {
   return (
     <Card as="article">
-      <Icon className="h-5 w-5 text-gold-text" />
-      <h2 className="mt-4 text-sm font-semibold uppercase tracking-[0.18em] text-foreground">
-        {title}
-      </h2>
+      <Icon className="h-4 w-4 text-gold-text" />
+      <h2 className="mt-4 text-sm font-semibold text-foreground">{title}</h2>
       <div className="mt-2 space-y-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
     </Card>
   );

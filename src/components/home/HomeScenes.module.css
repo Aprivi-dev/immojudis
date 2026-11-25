@@ -388,8 +388,6 @@
   font-size: 13px;
   font-weight: 600;
   line-height: 18px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .cardBody h3 {
@@ -763,22 +761,6 @@
 
 :global(html[data-home-scenes]) .growAction {
   opacity: 0;
-}
-
-/* Frise ---------------------------------------------------------------------------------------- */
-
-.frieze {
-  padding-top: 72px;
-  background: var(--home-surface);
-}
-
-.friezePainting {
-  aspect-ratio: 21 / 7.4;
-}
-
-.friezePainting img,
-.friezePainting video {
-  object-position: 50% 100%;
 }
 
 /* Largeurs ------------------------------------------------------------------------------------- */

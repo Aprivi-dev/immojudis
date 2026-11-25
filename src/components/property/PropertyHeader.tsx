@@ -18,11 +18,11 @@ export function PropertyHeader({ property }: { property: Property }) {
             >
               Immojudis
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-4 w-4" />
             <Link href="/sales" className="transition-colors hover:text-gold-text">
               Biens
             </Link>
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-4 w-4" />
             <span className="max-w-[18rem] truncate">{property.city}</span>
           </nav>
           <div className="w-full lg:max-w-md">

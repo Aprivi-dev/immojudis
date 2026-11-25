@@ -45,7 +45,7 @@ export function SaleDocumentsSection({
           }}
         >
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-gold/10 text-gold-text">
-            <FileText className="h-5 w-5" aria-hidden />
+            <FileText className="h-4 w-4" aria-hidden />
           </span>
           <span>
             <span className="block font-display text-2xl font-semibold text-brand-navy">
@@ -59,7 +59,7 @@ export function SaleDocumentsSection({
                   : "Aucune pièce attachée à cette annonce pour le moment."}
             </span>
           </span>
-          <ChevronDown className="ml-auto h-5 w-5 transition-transform group-open:rotate-180" />
+          <ChevronDown className="ml-auto h-4 w-4 transition-transform group-open:rotate-180" />
         </summary>
         <div className="border-t border-brand-navy/10 px-5 py-3 sm:px-7">
           {documents.length > 0 ? (

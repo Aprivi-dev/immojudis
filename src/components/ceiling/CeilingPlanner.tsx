@@ -116,7 +116,7 @@ export function CeilingPlanner({
             onClick={onReset}
             className="inline-flex min-h-11 items-center gap-2 rounded-full border border-line px-3 text-xs font-semibold text-ink-soft hover:text-foreground"
           >
-            <RotateCcw className="h-3.5 w-3.5" />
+            <RotateCcw className="h-4 w-4" />
             Revenir aux hypothèses Immojudis
           </button>
         </div>
@@ -135,7 +135,7 @@ export function CeilingPlanner({
         <div className="mt-5 rounded-lg border border-gold/30 bg-gold/[0.07] p-5 sm:p-6">
           <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
+              <div className="flex items-center gap-2 text-xs font-semibold text-gold-text">
                 <Target className="h-4 w-4" />
                 {labels.resultEyebrow} · {profileLabel(hypotheses)}
               </div>
@@ -244,7 +244,7 @@ export function CeilingPlanner({
         <Checklist hypotheses={hypotheses} dpeClass={dpeClass} />
 
         <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-ink-soft">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold-text" />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
           {labels.footnote ? (
             <span>{labels.footnote}</span>
           ) : (
@@ -413,10 +413,10 @@ function WorksPicker({
   );
 }
 
-const PICKER_LEGEND = "mb-2 text-[13px] font-semibold text-ink-soft";
+const PICKER_LEGEND = "mb-2 text-caption font-semibold text-ink-soft";
 
 function pillClasses(selected: boolean): string {
-  return `inline-flex min-h-11 items-center rounded-full border px-3 text-[13px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+  return `inline-flex min-h-11 items-center rounded-full border px-3 text-caption font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
     selected
       ? "border-brand-navy bg-brand-navy text-white"
       : "border-line bg-white text-brand-navy hover:border-brand-navy"
@@ -612,7 +612,7 @@ function WorksCeilings({
       <div className="overflow-x-auto px-4">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-left text-xs uppercase tracking-[0.08em] text-ink-soft">
+            <tr className="text-left text-xs text-ink-soft">
               <th className="py-2 font-semibold">Travaux</th>
               <th className="py-2 pl-2 text-right font-semibold">Budget</th>
               <th className="py-2 pl-2 text-right font-semibold">Plafond</th>
@@ -628,7 +628,7 @@ function WorksCeilings({
                       {row.label}
                     </span>
                     {selected ? (
-                      <span className="ml-2 rounded-full bg-gold/15 px-2 py-0.5 text-xs font-semibold text-gold-text">
+                      <span className="ml-2 rounded-md bg-gold/15 px-2 py-0.5 text-xs font-semibold text-gold-text">
                         Retenu
                       </span>
                     ) : null}
@@ -685,7 +685,7 @@ function PlannerCard({
       className="min-w-0 scroll-mt-2 overflow-hidden rounded-lg border border-line-soft bg-white"
     >
       <div className="border-b border-line-soft px-4 py-3">
-        <h4 id={titleId} className="text-[15px] font-bold text-brand-navy">
+        <h4 id={titleId} className="text-sm font-semibold text-brand-navy">
           {title}
         </h4>
         <p className="text-xs text-ink-soft">{meta}</p>
@@ -869,9 +869,7 @@ function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: C
             key={`${step.when}-${step.label}`}
             className="grid gap-1 sm:grid-cols-[8.5rem_1fr_auto] sm:gap-4"
           >
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-gold-text">
-              {step.when}
-            </span>
+            <span className="text-xs font-semibold text-gold-text">{step.when}</span>
             <span className="text-sm">
               <span className="font-semibold text-foreground">
                 {terms[step.label] ? (

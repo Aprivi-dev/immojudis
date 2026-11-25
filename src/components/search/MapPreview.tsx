@@ -39,7 +39,7 @@ export function MapPreview({
           type="button"
           data-map-explicit-start=""
           onClick={onExplicitStart ?? onStart}
-          className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-bold text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+          className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line bg-white px-4 text-sm font-semibold text-brand-navy shadow-lg transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
           <Map className="h-4 w-4" aria-hidden="true" />
           Afficher la carte

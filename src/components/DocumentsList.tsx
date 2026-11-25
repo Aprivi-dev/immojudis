@@ -32,7 +32,7 @@ export function DocumentsList({ documents }: { documents: unknown }) {
                 {documentExtractionSummary(d as SaleDocument & Partial<SaleDocumentRich>)}
               </span>
             </span>
-            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-gold-text" />
+            <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-gold-text" />
           </a>
         </li>
       ))}

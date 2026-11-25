@@ -183,7 +183,7 @@ export function RightsPage() {
                   <StatusBadge status={request.status} />
                 </div>
                 <div className="mt-3 flex items-center gap-2 text-sm text-ink-soft">
-                  <Clock className="h-3.5 w-3.5 text-gold-text" aria-hidden />
+                  <Clock className="h-4 w-4 text-gold-text" aria-hidden />
                   Échéance de réponse : {formatDate(request.dueAt)}
                 </div>
                 {request.message ? (
@@ -210,9 +210,9 @@ function StatusBadge({ status }: { status: string }) {
   return (
     <Badge tone={terminal ? "success" : "gold"} className="shrink-0">
       {terminal ? (
-        <CheckCircle className="h-3 w-3" aria-hidden />
+        <CheckCircle className="h-4 w-4" aria-hidden />
       ) : (
-        <Clock className="h-3 w-3" aria-hidden />
+        <Clock className="h-4 w-4" aria-hidden />
       )}
       {statusLabel(status)}
     </Badge>

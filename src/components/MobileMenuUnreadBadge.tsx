@@ -30,7 +30,7 @@ function UnreadBadge({ userId }: { userId: string }) {
       <span
         aria-hidden
         data-testid="mobile-menu-unread"
-        className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-[10px] font-bold text-brand-navy"
+        className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-xs font-semibold text-brand-navy"
       >
         {unreadCount > 9 ? "9+" : unreadCount}
       </span>

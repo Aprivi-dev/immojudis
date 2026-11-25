@@ -144,7 +144,7 @@ function AccountComparisons({ userId }: { userId: string }) {
             </p>
             <Link
               href="/sales"
-              className="mt-3 inline-flex min-h-11 items-center font-bold text-gold-text underline"
+              className="mt-3 inline-flex min-h-11 items-center font-semibold text-gold-text underline"
             >
               Ouvrir le catalogue
             </Link>
@@ -346,9 +346,7 @@ function partialTotalNote(summary: SaleAnalysisSet["summary"]): string | null {
 function Metric({ label, value, note }: { label: string; value: string; note?: string | null }) {
   return (
     <div className="rounded-lg border border-border/70 bg-white/50 px-3 py-2">
-      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
+      <dt className="text-xs font-semibold text-muted-foreground">{label}</dt>
       <dd className="mt-1 font-semibold tabular-nums text-foreground">{value}</dd>
       {note ? <dd className="mt-0.5 text-xs text-muted-foreground">{note}</dd> : null}
     </div>

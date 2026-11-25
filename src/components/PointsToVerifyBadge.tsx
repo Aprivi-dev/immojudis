@@ -70,7 +70,7 @@ export function PointsToVerifyBadge({
           onClick={() => setOpen((current) => !current)}
           className={`relative z-20 inline-flex size-6 items-center justify-center rounded-full border border-line-soft bg-surface-muted text-ink-soft hover:border-gold ${focusClasses} after:absolute after:-inset-2.5 after:content-['']`}
         >
-          <ListChecks className="size-3.5" aria-hidden />
+          <ListChecks className="size-4" aria-hidden />
         </button>
       ) : (
         <button

@@ -785,7 +785,7 @@ export function MapPanel({
         <div className="pointer-events-none absolute inset-x-0 top-16 z-20 grid place-items-center">
           <div
             role="status"
-            className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-bold text-brand-navy shadow-lg"
+            className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm font-semibold text-brand-navy shadow-lg"
           >
             <LoaderCircle className="h-4 w-4 animate-spin text-brand-navy" />
             {!mapReady ? "Chargement de la carte" : "Mise à jour de la carte"}
@@ -802,10 +802,10 @@ export function MapPanel({
       <div className="absolute left-4 top-4 z-30 flex max-w-[calc(100%-6rem)] flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         {boundary ? (
           <div
-            className="inline-flex items-center gap-2 rounded-md border border-line bg-white/95 px-3 py-2 text-xs font-bold text-brand-navy shadow-lg backdrop-blur"
+            className="inline-flex items-center gap-2 rounded-md border border-line bg-white/95 px-3 py-2 text-xs font-semibold text-brand-navy shadow-lg backdrop-blur"
             data-testid="map-boundary-label"
           >
-            <MapPin className="h-3.5 w-3.5 text-brand-navy" />
+            <MapPin className="h-4 w-4 text-brand-navy" />
             <span>{boundary.label}</span>
             <span className="font-medium text-ink-soft">
               {" · "}
@@ -839,7 +839,7 @@ export function MapPanel({
                   onSearchViewport();
                   setViewportDirty(false);
                 }}
-                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-navy bg-ink-black px-3 py-1.5 text-left text-sm font-extrabold leading-tight text-white shadow-lg transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-brand-navy bg-ink-black px-3 py-1.5 text-left text-sm font-semibold leading-tight text-white shadow-lg transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
               >
                 <MapIcon className="h-4 w-4" />
                 Rechercher dans cette zone
@@ -855,10 +855,10 @@ export function MapPanel({
 
       <div className="absolute right-4 top-4 z-30 flex flex-col overflow-hidden rounded-md border border-line-soft bg-white shadow-lg">
         <MapIconButton label="Zoomer" onClick={zoomIn}>
-          <Plus className="h-5 w-5" />
+          <Plus className="h-4 w-4" />
         </MapIconButton>
         <MapIconButton label="Dézoomer" onClick={zoomOut} separated>
-          <Minus className="h-5 w-5" />
+          <Minus className="h-4 w-4" />
         </MapIconButton>
       </div>
 
@@ -916,7 +916,7 @@ export function MapPanel({
                 searchAsMove ? "bg-brand-navy text-white" : "bg-white"
               }`}
             >
-              {searchAsMove ? <Check className="size-3.5" strokeWidth={3} /> : null}
+              {searchAsMove ? <Check className="size-4" strokeWidth={3} /> : null}
             </span>
             <span>Rechercher en déplaçant la carte</span>
           </button>
@@ -1191,7 +1191,7 @@ function MapControlButton({
       aria-label={label}
       title={label}
     >
-      <Icon className="h-5 w-5" />
+      <Icon className="h-4 w-4" />
     </button>
   );
 }

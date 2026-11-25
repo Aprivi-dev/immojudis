@@ -92,7 +92,7 @@ export function DepartmentFranceMap({
             height: `${(inset.height / FRANCE_MAP_HEIGHT) * 100}%`,
           }}
         >
-          <span className="absolute top-2 right-3 left-3 text-xs leading-tight font-bold text-ink-strong @max-lg:hidden">
+          <span className="absolute top-2 right-3 left-3 text-xs leading-tight font-semibold text-ink-strong @max-lg:hidden">
             Paris et petite couronne
           </span>
         </div>

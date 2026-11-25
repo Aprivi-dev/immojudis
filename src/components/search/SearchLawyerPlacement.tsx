@@ -104,9 +104,9 @@ function SponsoredLawyerCard({
     >
       <p
         id="search-lawyer-placement-label"
-        className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-gold-text"
+        className="flex items-center gap-2 text-xs font-semibold text-gold-text"
       >
-        <Megaphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <Megaphone className="h-4 w-4 shrink-0" aria-hidden />
         {sponsoredPlacementLabel(lawyer.placement)}
       </p>
       <h2
@@ -127,7 +127,7 @@ function SponsoredLawyerCard({
       ) : null}
       <a
         href={directoryHref(lawyer)}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full border border-gold/45 bg-white px-3 py-2 text-xs font-bold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full border border-gold/45 bg-white px-3 py-2 text-xs font-semibold text-gold-text transition-colors hover:border-gold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Voir l’annuaire du secteur
       </a>
@@ -153,9 +153,9 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
     >
       <p
         id="search-lawyer-placement-label"
-        className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.1em] text-gold-text"
+        className="flex items-center gap-2 text-xs font-semibold text-gold-text"
       >
-        <Megaphone className="h-3.5 w-3.5 shrink-0" aria-hidden />
+        <Megaphone className="h-4 w-4 shrink-0" aria-hidden />
         {LAWYER_INVITATION_LABEL}
       </p>
       <h2
@@ -169,7 +169,7 @@ function OpenLawyerPlacement({ loading, className }: { loading: boolean; classNa
       </p>
       <a
         href={LAWYER_CONTACT_HREF}
-        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full bg-ink-black px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+        className="mt-auto inline-flex min-h-10 items-center justify-center rounded-full bg-ink-black px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
       >
         Présenter mon cabinet
       </a>

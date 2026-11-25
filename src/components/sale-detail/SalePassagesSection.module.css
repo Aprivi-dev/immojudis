@@ -58,7 +58,7 @@
 
 .itemTitle {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .itemDetail,
@@ -81,7 +81,7 @@
   margin-top: 12px;
   color: var(--gold-text);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -106,7 +106,7 @@
   color: var(--gold-text);
   font: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;

@@ -426,7 +426,7 @@ export function ResourcesPage() {
         </Link>
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <header className="glass-shell rounded-lg p-6 sm:p-9">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-gold-text">
+          <p className="text-xs font-semibold text-gold-text">
             Immojudis · Ressources ventes judiciaires
           </p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl leading-[1.08] text-foreground sm:text-5xl md:text-6xl">
@@ -528,7 +528,7 @@ export function ResourcesPage() {
               >
                 <span
                   aria-hidden
-                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-brand-navy"
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-semibold text-brand-navy"
                 >
                   {index + 1}
                 </span>
@@ -1142,7 +1142,7 @@ export function ResourcesPage() {
               {METHOD.map((step) => (
                 <div key={step.n} className="liquid-panel-soft rounded-lg p-5">
                   <div className="flex items-center gap-2.5">
-                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-bold text-brand-navy">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-gold text-xs font-semibold text-brand-navy">
                       {step.n}
                     </span>
                     <h3 className="text-base font-semibold text-foreground">{step.title}</h3>
@@ -1249,7 +1249,7 @@ export function ResourcesPage() {
           </p>
           <Link
             href="/sales"
-            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-bold uppercase tracking-[0.18em] transition hover:brightness-105"
+            className="liquid-button mt-6 inline-flex items-center gap-2 rounded-lg px-5 py-3 text-xs font-semibold transition hover:brightness-105"
           >
             Accéder aux ventes référencées <ArrowRight className="h-4 w-4" />
           </Link>
@@ -1360,7 +1360,7 @@ function Section({
 
 function P({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <p className={`mt-4 text-[15px] leading-relaxed text-muted-foreground ${className ?? ""}`}>
+    <p className={`mt-4 text-sm leading-relaxed text-muted-foreground ${className ?? ""}`}>
       {children}
     </p>
   );
@@ -1383,8 +1383,8 @@ function KeyPoints({ part, items }: { part: string; items: readonly string[] }) 
       data-key-points={part}
       className="mt-4 rounded-lg border-l-4 border-gold bg-gold/[0.07] px-5 py-4"
     >
-      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-gold-text">À retenir</p>
-      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[15px] leading-relaxed text-foreground">
+      <p className="text-sm font-semibold text-gold-text">À retenir</p>
+      <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-foreground">
         {items.map((item) => (
           <li key={item}>{item}</li>
         ))}
@@ -1399,7 +1399,7 @@ function Checklist({ items }: { items: string[] }) {
       {items.map((item) => (
         <li
           key={item}
-          className="flex items-start gap-2.5 text-[15px] leading-relaxed text-muted-foreground"
+          className="flex items-start gap-2.5 text-sm leading-relaxed text-muted-foreground"
         >
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-gold-text" />
           <span>{item}</span>
@@ -1411,7 +1411,7 @@ function Checklist({ items }: { items: string[] }) {
 
 function Callout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-5 rounded-lg border-l-4 border-gold bg-gold/[0.07] px-5 py-4 text-[15px] leading-relaxed text-foreground">
+    <div className="mt-5 rounded-lg border-l-4 border-gold bg-gold/[0.07] px-5 py-4 text-sm leading-relaxed text-foreground">
       {children}
     </div>
   );
@@ -1437,7 +1437,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
       className="inline-flex items-center gap-1 text-gold-text underline underline-offset-4 transition-colors hover:text-gold-text"
     >
       {children}
-      <ExternalLink className="h-3 w-3 shrink-0" />
+      <ExternalLink className="h-4 w-4 shrink-0" />
     </a>
   );
 }

@@ -8,9 +8,7 @@ export function PriceHistorySection({ property }: { property: Property }) {
   return (
     <AnimatedSection id="price-history" aria-labelledby="price-history-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
-          Historique
-        </p>
+        <p className="text-xs font-semibold text-gold-text">Historique</p>
         <h2 id="price-history-title" className="mt-2 font-display text-3xl text-foreground">
           Historique des prix
         </h2>
@@ -18,7 +16,7 @@ export function PriceHistorySection({ property }: { property: Property }) {
       <div className="mt-5 overflow-hidden rounded-md border border-border bg-white">
         {rows.length ? (
           <table className="w-full text-left text-sm">
-            <thead className="bg-muted/35 text-xs uppercase tracking-[0.12em] text-muted-foreground">
+            <thead className="bg-muted/35 text-xs text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-semibold">Date</th>
                 <th className="px-4 py-3 font-semibold">Evenement</th>

@@ -721,7 +721,7 @@ function LaunchOfferBanner() {
     >
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <p className="flex items-start gap-2 text-sm font-medium leading-relaxed text-brand-navy">
-          <Gift className="mt-0.5 size-5 shrink-0 text-gold-text" aria-hidden />
+          <Gift className="mt-0.5 size-4 shrink-0 text-gold-text" aria-hidden />
           <span>{LAUNCH_OFFER_LABEL}, sans carte bancaire.</span>
         </p>
         <button

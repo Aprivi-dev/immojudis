@@ -124,7 +124,7 @@ function Row({
 function Head() {
   return (
     <thead>
-      <tr className="text-xs uppercase tracking-[0.08em] text-ink-soft">
+      <tr className="text-xs text-ink-soft">
         <th scope="col" className="pb-2 pr-4 text-left font-semibold">
           Tribunal judiciaire
         </th>
@@ -176,9 +176,7 @@ export function PublicTribunalActivitySection({
       aria-labelledby="public-tribunal-activity-title"
       className="mb-10 rounded-xl border border-brand-navy/15 bg-white p-5 sm:p-7"
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-        Accès libre · mis à jour chaque heure
-      </p>
+      <p className="text-xs font-semibold text-gold-text">Accès libre · mis à jour chaque heure</p>
       <h2
         id="public-tribunal-activity-title"
         className="mt-2 font-display text-2xl font-semibold sm:text-3xl"

@@ -58,7 +58,7 @@ export function SaleCountdown({
     if (variant === "chip") {
       return (
         <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-          <Clock className="h-3 w-3" /> Échéance à confirmer
+          <Clock className="h-4 w-4" /> Échéance à confirmer
         </span>
       );
     }
@@ -103,7 +103,7 @@ export function SaleCountdown({
         <span
           className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
         >
-          <Clock className="h-3 w-3" /> {label}
+          <Clock className="h-4 w-4" /> {label}
         </span>
       );
     }
@@ -111,7 +111,7 @@ export function SaleCountdown({
     return (
       <div className={`rounded-lg p-3 ring-1 ${t.bg} ${t.text} ${t.ring}`}>
         <div className="flex items-center gap-2 text-xs font-medium opacity-80">
-          <Clock className="h-3.5 w-3.5" /> Date de vente
+          <Clock className="h-4 w-4" /> Date de vente
         </div>
         <div className="mt-1 text-sm font-semibold">{label}</div>
       </div>
@@ -135,7 +135,7 @@ export function SaleCountdown({
       <span
         className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold ring-1 ${t.bg} ${t.text} ${t.ring}`}
       >
-        <Clock className="h-3 w-3" /> {compact}
+        <Clock className="h-4 w-4" /> {compact}
       </span>
     );
   }
@@ -143,7 +143,7 @@ export function SaleCountdown({
   return (
     <div className={`rounded-lg p-3 ring-1 ${t.bg} ${t.text} ${t.ring}`}>
       <div className="flex items-center gap-2 text-xs font-medium opacity-80">
-        <Clock className="h-3.5 w-3.5" />
+        <Clock className="h-4 w-4" />
         {resolved?.kind === "window" ? "Temps avant la clôture" : "Temps avant la vente"}
       </div>
       <div className="mt-1 flex items-baseline gap-3 tabular-nums">
@@ -159,7 +159,7 @@ function Confirmation({ variant }: { variant: "chip" | "block" }) {
   if (variant === "chip") {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-        <Clock className="h-3 w-3" /> Échéance à confirmer
+        <Clock className="h-4 w-4" /> Échéance à confirmer
       </span>
     );
   }
@@ -174,7 +174,7 @@ function PastSale({ variant }: { variant: "chip" | "block" }) {
   if (variant === "chip") {
     return (
       <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-        <Clock className="h-3 w-3" /> Vente passée
+        <Clock className="h-4 w-4" /> Vente passée
       </span>
     );
   }
@@ -186,7 +186,7 @@ function PastSale({ variant }: { variant: "chip" | "block" }) {
 function Stat({ n, label }: { n: number; label: string }) {
   return (
     <div className="flex items-baseline gap-1">
-      <span className="text-xl font-bold leading-none">{n}</span>
+      <span className="text-xl font-semibold leading-none">{n}</span>
       <span className="text-xs opacity-70">{label}</span>
     </div>
   );

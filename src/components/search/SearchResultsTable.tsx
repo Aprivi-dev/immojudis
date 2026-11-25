@@ -394,12 +394,12 @@ const ListingRow = memo(function ListingRow({
         <div className="flex flex-wrap items-center gap-1.5">
           {pepite ? <PepiteInfoBadge variant="icon" floodExposed={pepiteFloodExposed} /> : null}
           {unlocked ? (
-            <span className="rounded-md bg-gold px-2 py-0.5 text-[11px] font-bold text-brand-navy">
+            <span className="rounded-md bg-gold px-2 py-0.5 text-xs font-semibold text-brand-navy">
               Débloquée
             </span>
           ) : null}
           {viewed ? (
-            <span className="rounded-md bg-surface-tint px-2 py-0.5 text-[11px] font-bold text-brand-navy">
+            <span className="rounded-md bg-surface-tint px-2 py-0.5 text-xs font-semibold text-brand-navy">
               Vu
             </span>
           ) : null}
