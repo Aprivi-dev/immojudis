@@ -1118,6 +1118,93 @@ for (const [policy, statement] of lastSavedReportsPolicy) {
     );
   }
 }
+// Lecture automatique des pièces (lot V3b-2): the public mention of a value read in a piece comes from the
+// traces of raw_payload.pdf_fact_provenance through one SECURITY DEFINER function that projects four columns
+// (column, type of the piece, page, digest of its address). It only reads the traces of the reading itself
+// (reader = document_vision) and only the trace keys the mention needs: never the quote (`evidence`), the
+// address of the piece in clear, the models, the prompt version nor the reading date.
+const documentFactSourcesName = "20261210100000_public_sale_document_fact_sources.sql";
+const documentFactSourcesSql = (migrationSources.get(documentFactSourcesName) ?? "").replace(
+  /--[^\n]*/g,
+  "",
+);
+if (!documentFactSourcesSql) {
+  failures.push("The document fact sources migration is missing");
+} else {
+  const reader =
+    /create\s+or\s+replace\s+function\s+app_private\.get_public_sale_document_fact_sources\(p_sale_id\s+uuid\)[\s\S]*?\$function\$;/i.exec(
+      documentFactSourcesSql,
+    )?.[0] ?? "";
+  if (!reader) {
+    failures.push("app_private.get_public_sale_document_fact_sources is not defined");
+  } else {
+    if (
+      !/returns\s+table\s*\(\s*fact_key\s+text,\s*document_type\s+text,\s*page_number\s+integer,\s*document_key\s+text\s*\)/i.test(
+        reader,
+      )
+    ) {
+      failures.push(
+        "get_public_sale_document_fact_sources returns more than the four mention columns",
+      );
+    }
+    if (!/security\s+definer/i.test(reader) || !/set\s+search_path\s*=\s*''/i.test(reader)) {
+      failures.push(
+        "get_public_sale_document_fact_sources is not SECURITY DEFINER with an empty search_path",
+      );
+    }
+    if (!/trace\.value\s*->>\s*'reader'\s*=\s*'document_vision'/i.test(reader)) {
+      failures.push("get_public_sale_document_fact_sources reads traces of other readers");
+    }
+    if (!/app_private\.auction_sale_is_publicly_visible\(s\.id\)/i.test(reader)) {
+      failures.push(
+        "get_public_sale_document_fact_sources answers for a sale outside the public catalogue",
+      );
+    }
+    const allowedTraceKeys = ["document_type", "document_url", "page_number", "reader", "value"];
+    const readTraceKeys = [...reader.matchAll(/\btrace\.value\s*(?:->>?|#>>?)\s*'([^']+)'/gi)].map(
+      (match) => match[1],
+    );
+    const unexpectedTraceKeys = [...new Set(readTraceKeys)].filter(
+      (key) => !allowedTraceKeys.includes(key),
+    );
+    if (unexpectedTraceKeys.length > 0) {
+      failures.push(
+        `get_public_sale_document_fact_sources reads ${unexpectedTraceKeys.join(",")} from a trace, outside the allow-list`,
+      );
+    }
+    // The address of the piece only leaves the function as a digest.
+    if (
+      !/pg_catalog\.sha256\(pg_catalog\.convert_to\(trace\.value\s*->>\s*'document_url'/i.test(
+        reader,
+      )
+    ) {
+      failures.push(
+        "get_public_sale_document_fact_sources must only return a digest of the piece address",
+      );
+    }
+    const rawPayloadReads = [
+      ...reader.matchAll(/\bs\.raw_payload\s*(?:->>?|#>>?)\s*'([^']+)'/gi),
+    ].map((match) => match[1]);
+    if ([...new Set(rawPayloadReads)].some((key) => key !== "pdf_fact_provenance")) {
+      failures.push(
+        "get_public_sale_document_fact_sources reads raw_payload outside pdf_fact_provenance",
+      );
+    }
+  }
+  if (
+    !/revoke\s+all\s+on\s+function\s+app_private\.get_public_sale_document_fact_sources\(uuid\)\s+from\s+public,\s*anon,\s*authenticated/i.test(
+      documentFactSourcesSql,
+    ) ||
+    !/revoke\s+all\s+on\s+function\s+public\.get_public_sale_document_fact_sources\(uuid\)\s+from\s+public/i.test(
+      documentFactSourcesSql,
+    )
+  ) {
+    failures.push(
+      "get_public_sale_document_fact_sources is not closed to public before its grants",
+    );
+  }
+}
+
 // Plafond des ventes notariales: the conditions of a notarial sale reach the browser of an Analyse
 // account (v_auction_sales_app) and of an account that unlocked the sale (v_auction_sales_unlocked)
 // through one allow-list function, never through raw_payload, and never to the discovery view (an
@@ -3104,6 +3191,7 @@ console.log(
       "sale-unlock-rls-and-definer-boundary",
       "sale-unlock-purchases-service-role-only",
       "document-reading-personal-data-filter",
+      "document-fact-sources-trace-allow-list",
       "listing-completeness-score-stays-private",
       "pepite-rule-independent-of-lawyers-sponsoring-and-score",
       "pepite-detail-never-without-entitlement",

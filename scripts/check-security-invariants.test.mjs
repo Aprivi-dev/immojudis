@@ -1014,3 +1014,39 @@ $$;
     );
   });
 });
+
+describe("invariants de sécurité : origine « lecture automatique des pièces » (lot V3b-2)", () => {
+  const name = "20261210100000_public_sale_document_fact_sources.sql";
+  const original = readFileSync(join(repo, "supabase/migrations", name), "utf8");
+  const mutated = (from, to) => {
+    expect(original).toContain(from);
+    return runInvariants({ [name]: original.replace(from, to) }, [name]);
+  };
+
+  it("refuse une lecture de la citation ou d'une autre clé de la trace", () => {
+    const result = mutated(
+      "and trace.value ->> 'reader' = 'document_vision'",
+      "and trace.value ->> 'reader' = 'document_vision' and trace.value ->> 'evidence' is not null",
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "get_public_sale_document_fact_sources reads evidence from a trace, outside the allow-list",
+    );
+  });
+
+  it("refuse les traces des autres lecteurs et l'adresse de la pièce en clair", () => {
+    const reader = mutated("and trace.value ->> 'reader' = 'document_vision'", "");
+    expect(reader.status).toBe(1);
+    expect(reader.stderr).toContain(
+      "get_public_sale_document_fact_sources reads traces of other readers",
+    );
+    const address = mutated(
+      "pg_catalog.sha256(pg_catalog.convert_to(trace.value ->> 'document_url', 'UTF8'))",
+      "pg_catalog.convert_to(trace.value ->> 'document_url', 'UTF8')",
+    );
+    expect(address.status).toBe(1);
+    expect(address.stderr).toContain(
+      "get_public_sale_document_fact_sources must only return a digest of the piece address",
+    );
+  });
+});
