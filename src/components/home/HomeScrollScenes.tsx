@@ -3,9 +3,14 @@
 import { useEffect } from "react";
 import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
-/** Distance de défilement (px) pendant laquelle chaque scène épinglée reste à l'écran. */
-const DOSSIER_SCROLL = 1_800;
-const CLOSING_SCROLL = 1_500;
+/**
+ * Distance de défilement (px) pendant laquelle chaque scène épinglée reste à l'écran : plus courte
+ * sur écran étroit, où 1 800 px demandent une dizaine de gestes du pouce.
+ */
+const SCENE_SCROLL = {
+  wide: { dossier: 1_800, closing: 1_500 },
+  narrow: { dossier: 1_100, closing: 900 },
+} as const;
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 /** Avancement de `value` entre `from` et `to`, borné à 0-1. */
@@ -53,6 +58,8 @@ export function HomeScrollScenes() {
       return { element, kind: element.dataset.homeFx, x, y, top: 0 };
     });
 
+    const { dossier: DOSSIER_SCROLL, closing: CLOSING_SCROLL } =
+      SCENE_SCROLL[window.innerWidth >= 960 ? "wide" : "narrow"];
     root.dataset.homeScenes = "";
     root.style.setProperty("--home-dossier-scroll", `${DOSSIER_SCROLL}px`);
     root.style.setProperty("--home-closing-scroll", `${CLOSING_SCROLL}px`);
@@ -157,10 +164,28 @@ export function HomeScrollScenes() {
     window.addEventListener("load", onResize);
     void document.fonts?.ready.then(onResize);
 
-    // Boucles vidéo : chargées à l'approche de l'écran, lues tant qu'elles y sont.
+    // Boucles vidéo : chargées à l'approche de l'écran, lues tant qu'elles y sont, déchargées loin
+    // de l'écran. Les téléphones refusent parfois la lecture (économie d'énergie), la mettent en
+    // pause quand l'onglet passe en arrière-plan et limitent le nombre de vidéos décodées à la
+    // fois : chaque cas a sa reprise ci-dessous.
     const loops = all<HTMLVideoElement>("video[data-home-loop]");
+    const near = new Set<HTMLVideoElement>();
+    const start = (video: HTMLVideoElement) => {
+      if (!near.has(video) || document.hidden) return;
+      // React ne pose pas toujours l'attribut `muted` : sans lui, la lecture automatique est refusée.
+      video.muted = true;
+      video.defaultMuted = true;
+      video.playsInline = true;
+      if (!video.getAttribute("src") && video.dataset.src) video.src = video.dataset.src;
+      if (video.paused) void video.play().catch(() => undefined);
+    };
+    const startNear = () => near.forEach(start);
     const onPlaying = (event: Event) => {
       (event.currentTarget as HTMLVideoElement).dataset.playing = "";
+    };
+    const onReady = (event: Event) => start(event.currentTarget as HTMLVideoElement);
+    const onVisibility = () => {
+      if (!document.hidden) startNear();
     };
     const observer =
       typeof IntersectionObserver === "undefined"
@@ -169,20 +194,44 @@ export function HomeScrollScenes() {
             (entries) => {
               for (const entry of entries) {
                 const video = entry.target as HTMLVideoElement;
-                if (!entry.isIntersecting) {
+                if (entry.isIntersecting) {
+                  near.add(video);
+                  start(video);
+                } else {
+                  near.delete(video);
                   video.pause();
-                  continue;
                 }
-                if (!video.src && video.dataset.src) video.src = video.dataset.src;
-                void video.play().catch(() => undefined);
               }
             },
             { rootMargin: "200px 0px" },
           );
+    // Loin de l'écran, la vidéo rend son décodeur : l'image fixe reprend sa place.
+    const unloader =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) {
+                const video = entry.target as HTMLVideoElement;
+                if (entry.isIntersecting || !video.getAttribute("src")) continue;
+                delete video.dataset.playing;
+                video.removeAttribute("src");
+                video.load();
+              }
+            },
+            { rootMargin: "300% 0px" },
+          );
     for (const video of loops) {
       video.addEventListener("playing", onPlaying);
+      video.addEventListener("canplay", onReady);
       observer?.observe(video);
+      unloader?.observe(video);
     }
+    // Lecture refusée sans geste (économie d'énergie) : le premier toucher la relance.
+    const gestures = ["pointerdown", "touchend", "keydown"] as const;
+    for (const type of gestures) window.addEventListener(type, startNear, { passive: true });
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", startNear);
 
     return () => {
       stopped = true;
@@ -191,8 +240,14 @@ export function HomeScrollScenes() {
       window.removeEventListener("load", onResize);
       if (frame) cancelAnimationFrame(frame);
       observer?.disconnect();
+      unloader?.disconnect();
+      for (const type of gestures) window.removeEventListener(type, startNear);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", startNear);
+      near.clear();
       for (const video of loops) {
         video.removeEventListener("playing", onPlaying);
+        video.removeEventListener("canplay", onReady);
         video.pause();
         delete video.dataset.playing;
       }

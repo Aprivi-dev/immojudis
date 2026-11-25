@@ -847,19 +847,42 @@
     min-height: 160px;
   }
 
-  /* Écran étroit : la main qui avance passerait sous le texte ; l'image fixe, cadrée entre les
-     deux mains, suffit. */
-  .growPainting video {
-    display: none;
+  /* Écran étroit : la peinture, très large, ne montrerait que le mur. Elle se range en bandeau au
+     bas de l'écran, cadrée sur la main qui tend la clé ; le texte garde le haut. */
+  .growPainting {
+    inset: auto 0 0;
+    height: 44%;
   }
 
-  .growPainting img {
-    object-position: 52% 100%;
+  .growPainting img,
+  .growPainting video {
+    object-position: 96% 100%;
+  }
+
+  .growText {
+    padding-bottom: 62vw;
+  }
+
+  :global(html[data-home-scenes]) .growText {
+    inset: 0 0 44%;
+  }
+
+  /* Scène du dossier : éléments accrochés au bord le plus proche (`--mx` ou `--mr`, `--my`), étiquettes plus petites, recadrages
+     tenus à l'écart de la phrase centrale. */
+  :global(html[data-home-scenes]) .cloud li,
+  :global(html[data-home-scenes]) .crop {
+    top: var(--my);
+    right: var(--mr, auto);
+    left: var(--mx, auto);
   }
 
   :global(html[data-home-scenes]) .cloud li {
     padding: 4px 9px;
     font-size: 12px;
+  }
+
+  :global(html[data-home-scenes]) .crop {
+    width: calc(var(--w) * 0.42px);
   }
 }
 
