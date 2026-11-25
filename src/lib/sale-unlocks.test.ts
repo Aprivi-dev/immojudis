@@ -247,6 +247,11 @@ describe("texts of the unlock", () => {
     expect(unlockNextSaleText("19 €")).toBe(
       "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse.",
     );
+    // Le prix de l'abonnement n'est dit que s'il est fourni (abonnement réellement ouvert).
+    expect(unlockNextSaleText("19 €", "59 € TTC / mois")).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse (59 € TTC / mois, sans engagement).",
+    );
+    expect(unlockNextSaleText("19 €", null)).toBe(unlockNextSaleText("19 €"));
   });
 
   it("cites each highlight of the free account in the full list of what an unlock opens", () => {

@@ -45,6 +45,7 @@ import type { ActiveFilterChip } from "./active-filter-chips";
 import { ErrorState, NoResultsState } from "./SearchFilters";
 import { LaunchOfferListBanner } from "./LaunchOfferListBanner";
 import { LaunchOfferTrialEnd } from "./LaunchOfferTrialEnd";
+import { TrialEndedOfferNote } from "./TrialEndedOfferNote";
 import { SearchResultsSkeleton } from "./SearchResultsSkeleton";
 import dynamic from "next/dynamic";
 import {
@@ -250,6 +251,7 @@ export function SearchResultsList({
     <div className="pb-24 lg:pb-6">
       <LaunchOfferListBanner />
       <LaunchOfferTrialEnd />
+      <TrialEndedOfferNote />
       {error ? <ErrorState error={error} onRetry={onRetry} /> : null}
 
       {/* Les titres des cartes sont des h3 : sans h2 devant eux, la page saute du h1 au h3. */}

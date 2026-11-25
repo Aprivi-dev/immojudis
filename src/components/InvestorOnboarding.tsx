@@ -15,11 +15,14 @@ import {
   SIGNUP_TRIAL_DENIED_TEXT,
   signupTrialDateLabel,
 } from "@/lib/launch-offer";
-import { pathWithSearch } from "@/lib/navigation";
+import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
-import { validateSalesSearch } from "@/lib/search/search-url-state";
-import { formatPrice } from "@/lib/format";
+import { fetchSearchResults } from "@/lib/search/search-service";
+import { validateSalesSearch, type SalesSearchParams } from "@/lib/search/search-url-state";
+import { formatDate, formatPrice } from "@/lib/format";
+import { saleDisplayTitle } from "@/lib/sale-title";
+import type { AuctionSale } from "@/lib/types";
 import type { PlanEntitlements } from "@/lib/plans";
 import { UNLOCK_HIGHLIGHTS_INLINE_TEXT } from "@/lib/sale-unlocks";
 
@@ -55,6 +58,35 @@ function accessSentence(
   }
   if (plan.trialDenied) return `${SIGNUP_TRIAL_DENIED_TEXT} ${unlocks}`;
   return unlocks;
+}
+
+/**
+ * La première vente du catalogue public qui correspond à la première recherche, lue quand la dernière
+ * étape s'affiche (`enabled`). L'accueil se termine sur elle plutôt que sur la liste (décision du
+ * 25/11/2026) : le déblocage du compte gratuit sert surtout le jour de l'inscription. Même
+ * recherche d'aperçu que le catalogue d'un visiteur : rien de réservé, réponse mise en cache.
+ * `null` tant qu'elle n'est pas lue, sans résultat ou en cas de panne : l'accueil mène alors au
+ * catalogue, comme avant.
+ */
+function useSuggestedSale(search: SalesSearchParams, enabled: boolean): AuctionSale | null {
+  const [found, setFound] = useState<{ key: string; sale: AuctionSale } | null>(null);
+  const key = JSON.stringify(search);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    fetchSearchResults({ search: JSON.parse(key) as SalesSearchParams, preview: true })
+      .then((sales) => {
+        if (active && sales[0]) setFound({ key, sale: sales[0] });
+      })
+      .catch(() => {
+        // Sans vente proposée, le bouton mène au catalogue.
+      });
+    return () => {
+      active = false;
+    };
+  }, [enabled, key]);
+  // Une vente lue pour d'autres critères n'est jamais proposée.
+  return enabled && found?.key === key ? found.sale : null;
 }
 
 export function InvestorOnboarding({
@@ -108,13 +140,23 @@ export function InvestorOnboarding({
   // Pendant l'essai, la première alerte est quotidienne ; après l'essai, elle repasse en hebdomadaire
   // (`alert-matches.ts`).
   const dailyDuringTrial = trialRunning(plan, now);
+  // Inscription lancée depuis une fiche : c'est elle que l'on retrouve, aucune autre n'est proposée.
+  const suggestedSale = useSuggestedSale(alertSearch, step === steps.length - 1 && !returnTo);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (step < steps.length - 1) {
       setStep((current) => current + 1);
       return;
     }
+    void finish("sale");
+  }
+
+  /**
+   * Fin de l'accueil : l'alerte si elle est demandée, puis la vente proposée (`sale`, le bouton
+   * principal) ou le catalogue filtré (`catalogue`, « Voir toutes les ventes »).
+   */
+  async function finish(destination: "sale" | "catalogue") {
     if (alertWanted) {
       // Un seul geste : l'alerte (un récapitulatif par jour pendant l'essai, sinon par semaine) puis le
       // catalogue filtré. En cas d'échec le message est affiché et la personne reste ici pour réessayer ou décocher.
@@ -126,9 +168,14 @@ export function InvestorOnboarding({
       });
       if (result.status !== "created") return;
     }
-    // Inscription lancée depuis une fiche : retour à la vente, sur son plafond.
+    // Inscription lancée depuis une fiche : retour à la vente, sur son plafond. Sinon la vente
+    // proposée, sur son plafond aussi, ou le catalogue.
     router.push(
-      returnTo ? `${returnTo}#${SALE_CEILING_ANCHOR}` : pathWithSearch("/sales", criteria),
+      returnTo
+        ? `${returnTo}#${SALE_CEILING_ANCHOR}`
+        : suggestedSale && destination === "sale"
+          ? `${saleDetailPath(suggestedSale.id)}#${SALE_CEILING_ANCHOR}`
+          : pathWithSearch("/sales", criteria),
     );
   }
 
@@ -318,14 +365,35 @@ export function InvestorOnboarding({
                   </p>
                 ) : null}
               </div>
-              <p
-                data-testid="onboarding-next-action"
-                className="rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
-              >
-                Pour finir : ouvrez une vente{" "}
-                {criteria.department ? "de votre département" : "du catalogue"} et voyez le plafond
-                (contenu selon la vente).
-              </p>
+              {suggestedSale ? (
+                <div
+                  data-testid="onboarding-suggested-sale"
+                  className="rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm leading-relaxed text-foreground"
+                >
+                  <p className="font-medium">
+                    Pour finir : ouvrez cette vente et voyez son plafond (contenu selon la vente).
+                  </p>
+                  <p className="mt-2 font-semibold">{saleDisplayTitle(suggestedSale)}</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {[
+                      suggestedSale.city,
+                      `Mise à prix : ${formatPrice(suggestedSale.starting_price_eur)}`,
+                      `Vente : ${formatDate(suggestedSale.sale_date)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+              ) : (
+                <p
+                  data-testid="onboarding-next-action"
+                  className="rounded-lg border border-gold/25 bg-gold/10 px-4 py-3 text-sm font-medium leading-relaxed text-foreground"
+                >
+                  Pour finir : ouvrez une vente{" "}
+                  {criteria.department ? "de votre département" : "du catalogue"} et voyez le
+                  plafond (contenu selon la vente).
+                </p>
+              )}
             </div>
           )}
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
@@ -340,15 +408,24 @@ export function InvestorOnboarding({
             ) : (
               <span />
             )}
-            <Button type="submit" variant="primary" disabled={saving}>
-              {saving
-                ? "Création de l’alerte…"
-                : step === steps.length - 1
-                  ? returnTo
-                    ? "Revenir à cette vente"
-                    : "Voir les biens"
-                  : "Continuer"}
-            </Button>
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              {suggestedSale ? (
+                <Button onClick={() => void finish("catalogue")} disabled={saving}>
+                  Voir toutes les ventes
+                </Button>
+              ) : null}
+              <Button type="submit" variant="primary" disabled={saving}>
+                {saving
+                  ? "Création de l’alerte…"
+                  : step === steps.length - 1
+                    ? returnTo
+                      ? "Revenir à cette vente"
+                      : suggestedSale
+                        ? "Ouvrir cette vente"
+                        : "Voir les biens"
+                    : "Continuer"}
+              </Button>
+            </div>
           </div>
         </form>
         <Link

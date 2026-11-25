@@ -87,6 +87,9 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+/** Espaces insécables rendues en espaces simples, pour comparer un texte. */
+const plainSpaces = (text: string) => text.replace(/[\u00a0\u202f]/g, " ");
+
 describe("SaleUnlockPanel", () => {
   it("offers the single unlock of the free account and the items it opens, nothing else", () => {
     render(
@@ -200,23 +203,44 @@ describe("SaleUnlockPanel", () => {
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it("says under the confirmation that other sales can be bought, only once that purchase is open", () => {
+  it("says the prices of the next sales before the unlock is used, only once that purchase is open", () => {
     const label = "Débloquer cette vente avec mon compte gratuit";
     const { unmount } = render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
+    expect(screen.queryByTestId("unlock-next-sale")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: label }));
     expect(screen.queryByTestId("unlock-next-sale")).toBeNull();
+    expect(mocks.track).not.toHaveBeenCalled();
     unmount();
 
+    // Achat à l'unité ouvert, abonnement fermé : le prix de la vente, l'offre Analyse sans prix.
     mocks.purchase = { label: "19 €", amountCents: 1900 };
+    mocks.checkoutOpen.mockReturnValue(false);
+    const closed = render(
+      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
+    );
+    // Avant tout clic : personne ne doit dépenser son déblocage pour apprendre le prix de la suite.
+    expect(plainSpaces(screen.getByTestId("unlock-next-sale").textContent ?? "")).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse. Voir les tarifs",
+    );
+    expect(screen.getByRole("link", { name: "Voir les tarifs" }).getAttribute("href")).toBe(
+      "/offres#tarifs",
+    );
+    expect(mocks.track.mock.calls).toEqual([["purchase_choices_viewed", { state: "free_unlock" }]]);
+    closed.unmount();
+
+    // Abonnement ouvert : son prix aussi, lu dans l'offre.
+    mocks.checkoutOpen.mockReturnValue(true);
     render(
       <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
     );
+    const text =
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse (59 € TTC / mois, sans engagement). Voir les tarifs";
+    expect(plainSpaces(screen.getByTestId("unlock-next-sale").textContent ?? "")).toBe(text);
+    // Toujours là pendant la confirmation.
     fireEvent.click(screen.getByRole("button", { name: label }));
-    expect(screen.getByTestId("unlock-next-sale").textContent).toBe(
-      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse.",
-    );
+    expect(plainSpaces(screen.getByTestId("unlock-next-sale").textContent ?? "")).toBe(text);
   });
 
   it("unlocks once confirmed and reports the result", async () => {
@@ -493,13 +517,6 @@ describe("SaleUnlockPanel", () => {
     );
     expect(screen.getByRole("heading", { name: "Cette vente est débloquée" })).toBeTruthy();
     expect(document.body.textContent).not.toMatch(/est prête|est prêt\b/);
-  });
-
-  it("does not look at the subscription before the quota is spent", () => {
-    render(
-      <SaleUnlockPanel saleId={saleId} status={status()} unlocked={false} onUnlocked={vi.fn()} />,
-    );
-    expect(mocks.checkoutOpen).not.toHaveBeenCalled();
   });
 
   it("moves the focus to the confirmation and says where the unlock is recorded", () => {
@@ -909,7 +926,7 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     expect(bodyText()).not.toMatch(/Acheter|à l’unité|19 €|Cette vente :/);
   });
 
-  it("purchase open, nothing to deduct: the subscription first and recommended, then this sale", () => {
+  it("purchase open, nothing to deduct: this sale first with the main button, then the subscription", () => {
     openPurchase();
     render(
       <SaleUnlockPanel saleId={saleId} status={spent()} unlocked={false} onUnlocked={vi.fn()} />,
@@ -918,9 +935,10 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     const headings = screen
       .getAllByRole("heading", { level: 3 })
       .map((h) => nbsp(h.textContent ?? ""));
-    expect(headings).toEqual(["Toutes les ventes pendant un mois : 59 €", "Cette vente : 19 €"]);
+    expect(headings).toEqual(["Cette vente : 19 €", "Toutes les ventes pendant un mois : 59 €"]);
     const text = bodyText();
-    expect(text).toContain("Recommandée");
+    expect(text).not.toContain("Recommandée");
+    expect(mocks.track.mock.calls).toEqual([["purchase_choices_viewed", { state: "spent" }]]);
     expect(text).toContain(
       "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
     );
@@ -963,7 +981,7 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     const headings = screen
       .getAllByRole("heading", { level: 3 })
       .map((h) => nbsp(h.textContent ?? ""));
-    expect(headings).toEqual(["Toutes les ventes pendant un mois : 99 €", "Cette vente : 25 €"]);
+    expect(headings).toEqual(["Cette vente : 25 €", "Toutes les ventes pendant un mois : 99 €"]);
     const text = bodyText();
     expect(text).toContain("Acheter cette vente : 25 €");
     expect(text).toContain("ces 25 € sont déduits");

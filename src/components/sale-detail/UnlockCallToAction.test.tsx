@@ -133,15 +133,15 @@ describe("UnlockCallToAction in a paid preview", () => {
     expect(screen.queryByRole("link", { name: /Acheter/ })).toBeNull();
   });
 
-  it("once the purchase is open, adds « Acheter cette vente » to the card after the offer", () => {
+  it("once the purchase is open, adds « Acheter cette vente » to the card before the offer", () => {
     mocks.purchase = { label: "19 €", amountCents: 1900 };
     renderPreview(status({ used: 1, remaining: 0 }));
 
     const links = screen.getAllByRole("link").map((link) => link.textContent);
     const buy = screen.getByRole("link", { name: "Acheter cette vente : 19 €" });
     expect(buy.getAttribute("href")).toBe(`#${UNLOCK_PANEL_ID}`);
-    expect(links.indexOf("Voir l’offre Analyse")).toBeLessThan(
-      links.indexOf("Acheter cette vente : 19 €"),
+    expect(links.indexOf("Acheter cette vente : 19 €")).toBeLessThan(
+      links.indexOf("Voir l’offre Analyse"),
     );
   });
 

@@ -69,9 +69,9 @@ type Classes = {
  *  - unlock left: « Débloquer cette vente avec mon compte gratuit » first, then the offer;
  *  - unlock spent, credit left (a purchased sale did not take place): « Débloquer cette vente avec
  *    mon crédit » first, then the offer;
- *  - unlock spent on another sale: says so, then the offer (or « Me prévenir de l'ouverture »
- *    when it is not open for subscription and `withOpeningRequest` is set), then, once the purchase
- *    of a single sale is open, « Acheter cette vente » to the unlock card;
+ *  - unlock spent on another sale: says so, then, once the purchase of a single sale is open,
+ *    « Acheter cette vente » to the unlock card, then the offer (or « Me prévenir de l'ouverture »
+ *    when it is not open for subscription and `withOpeningRequest` is set);
  *  - no unlock card on the page: the offer alone, as before.
  * Renders a fragment: place it in the preview's own row of links.
  */
@@ -128,8 +128,8 @@ export function UnlockCallToAction({
 }
 
 /**
- * Unlock spent on another sale: says so, then the way to the offer, then (purchase open) the way to
- * buy this sale on the unlock card, where the consent is collected. Only here is the offer state
+ * Unlock spent on another sale: says so, then (purchase open) the way to buy this sale on the unlock
+ * card, where the consent is collected, then the way to the offer. Only here is the offer state
  * read.
  */
 function SpentUnlocks({
@@ -146,27 +146,25 @@ function SpentUnlocks({
   return (
     <>
       <p className={messageClassName}>{UNLOCK_QUOTA_REACHED_TITLE}.</p>
+      {purchase ? (
+        <>
+          <a href={`#${UNLOCK_PANEL_ID}`} onClick={goToUnlockPanel} className={primaryClassName}>
+            {salePurchaseCallToActionLabel(purchase.label)}
+          </a>{" "}
+        </>
+      ) : null}
       {checkoutOpen === false && withOpeningRequest ? (
         <div className="w-full max-w-sm">
           <OfferOpeningRequest className="mt-0" />
         </div>
       ) : (
-        <Link href="/offres" className={primaryClassName}>
+        <Link
+          href="/offres"
+          className={purchase ? (secondaryClassName ?? primaryClassName) : primaryClassName}
+        >
           Voir l’offre Analyse
         </Link>
       )}
-      {purchase ? (
-        <>
-          {" "}
-          <a
-            href={`#${UNLOCK_PANEL_ID}`}
-            onClick={goToUnlockPanel}
-            className={secondaryClassName ?? primaryClassName}
-          >
-            {salePurchaseCallToActionLabel(purchase.label)}
-          </a>
-        </>
-      ) : null}
     </>
   );
 }

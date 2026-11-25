@@ -401,7 +401,9 @@ export function OffersPage({
         className="mx-auto max-w-[1220px] px-4 py-12 sm:px-6 lg:px-8"
       >
         <h2 id="tarifs" className="font-display text-3xl font-medium sm:text-4xl">
-          Une vente chiffrée avec le compte gratuit, toutes avec Analyse.
+          {salePurchase
+            ? `Une vente chiffrée avec le compte gratuit, les suivantes à ${salePurchase.label} l’unité, toutes avec Analyse.`
+            : "Une vente chiffrée avec le compte gratuit, toutes avec Analyse."}
         </h2>
         <p className="mt-2 max-w-3xl text-ink-soft">
           Découverte est gratuite, sans limite de durée ; elle comprend le déblocage d’une vente,
@@ -415,6 +417,15 @@ export function OffersPage({
             ? ` Elle est offerte pendant ${ANALYSIS_TRIAL_DAYS} jours à l’inscription, sans carte bancaire.`
             : null}
         </p>
+        {salePurchase ? (
+          // Avant les cartes (25/11/2026) : l'achat à l'unité est le premier achat proposé.
+          <p data-testid="offers-sale-purchase-note" className="mt-3 max-w-3xl text-sm font-medium">
+            {salePurchaseOffersNote({
+              unitCents: salePurchase.amountCents,
+              subscriptionCents: analysisOfferLabelAmountsCents(price)[0] ?? null,
+            })}
+          </p>
+        ) : null}
         <div className="mt-6 grid gap-5 lg:grid-cols-2">
           <PlanPanel
             name="Découverte"
@@ -475,17 +486,6 @@ export function OffersPage({
             )}
           </PlanPanel>
         </div>
-        {salePurchase ? (
-          <p
-            data-testid="offers-sale-purchase-note"
-            className="mt-5 max-w-3xl text-sm text-ink-soft"
-          >
-            {salePurchaseOffersNote({
-              unitCents: salePurchase.amountCents,
-              subscriptionCents: analysisOfferLabelAmountsCents(price)[0] ?? null,
-            })}
-          </p>
-        ) : null}
         <p data-testid="offers-heavy-use-note" className="mt-5 max-w-3xl text-sm text-ink-soft">
           {HEAVY_USE_NOTE}
         </p>

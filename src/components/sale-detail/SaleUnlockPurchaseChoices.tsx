@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, buttonClasses } from "@/components/ui/primitives";
+import { Button, buttonClasses } from "@/components/ui/primitives";
 import { OfferOpeningRequest } from "@/components/OfferOpeningRequestLazy";
 import type { SaleUnlockPurchaseOfferState } from "@/hooks/use-sale-unlock-purchase-offer";
 import { rememberCreditsBeforePurchase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
@@ -16,6 +16,7 @@ import {
   SALE_UNLOCK_CHECKOUT_CONFLICT_TEXTS,
   saleUnlockPurchaseChoiceTexts,
 } from "@/lib/sale-unlock-purchase-texts";
+import { trackProductEvent } from "@/lib/product-events";
 import { userMessage } from "@/lib/user-messages";
 
 type ReadyOffer = Extract<SaleUnlockPurchaseOfferState, { status: "ready" }> & {
@@ -24,8 +25,9 @@ type ReadyOffer = Extract<SaleUnlockPurchaseOfferState, { status: "ready" }> & {
 
 /**
  * Les deux façons d'ouvrir la vente quand le déblocage du compte gratuit a servi et que l'achat à
- * l'unité est ouvert : l'abonnement d'abord, mis en avant comme l'offre recommandée de /offres, puis
- * cette vente à l'unité. Côte à côte sur ordinateur, l'un sous l'autre sur mobile. Avant le paiement
+ * l'unité est ouvert : cette vente à l'unité d'abord, avec le bouton principal (décision du
+ * 25/11/2026 : le premier achat d'un particulier qui prépare une vente), puis l'abonnement. Côte à
+ * côte sur ordinateur, l'un sous l'autre sur mobile. Avant le paiement
  * de la vente, deux cases non cochées, obligatoires (conditions générales ; accès immédiat et perte
  * du droit de rétractation), sur le modèle du récapitulatif de l'abonnement (`BillingActions`). Pas
  * de compte à rebours, pas de rareté : les montants viennent de l'offre lue.
@@ -76,7 +78,13 @@ export function SaleUnlockPurchaseChoices({
     }
   }, [step]);
 
+  // Les deux achats sont à l'écran : une mesure par affichage.
+  useEffect(() => {
+    trackProductEvent("purchase_choices_viewed", { state: "spent" });
+  }, []);
+
   function openConsent() {
+    trackProductEvent("purchase_choice_clicked", { choice: "unit" });
     setTermsAccepted(false);
     setAccessAccepted(false);
     setError(null);
@@ -93,6 +101,7 @@ export function SaleUnlockPurchaseChoices({
     setStep("pending");
     setError(null);
     onAnnounce("Ouverture du paiement…");
+    trackProductEvent("checkout_started", { product: "unit" });
     try {
       const { url } = await startSaleUnlockCheckout({
         saleId,
@@ -127,7 +136,7 @@ export function SaleUnlockPurchaseChoices({
   const saleChoice = (
     <section
       aria-labelledby={saleTitleId}
-      className="flex flex-col rounded-lg border border-line bg-white p-4"
+      className="flex flex-col rounded-lg border border-brand-navy bg-white p-4"
     >
       <h3 id={saleTitleId} className="font-display text-xl text-brand-navy">
         {texts.saleTitle}
@@ -138,7 +147,7 @@ export function SaleUnlockPurchaseChoices({
       ) : null}
       {step === "idle" ? (
         <div className="mt-auto pt-4">
-          <Button ref={triggerRef} className="w-full" onClick={openConsent}>
+          <Button ref={triggerRef} variant="primary" className="w-full" onClick={openConsent}>
             {texts.saleCallToAction}
           </Button>
         </div>
@@ -247,16 +256,14 @@ export function SaleUnlockPurchaseChoices({
 
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      {saleChoice}
       <section
         aria-labelledby={subscriptionTitleId}
-        className="flex flex-col rounded-lg border border-brand-navy bg-white p-4"
+        className="flex flex-col rounded-lg border border-line bg-white p-4"
       >
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <h3 id={subscriptionTitleId} className="font-display text-xl text-brand-navy">
-            {texts.subscriptionTitle}
-          </h3>
-          <Badge tone="gold">Recommandée</Badge>
-        </div>
+        <h3 id={subscriptionTitleId} className="font-display text-xl text-brand-navy">
+          {texts.subscriptionTitle}
+        </h3>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">{texts.subscriptionText}</p>
         {texts.subscriptionDeduction ? (
           <p className="mt-2 text-sm font-medium leading-relaxed text-brand-navy">
@@ -266,13 +273,13 @@ export function SaleUnlockPurchaseChoices({
         <div className="mt-auto pt-4">
           <Link
             href="/offres#tarifs"
-            className={buttonClasses({ variant: "primary", className: "w-full" })}
+            onClick={() => trackProductEvent("purchase_choice_clicked", { choice: "subscription" })}
+            className={buttonClasses({ className: "w-full" })}
           >
             Choisir l’abonnement Analyse
           </Link>
         </div>
       </section>
-      {saleChoice}
     </div>
   );
 }

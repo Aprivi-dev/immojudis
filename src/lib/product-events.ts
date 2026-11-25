@@ -31,6 +31,8 @@ export const PRODUCT_EVENT_NAMES = [
   "pepite_block_viewed",
   "pepite_filter_used",
   "sale_unlock_confirmed",
+  "purchase_choices_viewed",
+  "purchase_choice_clicked",
   "home_cta_clicked",
   "ceiling_viewed",
   "shared_report_viewed",
@@ -60,6 +62,17 @@ export type AlertSurface = (typeof ALERT_SURFACES)[number];
 export const HOME_CTA_TARGETS = ["signup", "browse", "example"] as const;
 export type HomeCtaTarget = (typeof HOME_CTA_TARGETS)[number];
 
+/**
+ * Ce que la carte de déblocage d'une fiche montre quand les prix y sont affichés : le déblocage
+ * gratuit encore disponible (`free_unlock`, prix de la suite), ou les deux achats (`spent`).
+ */
+export const PURCHASE_CHOICES_STATES = ["free_unlock", "spent"] as const;
+export type PurchaseChoicesState = (typeof PURCHASE_CHOICES_STATES)[number];
+
+/** L'achat choisi : une vente à l'unité, ou l'abonnement Analyse. */
+export const PURCHASE_PRODUCTS = ["unit", "subscription"] as const;
+export type PurchaseProduct = (typeof PURCHASE_PRODUCTS)[number];
+
 /** État de la page d'un rapport partagé quand son destinataire l'ouvre. */
 export const SHARED_REPORT_STATES = ["open", "unavailable"] as const;
 export type SharedReportState = (typeof SHARED_REPORT_STATES)[number];
@@ -71,7 +84,8 @@ export type ProductEventProperties = {
   favorite_added: undefined;
   sample_report_viewed: undefined;
   offers_viewed: undefined;
-  checkout_started: undefined;
+  /** La page de paiement Stripe est demandée, pour l'abonnement ou pour une vente à l'unité. */
+  checkout_started: { product: PurchaseProduct };
   checkout_returned: { status: "success" | "cancelled" };
   opening_notification_requested: undefined;
   fees_simulator_used: undefined;
@@ -81,6 +95,10 @@ export type ProductEventProperties = {
   pepite_filter_used: undefined;
   /** Le déblocage d'une vente est confirmé (second clic du panneau), avant la réponse du serveur. */
   sale_unlock_confirmed: undefined;
+  /** Les prix sont affichés sur la carte de déblocage d'une fiche (une fois par affichage). */
+  purchase_choices_viewed: { state: PurchaseChoicesState };
+  /** Clic sur l'un des deux achats de la fiche, avant tout consentement et tout paiement. */
+  purchase_choice_clicked: { choice: PurchaseProduct };
   home_cta_clicked: { target: HomeCtaTarget };
   /** L'enchère plafond d'une vente est calculée et affichée (pas seulement l'estimation servie). */
   ceiling_viewed: undefined;
@@ -102,7 +120,10 @@ const PROPERTY_SPECS: { [N in ProductEventName]?: Record<string, PropertySpec> }
     pepite_only: "boolean",
     surface: ALERT_SURFACES,
   },
+  checkout_started: { product: PURCHASE_PRODUCTS },
   checkout_returned: { status: ["success", "cancelled"] },
+  purchase_choices_viewed: { state: PURCHASE_CHOICES_STATES },
+  purchase_choice_clicked: { choice: PURCHASE_PRODUCTS },
   pepite_block_viewed: { access: ["locked", "detail"] },
   home_cta_clicked: { target: HOME_CTA_TARGETS },
   shared_report_viewed: { state: SHARED_REPORT_STATES },

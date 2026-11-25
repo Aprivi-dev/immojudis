@@ -173,7 +173,7 @@ export function BillingActions({
           withdrawalInformationAcknowledged: true,
         },
       });
-      trackProductEvent("checkout_started");
+      trackProductEvent("checkout_started", { product: "subscription" });
       window.location.assign(response.url);
     } catch (error) {
       toast.error(userMessage(error, "Paiement indisponible"));
