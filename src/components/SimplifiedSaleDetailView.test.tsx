@@ -309,6 +309,8 @@ function tocLink(tab: string): HTMLAnchorElement {
 /** Suit le lien du sommaire vers la section qui reprend l'ancien onglet. */
 function selectTab(label: string) {
   fireEvent.click(tocLink(label));
+  // L'ancien onglet Quartier s'étend sur deux sections : l'urbanisme et les risques ont la leur.
+  if (label.toLowerCase() === "quartier") fireEvent.click(tocLink("urbanisme-risques"));
 }
 
 /** « true » quand le sommaire met en avant la section de l'ancien onglet. */
@@ -603,7 +605,7 @@ describe("integrated listing", () => {
     }
   });
 
-  it("lays out the six numbered sections on one page, with a sommaire that follows the reader", () => {
+  it("lays out the seven numbered sections on one page, with a sommaire that follows the reader", () => {
     const { container } = renderDetail("analysis", undefined, true, true);
 
     const links = within(
@@ -615,9 +617,10 @@ describe("integrated listing", () => {
       "01 Le bien",
       "02 Prix et plafond",
       "03 Marché et comparables",
-      "04 Travaux et financement",
-      "05 Pièces du dossier",
-      "06 Démarches",
+      "04 Urbanisme et risques",
+      "05 Travaux et financement",
+      "06 Pièces du dossier",
+      "07 Démarches",
     ]) {
       expect(within(nav).getByRole("link", { name })).toBeTruthy();
     }
@@ -628,10 +631,17 @@ describe("integrated listing", () => {
       "04",
       "05",
       "06",
+      "07",
     ]);
-    const sections = ["bien", "prix", "marche", "travaux-financement", "pieces", "demarches"].map(
-      (id) => container.querySelector<HTMLElement>(`section#${id}`),
-    );
+    const sections = [
+      "bien",
+      "prix",
+      "marche",
+      "urbanisme-risques",
+      "travaux-financement",
+      "pieces",
+      "demarches",
+    ].map((id) => container.querySelector<HTMLElement>(`section#${id}`));
     sections.forEach((section, index) => {
       expect(section).not.toBeNull();
       if (index > 0) {
@@ -945,7 +955,8 @@ describe("integrated listing", () => {
     const map = await screen.findByTestId("cadastral-map");
     expect(map.getAttribute("data-lat")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.latitude));
     expect(map.getAttribute("data-lng")).toBe(String(EXAMPLE_SALE_RECORDS.bordeaux.sale.longitude));
-    expect(map.closest("details")).toBeNull();
+    // Le plan est dans le bloc replié « Urbanisme et cadastre » de la section 04.
+    expect(map.closest("details")?.id).toBe("urbanism");
     expect(mocks.fetchUrbanism).not.toHaveBeenCalled();
     expect(
       [...container.querySelectorAll<HTMLImageElement>("img")].every(

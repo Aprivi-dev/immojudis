@@ -71,7 +71,7 @@
 
 .tocList {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -92,9 +92,9 @@
   position: relative;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   min-height: 44px;
-  padding: 11px 14px;
+  padding: 11px 10px;
   border-radius: 9999px;
   color: var(--ink-strong);
   font-size: 14px;
@@ -122,8 +122,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Les six libellés complets demandent 990 px, plus que la colonne de la fiche (880 px au mieux) :
-   le sommaire affiche les libellés courts. Le libellé long reste le nom lu par les lecteurs d'écran. */
+/* Les libellés complets des sept sections demandent plus que la colonne de la fiche (880 px au
+   mieux) : le sommaire affiche les libellés courts, qui tiennent dès 1280 px d'écran. Le libellé
+   long reste le nom lu par les lecteurs d'écran. */
 .tocLabel {
   position: absolute;
   width: 1px;
@@ -257,6 +258,39 @@
   display: grid;
   gap: 20px;
   min-width: 0;
+}
+
+/* Blocs repliés d'une section : titre et, dessous, une ligne qui dit ce que le bloc contient. */
+.folds {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.folds > details {
+  margin-top: 0;
+}
+
+/* Le « + » reste en haut à droite, à côté du titre, et non sous la ligne de résumé. */
+.folds > details > summary {
+  position: relative;
+  padding-right: 32px;
+}
+
+.folds > details > summary::after {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  float: none;
+  margin-left: 0;
+}
+
+.foldSummary {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .deferred {

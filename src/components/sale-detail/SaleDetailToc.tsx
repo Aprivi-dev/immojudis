@@ -8,7 +8,7 @@ import {
 import styles from "./SaleDetailLayout.module.css";
 
 /**
- * Sommaire numéroté de la fiche, collé sous l'en-tête du site : six liens vers les sections, la
+ * Sommaire numéroté de la fiche, collé sous l'en-tête du site : un lien par section, la
  * section courante mise en avant (`aria-current`). Sur téléphone, des pilules qui défilent à
  * l'horizontale ; la pilule courante est ramenée en vue. `data-sale-tabs` dit à `html` (styles.css)
  * de réserver la hauteur de la barre pour le focus et les ancres.

@@ -301,8 +301,8 @@ describe("PriceSummaryCard", () => {
 });
 
 describe("Section anchors", () => {
-  it("leads the neighbourhood anchors to « Marché et comparables »", () => {
-    expect(sectionForAnchor("urbanism")).toBe("marche");
+  it("leads the neighbourhood anchors to their section", () => {
+    expect(sectionForAnchor("urbanism")).toBe("urbanisme-risques");
     expect(sectionForAnchor("quartier")).toBe("marche");
     // Les points à vérifier restent dans « Le bien ».
     expect(sectionForAnchor("risks")).toBe("bien");

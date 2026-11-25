@@ -1,5 +1,5 @@
 /**
- * Les six sections de la fiche, sur une seule page (sommaire numéroté collant), et le chemin des
+ * Les sept sections de la fiche, sur une seule page (sommaire numéroté collant), et le chemin des
  * ancres vers elles : les ancres de section, celles des anciens onglets (`#estimation`, `#travaux`…)
  * et celles des blocs (`#calculation`, `#urbanism`, `#rendez-vous`…) mènent toutes à la bonne section.
  */
@@ -7,6 +7,7 @@ export type SaleDetailSection =
   | "bien"
   | "prix"
   | "marche"
+  | "urbanisme-risques"
   | "travaux-financement"
   | "pieces"
   | "demarches";
@@ -21,14 +22,15 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
   { id: "bien", number: "01", label: "Le bien", shortLabel: "Le bien" },
   { id: "prix", number: "02", label: "Prix et plafond", shortLabel: "Plafond" },
   { id: "marche", number: "03", label: "Marché et comparables", shortLabel: "Comparables" },
+  { id: "urbanisme-risques", number: "04", label: "Urbanisme et risques", shortLabel: "Urbanisme" },
   {
     id: "travaux-financement",
-    number: "04",
+    number: "05",
     label: "Travaux et financement",
     shortLabel: "Financement",
   },
-  { id: "pieces", number: "05", label: "Pièces du dossier", shortLabel: "Pièces" },
-  { id: "demarches", number: "06", label: "Démarches", shortLabel: "Démarches" },
+  { id: "pieces", number: "06", label: "Pièces du dossier", shortLabel: "Pièces" },
+  { id: "demarches", number: "07", label: "Démarches", shortLabel: "Démarches" },
 ];
 
 /** Section 05 « Pièces du dossier » : cible du lien « Où consulter le cahier » des mentions de l'avocat. */
@@ -79,7 +81,8 @@ const SECTION_ANCHORS: Record<SaleDetailSection, readonly string[]> = {
     "scenarios",
     "historique",
   ],
-  marche: ["marche", "market", "quartier", "urbanism"],
+  marche: ["marche", "market", "quartier"],
+  "urbanisme-risques": ["urbanisme-risques", "urbanism"],
   "travaux-financement": ["travaux-financement", "travaux", "works", "financement", "financing"],
   pieces: ["pieces", "documents", "lecture-pieces"],
   demarches: ["demarches", "rendez-vous", "participation", "lawyer", "sale-timeline"],

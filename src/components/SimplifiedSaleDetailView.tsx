@@ -132,6 +132,7 @@ import { AuctionScenariosSection } from "@/components/sale-detail/AuctionScenari
 import { CeilingPlanner } from "@/components/ceiling/CeilingPlanner";
 import { ProfessionalPilotLauncher } from "@/components/ProfessionalPilotLauncher";
 import { SalePassagesSection } from "@/components/sale-detail/SalePassagesSection";
+import { SaleDetailLandSection } from "@/components/sale-detail/SaleDetailLandSection";
 import { SaleDetailMarketSection } from "@/components/sale-detail/SaleDetailMarketSection";
 import { SaleDetailPiecesSection } from "@/components/sale-detail/SaleDetailPiecesSection";
 import { SaleDetailStepsSection } from "@/components/sale-detail/SaleDetailStepsSection";
@@ -1136,7 +1137,14 @@ function SaleDetailWorkspace({
                     href="#quartier"
                     className="font-semibold text-gold-text underline underline-offset-4"
                   >
-                    Urbanisme, risques de la commune et marché locatif
+                    Marché locatif
+                  </a>
+                  {" · "}
+                  <a
+                    href="#urbanisme-risques"
+                    className="font-semibold text-gold-text underline underline-offset-4"
+                  >
+                    Urbanisme et risques de la commune
                   </a>
                   {isTribunalSale && guide.hidden ? (
                     <>
@@ -1367,7 +1375,6 @@ function SaleDetailWorkspace({
                 fullData={fullData}
                 publicDemo={publicDemo}
                 signedIn={Boolean(user)}
-                authLoading={authLoading}
                 force={forced("marche")}
                 detailedMarketEstimate={detailedMarketEstimate}
                 marketComputedAt={marketQuery.data?.computedAt ?? null}
@@ -1380,6 +1387,17 @@ function SaleDetailWorkspace({
                 statisticsAvailable={statisticsAvailable}
                 adjudicationStatisticsEnabled={adjudicationStatisticsEnabled}
                 propertyTypeVerified={!valuationConflict && !propertyTypeBlocked}
+              />
+
+              <SaleDetailLandSection
+                sale={sale}
+                displaySale={displaySale}
+                access={access}
+                fullData={fullData}
+                publicDemo={publicDemo}
+                signedIn={Boolean(user)}
+                authLoading={authLoading}
+                force={forced("urbanisme-risques")}
                 cityBlocked={cityBlocked}
               />
 

@@ -6,12 +6,10 @@ import { DetailSection, WhenNear } from "@/components/sale-detail/SaleDetailLayo
 import { MarketEvidence, MarketSnapshot } from "@/components/sale-detail/SaleDetailMarket";
 import { RentalMarketBlockLazy } from "@/components/sale-detail/RentalMarketBlockLazy";
 import layoutStyles from "@/components/sale-detail/SaleDetailLayout.module.css";
-import { EXAMPLE_COMMUNE_RISKS } from "@/lib/example-commune-risks";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { MarketEstimate } from "@/lib/market.server";
 import type { SaleAccessMode } from "@/lib/query-keys";
 import type { RentReference } from "@/lib/rent-reference";
-import { listingCoordinates } from "@/lib/sale-listing";
 import { getSaleSurface } from "@/lib/surface";
 import type { AuctionSale } from "@/lib/types";
 
@@ -24,29 +22,7 @@ const ListingStatistics = dynamic(
     ),
   },
 );
-// Onglet Quartier : chargé à la demande, hors du JavaScript initial de la fiche (il n'est pas
-// l'onglet d'arrivée).
-const UrbanismeSection = dynamic(
-  () =>
-    import("@/components/sale-detail/UrbanismeSection").then((module) => module.UrbanismeSection),
-  {
-    loading: () => (
-      <p className="p-6 text-sm text-muted-foreground">Chargement de l’urbanisme et du cadastre…</p>
-    ),
-  },
-);
-const ListingEnvironmentalRisks = dynamic(() =>
-  import("@/components/sale-detail/ListingEnvironmentalRisks").then(
-    (module) => module.ListingEnvironmentalRisks,
-  ),
-);
-const ListingWeatherHistory = dynamic(() =>
-  import("@/components/sale-detail/ListingWeatherHistory").then(
-    (module) => module.ListingWeatherHistory,
-  ),
-);
-
-/** Section 03 de la fiche, « Marché et comparables » : marché, quartier, statistiques, urbanisme. */
+/** Section 03 de la fiche, « Marché et comparables » : marché, marché locatif, statistiques. */
 export function SaleDetailMarketSection({
   sale,
   displaySale,
@@ -54,7 +30,6 @@ export function SaleDetailMarketSection({
   fullData,
   publicDemo,
   signedIn,
-  authLoading,
   force,
   detailedMarketEstimate,
   marketComputedAt,
@@ -67,7 +42,6 @@ export function SaleDetailMarketSection({
   statisticsAvailable,
   adjudicationStatisticsEnabled,
   propertyTypeVerified,
-  cityBlocked,
 }: {
   sale: AuctionSale;
   displaySale: AuctionSale;
@@ -76,7 +50,6 @@ export function SaleDetailMarketSection({
   fullData: boolean;
   publicDemo: boolean;
   signedIn: boolean;
-  authLoading: boolean;
   /** Une ancre a demandé la section : ses blocs lourds montent sans attendre le défilement. */
   force: boolean;
   detailedMarketEstimate: MarketEstimate | null;
@@ -90,7 +63,6 @@ export function SaleDetailMarketSection({
   statisticsAvailable: boolean;
   adjudicationStatisticsEnabled: boolean;
   propertyTypeVerified: boolean;
-  cityBlocked: boolean;
 }) {
   return (
     <DetailSection id="marche">
@@ -150,33 +122,6 @@ export function SaleDetailMarketSection({
           />
         )
       ) : null}
-      {/* L'ancre `#urbanism` existe avant le chargement du bloc, pour `revealAnchor`. */}
-      <div id="urbanism" className="scroll-mt-2">
-        <WhenNear
-          force={force}
-          placeholder="Chargement de l’urbanisme et du cadastre…"
-          minHeight={320}
-        >
-          <UrbanismeSection
-            sale={displaySale}
-            mapLocation={sale}
-            loadStructuredUrbanism={fullData && !publicDemo && !authLoading && signedIn}
-            // Interroger de nouveau les sources officielles reste à l'abonnement.
-            officialLandRefresh={access === "analysis"}
-          />
-        </WhenNear>
-      </div>
-      <WhenNear force={force} placeholder="Risques de la commune…">
-        <ListingEnvironmentalRisks
-          saleId={sale.id}
-          demoProfile={publicDemo ? EXAMPLE_COMMUNE_RISKS : undefined}
-          enabled={
-            !cityBlocked &&
-            Boolean(displaySale.city || displaySale.postal_code || listingCoordinates(displaySale))
-          }
-        />
-        {!publicDemo ? <ListingWeatherHistory saleId={sale.id} /> : null}
-      </WhenNear>
     </DetailSection>
   );
 }

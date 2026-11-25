@@ -29,7 +29,7 @@ const LawyerQuestions = dynamic(
 );
 
 /**
- * Section 06 de la fiche, « Démarches » : déroulé de la vente, prochaines étapes, informations
+ * Section 07 de la fiche, « Démarches » : déroulé de la vente, prochaines étapes, informations
  * pratiques, « Mon dossier » (offre Analyse), avocat, conditions de la vente et rapport.
  */
 export function SaleDetailStepsSection({

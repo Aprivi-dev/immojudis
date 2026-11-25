@@ -33,99 +33,79 @@ export function WorksScenarioSelector({
   onSelect: (scenario: WorksScenarioKey | null) => void;
 }) {
   const noWorksSelected = selectedScenario == null && works === 0;
-  const cardClass = (selected: boolean) =>
-    `flex h-full flex-col rounded-lg border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-      selected
-        ? "border-gold bg-gold/[0.09] shadow-[0_0_0_1px_rgb(192_138_68/20%)]"
-        : "border-border bg-white hover:border-gold/45 hover:bg-gold/[0.04]"
-    }`;
-  const badge = (selected: boolean, suggested: boolean) =>
-    selected ? (
-      <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-brand-navy">
-        Retenu
-      </span>
-    ) : suggested ? (
-      <span className="rounded-full border border-gold/40 px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.08em] text-gold-text">
-        Suggéré
-      </span>
-    ) : null;
+  const selected = WORKS_SCENARIOS.find((scenario) => scenario.key === selectedScenario);
+  const options: {
+    key: WorksScenarioKey | null;
+    label: string;
+    rate: string | null;
+    budget: number;
+    checked: boolean;
+  }[] = [
+    { key: null, label: "Aucun travaux", rate: null, budget: 0, checked: noWorksSelected },
+    ...WORKS_SCENARIOS.map((scenario) => ({
+      key: scenario.key,
+      label: scenario.label,
+      rate: ppm2(scenario.pricePerM2),
+      budget: estimateWorksBudget(surface, scenario.key),
+      checked: scenario.key === selectedScenario,
+    })),
+  ];
 
   return (
-    <div className="@container rounded-lg border border-border bg-muted/35 p-4 sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-foreground">Quels travaux prévoyez-vous ?</h3>
-          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-            Budget estimé sur les {formatSurface(surface)} du bien (surface × prix moyen au m²).
-            Aucun montant n’est retenu tant que vous n’avez pas choisi.
-            {suggestionReason ? ` ${suggestionReason}` : ""}
-          </p>
-        </div>
-      </div>
+    <div className="@container">
+      <h3 className="text-base font-semibold text-foreground">Quels travaux prévoyez-vous ?</h3>
+      <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+        Budget estimé sur les {formatSurface(surface)} du bien (surface × prix moyen au m²). Aucun
+        montant n’est retenu tant que vous n’avez pas choisi.
+        {suggestionReason ? ` ${suggestionReason}` : ""}
+      </p>
 
       <div
-        className="mt-4 grid gap-3 @md:grid-cols-2 @4xl:grid-cols-4"
+        className="mt-4 grid gap-2 @md:grid-cols-2 @2xl:grid-cols-4"
         role="radiogroup"
         aria-label="Étendue estimée des travaux"
       >
-        <button
-          type="button"
-          role="radio"
-          aria-checked={noWorksSelected}
-          onClick={() => onSelect(null)}
-          className={cardClass(noWorksSelected)}
-        >
-          <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Sans travaux
-            </span>
-            {badge(noWorksSelected, suggestedScenario === null)}
-          </span>
-          <span className="mt-3 text-base font-semibold text-foreground">Aucun travaux</span>
-          <span className="mt-3 text-sm leading-relaxed text-muted-foreground">
-            Le bien est repris en l’état, sans budget de rénovation.
-          </span>
-          <span className="mt-auto block pt-4 text-xs text-muted-foreground">
-            <span className="block border-t border-border pt-3">
-              Pour ce bien : <strong className="text-sm tabular-nums text-foreground">0 €</strong>
-            </span>
-          </span>
-        </button>
-        {WORKS_SCENARIOS.map((scenario) => {
-          const selected = scenario.key === selectedScenario;
-          const budget = estimateWorksBudget(surface, scenario.key);
-          return (
-            <button
-              key={scenario.key}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              onClick={() => onSelect(scenario.key)}
-              className={cardClass(selected)}
-            >
-              <span className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                  {ppm2(scenario.pricePerM2)}
+        {options.map((option) => (
+          <button
+            key={option.key ?? "none"}
+            type="button"
+            role="radio"
+            aria-checked={option.checked}
+            onClick={() => onSelect(option.key)}
+            className={`flex min-h-11 flex-col rounded-lg border px-3 py-2.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              option.checked
+                ? "border-gold bg-gold/[0.09] shadow-[0_0_0_1px_rgb(192_138_68/20%)]"
+                : "border-border bg-white hover:border-gold/45 hover:bg-gold/[0.04]"
+            }`}
+          >
+            <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+              <span className="text-sm font-semibold text-foreground">{option.label}</span>
+              {option.checked ? (
+                <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-semibold text-brand-navy">
+                  Retenu
                 </span>
-                {badge(selected, suggestedScenario === scenario.key)}
-              </span>
-              <span className="mt-3 text-base font-semibold text-foreground">{scenario.label}</span>
-              <span className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                {scenario.summary}
-              </span>
-              <span className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                {scenario.scope}
-              </span>
-              <span className="mt-auto block pt-4 text-xs text-muted-foreground">
-                <span className="block border-t border-border pt-3">
-                  Pour ce bien :{" "}
-                  <strong className="text-sm tabular-nums text-foreground">{fmt(budget)}</strong>
+              ) : suggestedScenario === option.key ? (
+                <span className="rounded-full border border-gold/40 px-2 py-0.5 text-xs font-semibold text-gold-text">
+                  Suggéré
                 </span>
-              </span>
-            </button>
-          );
-        })}
+              ) : null}
+            </span>
+            <span className="mt-1 text-xs text-muted-foreground">
+              <strong className="text-sm tabular-nums text-foreground">{fmt(option.budget)}</strong>
+              {option.rate ? ` · ${option.rate}` : null}
+            </span>
+          </button>
+        ))}
       </div>
+
+      {/* Le détail du seul scénario retenu : quatre descriptions côte à côte allongeaient la fiche. */}
+      {selected || noWorksSelected ? (
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          {selected
+            ? `${selected.summary} ${selected.scope}`
+            : "Le bien est repris en l’état, sans budget de rénovation."}
+        </p>
+      ) : null}
     </div>
   );
 }

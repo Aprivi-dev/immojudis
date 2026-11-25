@@ -9,7 +9,7 @@ import { cahierConsultationLine, getSaleProcedure } from "@/lib/sale-procedure";
 import type { AuctionSale } from "@/lib/types";
 
 /**
- * Section 05 de la fiche, « Pièces du dossier » : où consulter le cahier (cible du lien « Où consulter le cahier »
+ * Section 06 de la fiche, « Pièces du dossier » : où consulter le cahier (cible du lien « Où consulter le cahier »
  * des mentions de l'avocat poursuivant, même ligne que la fiche publique), la liste des pièces et leur lecture.
  */
 export function SaleDetailPiecesSection({
