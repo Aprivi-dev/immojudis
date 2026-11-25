@@ -101,7 +101,6 @@ export function SaleUnlockPurchaseChoices({
     setStep("pending");
     setError(null);
     onAnnounce("Ouverture du paiement…");
-    trackProductEvent("checkout_started", { product: "unit" });
     try {
       const { url } = await startSaleUnlockCheckout({
         saleId,
@@ -118,6 +117,8 @@ export function SaleUnlockPurchaseChoices({
         },
       });
       rememberCreditsBeforePurchase(saleId, credits);
+      // Comme pour l'abonnement : mesuré seulement quand la page de paiement est obtenue.
+      trackProductEvent("checkout_started", { product: "unit" });
       window.location.assign(url);
     } catch (failure) {
       const code = saleUnlockCheckoutRefusalCode(failure);

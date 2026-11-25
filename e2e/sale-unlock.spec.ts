@@ -533,7 +533,7 @@ test("achat à l'unité ouvert, déblocage disponible : la carte dit les prix av
   });
   // Avant tout clic : le déblocage gratuit reste l'action, les prix de la suite sont dits.
   await expect(card.getByTestId("unlock-next-sale")).toHaveText(
-    /^Ensuite, chaque autre vente s’ouvre à l’unité pour 19\s€, ou toutes avec l’offre Analyse \(59\s€\sTTC\s\/\smois, sans engagement\)\. Voir les tarifs$/,
+    /^Ensuite, chaque autre vente s’ouvre à l’unité pour 19\s€, ou toutes avec l’offre Analyse \(59\s€\s\/\smois, sans engagement\)\. Voir les tarifs$/,
   );
   await expect(card.getByRole("link", { name: "Voir les tarifs" })).toHaveAttribute(
     "href",

@@ -49,7 +49,7 @@ describe("offre ouverte, dite à un compte dont l'essai est terminé", () => {
       render(<TrialEndedOfferNote />);
       const note = await screen.findByTestId("trial-ended-offer-open");
       expect(text(note)).toBe(
-        "Votre essai gratuit de l’offre Analyse s’est terminé le 15 novembre 2026. L’offre est ouverte à la souscription : 59 € TTC / mois, sans engagement, ou 19 € la vente à l’unité. Voir les offres",
+        "Votre essai gratuit de l’offre Analyse s’est terminé le 15 novembre 2026. L’offre est ouverte à la souscription : 59 € TTC / mois, sans engagement. Une fois le déblocage de votre compte gratuit utilisé, chaque vente s’ouvre aussi à l’unité pour 19 €. Voir les offres",
       );
       expect(screen.getByRole("link", { name: "Voir les offres" }).getAttribute("href")).toBe(
         "/offres#tarifs",

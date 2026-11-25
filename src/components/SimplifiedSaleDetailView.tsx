@@ -5,10 +5,10 @@ import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { listingSaleStatus } from "@/lib/listing-evidence";
-import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
 import { useAuth } from "@/hooks/use-auth";
 import { PepiteViewTracker } from "@/components/sale-detail/PepiteViewTracker";
 import { SaleUnlockPanel } from "@/components/sale-detail/SaleUnlockPanel";
+import { VisitorCeilingSignupAction } from "@/components/sale-detail/VisitorCeilingSignupAction";
 import type { SalePurchaseReturnPhase } from "@/components/sale-detail/use-sale-unlock-purchase-return";
 import { DocumentReadingHighlights } from "@/components/sale-detail/DocumentReadingSection";
 import { pointsToVerify } from "@/lib/search/points-to-verify";
@@ -19,12 +19,7 @@ import {
 import { useInvestorProfile } from "@/hooks/use-investor-profile";
 import { useSalePepite } from "@/hooks/use-sale-pepite";
 import { adjudicationVersusCeilingLine } from "@/lib/adjudication-vs-ceiling";
-import {
-  unlockNextSaleText,
-  type SaleUnlockResult,
-  type SaleUnlockStatus,
-} from "@/lib/sale-unlocks";
-import { nonBreakingUnits } from "@/lib/non-breaking-units";
+import { type SaleUnlockResult, type SaleUnlockStatus } from "@/lib/sale-unlocks";
 import { UNLOCK_CREDIT_CALL_TO_ACTION_LABEL } from "@/lib/sale-unlock-purchase-texts";
 import { isPersistedSale } from "@/lib/example-sale-identity";
 import { buildTribunalPilot } from "@/lib/professional-pilot-tribunal";
@@ -110,7 +105,6 @@ import {
   useCeilingChoices,
   worksChoiceForAmount,
 } from "@/components/ceiling/use-ceiling-choices";
-import Link from "next/link";
 import {
   getSaleProcedure,
   saleHasVerifiedTribunal,
@@ -327,34 +321,6 @@ export function UnlockedSaleDetailView({
       pepiteKnown={pepiteKnown}
       access="unlocked"
     />
-  );
-}
-
-/**
- * Plafond verrouillé d'un visiteur (C12, 08/11) : « choisissez l’offre Analyse » seulement quand la garde
- * d'ouverture du paiement le permet ; sinon (fermée ou encore inconnue), le déblocage gratuit seul. Les prix
- * de la suite sont dits en dessous quand l'achat à l'unité est ouvert. Composant à part pour que la lecture
- * de l'offre ne parte que pour un visiteur.
- */
-function VisitorCeilingSignupAction({ signupHref }: { signupHref: string }) {
-  const offer = useSaleUnlockPurchaseOffer();
-  const ready = offer.status === "ready" ? offer : null;
-  return (
-    <>
-      <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente
-      {ready?.analysisOpen ? " ou choisissez l’offre Analyse" : null}
-      {ready?.purchase ? (
-        // Les prix dès la première visite (25/11/2026), seulement quand l'achat à l'unité est ouvert.
-        <span data-testid="visitor-next-sale" className="block">
-          {nonBreakingUnits(
-            unlockNextSaleText(
-              ready.purchase.label,
-              ready.analysisOpen ? ready.analysisLabel : null,
-            ),
-          )}
-        </span>
-      ) : null}
-    </>
   );
 }
 

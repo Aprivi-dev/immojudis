@@ -951,9 +951,12 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
       "Si vous vous abonnez dans les 30 jours, ces 19 € sont déduits de votre premier mois.",
     );
     expect(text).not.toContain("sont déduits : ");
-    expect(
-      screen.getByRole("link", { name: "Choisir l’abonnement Analyse" }).getAttribute("href"),
-    ).toBe("/offres#tarifs");
+    const subscribe = screen.getByRole("link", { name: "Choisir l’abonnement Analyse" });
+    expect(subscribe.getAttribute("href")).toBe("/offres#tarifs");
+    fireEvent.click(subscribe);
+    expect(mocks.track).toHaveBeenLastCalledWith("purchase_choice_clicked", {
+      choice: "subscription",
+    });
     expect(screen.getByRole("button", { name: /Acheter cette vente : 19.€/ })).toBeTruthy();
     // No countdown, no scarcity, no pressure to bid.
     expect(text).not.toMatch(/dernière chance|plus que|vite|expire|enchérissez/i);
@@ -1034,6 +1037,12 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
       fireEvent.click(pay);
 
       await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.test/s"));
+      // Mesure : les choix affichés, le clic sur l'achat, puis la page de paiement obtenue.
+      expect(mocks.track.mock.calls).toEqual([
+        ["purchase_choices_viewed", { state: "spent" }],
+        ["purchase_choice_clicked", { choice: "unit" }],
+        ["checkout_started", { product: "unit" }],
+      ]);
       // The credits before leaving for Stripe, to recognise a purchase turned into a credit.
       expect(window.sessionStorage.getItem(`immojudis:achat-vente:credits-avant:${saleId}`)).toBe(
         "0",
@@ -1102,6 +1111,8 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     await waitFor(() => expect(onStatusStale).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId("sale-unlock-notice").textContent).toBe(message);
     expect(screen.getByRole("status").textContent).toBe(message);
+    // Un paiement refusé n'est pas un paiement ouvert.
+    expect(mocks.track).not.toHaveBeenCalledWith("checkout_started", expect.anything());
   });
 
   it("keeps the refusal on screen once the state read again offers the free unlock", async () => {

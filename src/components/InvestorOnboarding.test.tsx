@@ -256,6 +256,15 @@ describe("investor welcome flow", () => {
       expect(alerts.create).not.toHaveBeenCalled();
     });
 
+    it("ne dit jamais « 0 € » pour une mise à prix absente ou nulle", async () => {
+      alerts.search.mockResolvedValue([{ ...sale, starting_price_eur: 0 }]);
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      const block = await screen.findByTestId("onboarding-suggested-sale");
+      expect(block.textContent).toContain("Mise à prix : Prix non communiqué");
+      expect(block.textContent).not.toMatch(/0\s€/);
+    });
+
     it("garde le catalogue filtré à un clic, et crée l'alerte demandée sur les deux chemins", async () => {
       alerts.search.mockResolvedValue([sale]);
       render(<InvestorOnboarding />);

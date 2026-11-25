@@ -18,9 +18,8 @@ import {
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
-import { fetchSearchResults } from "@/lib/search/search-service";
 import { validateSalesSearch, type SalesSearchParams } from "@/lib/search/search-url-state";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatPrice, formatStartingPrice } from "@/lib/format";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
 import type { PlanEntitlements } from "@/lib/plans";
@@ -74,7 +73,14 @@ function useSuggestedSale(search: SalesSearchParams, enabled: boolean): AuctionS
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-    fetchSearchResults({ search: JSON.parse(key) as SalesSearchParams, preview: true })
+    // Le service de recherche n'est chargé qu'ici : il n'alourdit pas l'ouverture de l'accueil.
+    import("@/lib/search/search-service")
+      .then(({ fetchSearchResults }) =>
+        // Étape quittée ou critères changés pendant le chargement : aucune recherche ne part.
+        active
+          ? fetchSearchResults({ search: JSON.parse(key) as SalesSearchParams, preview: true })
+          : [],
+      )
       .then((sales) => {
         if (active && sales[0]) setFound({ key, sale: sales[0] });
       })
@@ -377,7 +383,7 @@ export function InvestorOnboarding({
                   <p className="mt-1 text-muted-foreground">
                     {[
                       suggestedSale.city,
-                      `Mise à prix : ${formatPrice(suggestedSale.starting_price_eur)}`,
+                      `Mise à prix : ${formatStartingPrice(suggestedSale.starting_price_eur)}`,
                       `Vente : ${formatDate(suggestedSale.sale_date)}`,
                     ]
                       .filter(Boolean)
