@@ -59,6 +59,11 @@ import { PepiteHeroBadge } from "@/components/PepiteBadge";
 import styles from "./SaleListing.module.css";
 import { PublicListingFactSource } from "./ListingDataCoverage";
 import { LawyerFactSourceNote } from "./LawyerFactSourceNote";
+import { DocumentFactSourceNote } from "./DocumentFactSourceNote";
+import {
+  DOCUMENT_SURFACE_LABEL,
+  documentSourceForDisplayedValue,
+} from "@/lib/document-fact-sources";
 import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
 import { SALE_DETAIL_PIECES_HREF as PIECES_SECTION_HREF } from "./sale-detail-anchors";
 import {
@@ -528,6 +533,19 @@ export function SaleDetailHeading({
           }),
         },
       ];
+  // La surface du titre relevée automatiquement dans une pièce : la pièce et sa page, en lien vers le PDF quand la
+  // vue sert la pièce (offre Analyse, vente débloquée).
+  const documentHeadingItems = publicDemo
+    ? []
+    : [
+        {
+          label: DOCUMENT_SURFACE_LABEL,
+          source: documentSourceForDisplayedValue(sale, "surface", {
+            blocked: Boolean(surfaceBlocked),
+            surface: shown.app_surface_m2,
+          }),
+        },
+      ];
   const address = showAddress && !cityBlocked ? listingAddress(sale) : "";
   return (
     <header className={styles.pageHeading}>
@@ -552,6 +570,7 @@ export function SaleDetailHeading({
         ) : null}
       </p>
       <LawyerFactSourceNote items={lawyerHeadingItems} cahierHref={PIECES_SECTION_HREF} />
+      <DocumentFactSourceNote items={documentHeadingItems} documents={sale} />
     </header>
   );
 }

@@ -166,6 +166,56 @@ describe("public sale lookup", () => {
     warn.mockRestore();
   });
 
+  it("joins the values read automatically in the pieces, and never caches a failed read", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let pieces: { data: unknown; error: unknown } = {
+      data: null,
+      error: { code: "57014", message: "canceling statement due to statement timeout" },
+    };
+    const supabase = {
+      rpc: vi.fn((fn: string) =>
+        Promise.resolve(
+          fn === "get_public_sale_summary"
+            ? { data: [{ id: ID, city: "Pau", starting_price_eur: 1 }], error: null }
+            : fn === "get_public_sale_document_fact_sources"
+              ? pieces
+              : { data: null, error: null },
+        ),
+      ),
+      from: vi.fn(),
+    };
+    mocks.client.mockReturnValue(supabase);
+
+    const failed = await lookupPublicSale(ID);
+    if (failed.status !== "found") throw new Error("expected a found sale");
+    expect(failed.sale).not.toHaveProperty("document_fact_sources");
+    expect(warn.mock.calls.map(([line]) => JSON.parse(String(line)))).toContainEqual({
+      scope: "public-sale-document-fact-sources",
+      level: "warn",
+      event: "rpc_failed",
+      code: "57014",
+    });
+
+    pieces = {
+      data: [
+        {
+          fact_key: "rooms_count",
+          document_type: "cahier_conditions_vente",
+          page_number: 12,
+          document_key: null,
+        },
+      ],
+      error: null,
+    };
+    const retried = await lookupPublicSale(ID);
+    if (retried.status !== "found") throw new Error("expected a found sale");
+    expect(retried.sale.document_fact_sources).toEqual([
+      { key: "rooms_count", documentType: "cahier_conditions_vente", page: 12, documentKey: null },
+    ]);
+    expect(summaryReads(supabase)).toBe(1);
+    warn.mockRestore();
+  });
+
   it("does not read the lawyer values of a sale that is not public", async () => {
     const supabase = client({ rpc: { data: [], error: null } });
     mocks.client.mockReturnValue(supabase);
@@ -429,16 +479,18 @@ describe("public sale lookup", () => {
       mocks.client.mockReturnValue(client({ rpc: { data: [row], error: null } }));
       await lookupPublicSale(ID.toUpperCase());
       expect(publicSaleCacheTag(ID.toUpperCase())).toBe(`sale-${ID}`);
-      // Two entries since the lawyer values have their own cache (20261114100000): the sale and those
-      // values, both tagged sale-<id> and public-sales, both revalidated after the same window.
+      // Three entries since the lawyer values (20261114100000) and the values read automatically in the
+      // pieces (20261210100000) have their own cache: the sale and those values, all tagged sale-<id> and
+      // public-sales, all revalidated after the same window.
       expect([...mocks.store.keys()]).toEqual([
         `public-sale-lookup/${ID}`,
         `public-sale-lawyer-fact-sources/${ID}`,
+        `public-sale-document-fact-sources/${ID}`,
       ]);
       for (const entry of mocks.store.values()) {
         expect(entry.tags).toEqual([`sale-${ID}`, "public-sales"]);
       }
-      expect(mocks.revalidateSeconds).toEqual([3600, 3600]);
+      expect(mocks.revalidateSeconds).toEqual([3600, 3600, 3600]);
       expect(PUBLIC_SALE_REVALIDATE_SECONDS).toBe(3600);
     });
 

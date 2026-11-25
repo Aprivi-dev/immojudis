@@ -11,6 +11,12 @@ import {
   withLawyerFactSources,
   type LawyerFactSource,
 } from "@/lib/lawyer-fact-sources";
+import {
+  fetchDocumentFactSources,
+  warnDocumentFactSourcesFailure,
+  withDocumentFactSources,
+  type DocumentFactSource,
+} from "@/lib/document-fact-sources";
 import { loadWithdrawnSources } from "@/lib/withdrawn-sources";
 import type { AuctionSale } from "@/lib/types";
 
@@ -136,13 +142,17 @@ export const lookupPublicSale = cache(async (id: string): Promise<PublicSaleLook
   // dépassé ne reste pas cinq minutes. Seules les 3 premières photos affichées sont cherchées, et
   // les copies trouvées ont leur propre cache (photo-mirror.server.ts). Jamais bloquant ni visible.
   const mirrorClient = client as unknown as PhotoMirrorClient;
-  const [mirrored, lawyerSources] = await Promise.all([
+  const [mirrored, lawyerSources, documentSources] = await Promise.all([
     withPhotoMirror(lookup.sale, mirrorClient, {
       fetchMirrors: cachedPhotoMirrorFetcher(mirrorClient),
     }),
     cachedLawyerFactSources(client, normalizedId),
+    cachedDocumentFactSources(client, normalizedId),
   ]);
-  const sale = withLawyerFactSources(mirrored, lawyerSources);
+  const sale = withDocumentFactSources(
+    withLawyerFactSources(mirrored, lawyerSources),
+    documentSources,
+  );
   return sale === lookup.sale ? lookup : { ...lookup, sale };
 });
 
@@ -168,6 +178,30 @@ async function cachedLawyerFactSources(
     )();
   } catch (error) {
     warnLawyerFactSourcesFailure(error);
+    return [];
+  }
+}
+
+/**
+ * Valeurs de la fiche relevées automatiquement dans les pièces (lot V3b-2) : même règle de lecture et de cache que
+ * les valeurs de l'avocat poursuivant ci-dessus. Même fenêtre que la vente elle-même : après un retrait, la valeur et
+ * sa mention restent dans le cache au plus {@link PUBLIC_SALE_REVALIDATE_SECONDS} secondes.
+ */
+async function cachedDocumentFactSources(
+  client: NonNullable<ReturnType<typeof createPublicSupabaseClient>>,
+  id: string,
+): Promise<DocumentFactSource[]> {
+  try {
+    return await unstable_cache(
+      () => fetchDocumentFactSources(client, id),
+      ["public-sale-document-fact-sources", id],
+      {
+        tags: [publicSaleCacheTag(id), PUBLIC_SALES_CACHE_TAG],
+        revalidate: PUBLIC_SALE_REVALIDATE_SECONDS,
+      },
+    )();
+  } catch (error) {
+    warnDocumentFactSourcesFailure(error);
     return [];
   }
 }

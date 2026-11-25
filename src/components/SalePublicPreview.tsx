@@ -24,7 +24,13 @@ import { SaleCalendarButton } from "@/components/SaleCalendarButton";
 import { SaleProcedureBadge } from "@/components/SaleProcedureBadge";
 import { SaleSignalFeedback } from "@/components/SaleSignalFeedback";
 import { LawyerFactSourceNote } from "@/components/sale-detail/LawyerFactSourceNote";
+import { DocumentFactSourceNote } from "@/components/sale-detail/DocumentFactSourceNote";
 import { SALE_DATA_RELIABILITY_NOTE } from "@/lib/sale-data-reliability";
+import {
+  DOCUMENT_ROOMS_LABEL,
+  DOCUMENT_SURFACE_LABEL,
+  documentSourceForDisplayedValue,
+} from "@/lib/document-fact-sources";
 import {
   LAWYER_DAY_LABEL,
   LAWYER_PROPERTY_TYPE_LABEL,
@@ -419,6 +425,20 @@ export function SalePublicPreview({
       source: lawyerSourceForDisplayedValue(preview, "rooms_count", { blocked: rooms == null }),
     },
   ];
+  // Valeurs relevées automatiquement dans les pièces (même règle que la fiche des comptes) : la pièce et sa
+  // page, sans lien (la fiche publique ne sert pas les pièces).
+  const documentPropertyItems = [
+    {
+      label: DOCUMENT_SURFACE_LABEL,
+      source: documentSourceForDisplayedValue(preview, "surface", {
+        surface: preview.app_surface_m2,
+      }),
+    },
+    {
+      label: DOCUMENT_ROOMS_LABEL,
+      source: documentSourceForDisplayedValue(preview, "rooms_count", { blocked: rooms == null }),
+    },
+  ];
   const propertyFacts = (
     <>
       <dl className={styles.facts}>
@@ -449,6 +469,7 @@ export function SalePublicPreview({
         ) : null}
       </dl>
       <LawyerFactSourceNote items={lawyerPropertyItems} cahierHref={PIECES_SECTION_HREF} />
+      <DocumentFactSourceNote items={documentPropertyItems} />
     </>
   );
   // Date de la vente, sous la mise à prix ; l'inscription la suit (P12 : le bouton reste en vue dans
