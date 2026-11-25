@@ -19,8 +19,9 @@ import {
 } from "@/lib/market-estimate-display";
 import type { AuctionSale } from "@/lib/types";
 
-const OutcomeForecast = dynamic(() =>
-  import("@/components/OutcomeForecast").then((module) => module.OutcomeForecast),
+const OutcomeForecast = dynamic(
+  () => import("@/components/OutcomeForecast").then((module) => module.OutcomeForecast),
+  { loading: () => null },
 );
 
 export function TribunalEstimationEvidence({

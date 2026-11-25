@@ -23,8 +23,9 @@ const PropertyReportActions = dynamic(
   },
 );
 // « Mes questions pour l'avocat » (n° 92) : chargé à la demande, avec le repérage des points ouverts.
-const LawyerQuestions = dynamic(() =>
-  import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+const LawyerQuestions = dynamic(
+  () => import("@/components/sale-detail/LawyerQuestions").then((module) => module.LawyerQuestions),
+  { loading: () => null },
 );
 
 /**

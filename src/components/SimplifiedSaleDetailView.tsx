@@ -140,27 +140,33 @@ import { SaleDetailWorksFinancingSection } from "@/components/sale-detail/SaleDe
 import { useSaleDetailAnchors } from "@/components/sale-detail/use-sale-detail-anchors";
 
 // « Mon dossier » gratuit (point 68) : chargé à la demande, hors du JavaScript initial de la fiche.
-const SaleFileCard = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
+const SaleFileCard = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFileCard),
+  { loading: () => null },
 );
 // « Mon plafond face au tribunal » (n° 92) : chargé à la demande, hors du JavaScript initial de la fiche.
-const CeilingVsCourt = dynamic(() =>
-  import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+const CeilingVsCourt = dynamic(
+  () => import("@/components/sale-detail/CeilingVsCourt").then((module) => module.CeilingVsCourt),
+  { loading: () => null },
 );
 // Dossier du panneau « Votre analyse », changements de la vente et « Enregistrer ce plafond » (offre
 // Analyse) : chargés à la demande avec « Mon dossier » (même morceau), hors du JavaScript initial.
-const DossierActions = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.DossierActions),
+const DossierActions = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.DossierActions),
+  { loading: () => null },
 );
-const SaleFollowChanges = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFollowChanges),
+const SaleFollowChanges = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaleFollowChanges),
+  { loading: () => null },
 );
-const SaveCeilingButton = dynamic(() =>
-  import("@/components/sale-detail/SaleFileCard").then((module) => module.SaveCeilingButton),
+const SaveCeilingButton = dynamic(
+  () => import("@/components/sale-detail/SaleFileCard").then((module) => module.SaveCeilingButton),
+  { loading: () => null },
 );
 // Bloc « Pourquoi cette pépite » : chargé à la demande, seule une pépite l'affiche.
-const PepiteBlock = dynamic(() =>
-  import("@/components/sale-detail/PepiteBlock").then((module) => module.PepiteBlock),
+const PepiteBlock = dynamic(
+  () => import("@/components/sale-detail/PepiteBlock").then((module) => module.PepiteBlock),
+  { loading: () => null },
 );
 
 /**
