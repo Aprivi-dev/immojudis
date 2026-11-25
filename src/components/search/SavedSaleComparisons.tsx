@@ -46,7 +46,7 @@ export function SavedSaleComparisons({
         </p>
         <Link
           href={loginPathWithRedirect(localRedirect(returnTo))}
-          className="mt-2 inline-flex min-h-11 items-center rounded-md bg-brand-navy px-3 font-bold text-white"
+          className="mt-2 inline-flex min-h-11 items-center rounded-full bg-ink-black px-3 font-bold text-white"
         >
           Se connecter ou créer un compte
         </Link>
@@ -172,7 +172,7 @@ function AuthenticatedSavedSaleComparisons({
           type="button"
           onClick={() => saveMutation.mutate()}
           disabled={!canSave || saveMutation.isPending || setsQuery.isLoading}
-          className="min-h-11 rounded-md bg-brand-navy px-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-11 rounded-full bg-ink-black px-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saveMutation.isPending
             ? "Enregistrement…"

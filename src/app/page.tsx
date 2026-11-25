@@ -6,21 +6,19 @@ import { organizationStructuredData } from "@/lib/seo";
 import { siteOrigin } from "@/lib/site-url";
 import { LaunchOfferProvider } from "@/components/LaunchOfferProvider";
 import { HomeHero } from "@/components/home/HomeHero";
+import { HomeIntro } from "@/components/home/HomeIntro";
 import { HomeMotion } from "@/components/home/HomeMotion";
 import { HomeOffers } from "@/components/home/HomeOffers";
 import {
-  HomeBenefits,
+  HomeAnswers,
   HomeClosing,
-  HomeFaq,
-  homeFaqItems,
-  HomeGuides,
-  HomeSources,
-  HomeStats,
-  HomeSteps,
-} from "@/components/home/HomeSections";
-import { HomeTagline } from "@/components/home/HomeTagline";
-import { HomeTryExample } from "@/components/home/HomeTryExample";
-import { exampleVerdictData } from "@/lib/example-verdict";
+  HomeDossier,
+  HomeFrieze,
+  HomePath,
+  HomeRules,
+} from "@/components/home/HomeScenes";
+import { HomeScrollScenes } from "@/components/home/HomeScrollScenes";
+import { HomeFaq, homeFaqItems, HomeGuides, HomeStats } from "@/components/home/HomeSections";
 import homeStyles from "@/components/home/HomePage.module.css";
 import { loadHomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { loadHomeDepartmentCount } from "@/lib/home-departments.server";
@@ -85,13 +83,13 @@ export default async function Page() {
       />
       <LaunchOfferProvider initialActive={trialOpen}>
         <main id="contenu" className={homeStyles.page}>
+          <HomeIntro />
           <HomeHero summary={summary} departments={departments} openFeeRegimes={openFeeRegimes} />
           <HomeStats summary={summary} departments={departments} />
-          <HomeTryExample data={exampleVerdictData()} />
-          <HomeTagline />
-          <HomeBenefits />
-          <HomeSteps />
-          <HomeSources />
+          <HomeDossier />
+          <HomeAnswers />
+          <HomePath />
+          <HomeRules />
           <HomeGuides />
           <HomeOffers
             unlockHighlights={unlockHighlightsText(openFeeRegimes)}
@@ -99,7 +97,9 @@ export default async function Page() {
           />
           <HomeFaq trialOpen={trialOpen} openFeeRegimes={openFeeRegimes} />
           <HomeClosing summary={summary} departments={departments} />
+          <HomeFrieze />
           <HomeMotion />
+          <HomeScrollScenes />
         </main>
       </LaunchOfferProvider>
     </>

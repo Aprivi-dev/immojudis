@@ -1274,14 +1274,14 @@ function GuideActions({ id }: { id: string }) {
     >
       <Link
         href="/annonce-exemple"
-        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gold px-5 text-sm font-semibold text-brand-navy transition-colors hover:bg-gold-light"
+        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-gold px-5 text-sm font-semibold text-brand-navy transition-colors hover:bg-gold-light"
       >
         Voir une vente analysée
         <ArrowRight className="h-4 w-4" aria-hidden />
       </Link>
       <Link
         href="/sales"
-        className="inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-5 text-sm font-semibold text-brand-navy transition-colors hover:border-brand-navy"
+        className="inline-flex min-h-11 items-center justify-center rounded-full border border-line bg-white px-5 text-sm font-semibold text-brand-navy transition-colors hover:border-brand-navy"
       >
         Explorer les ventes
       </Link>

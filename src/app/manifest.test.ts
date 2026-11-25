@@ -8,8 +8,8 @@ const manifest = JSON.parse(readFileSync("public/manifest.webmanifest", "utf8"))
 
 describe("manifeste de l'application", () => {
   it("reprend le papier de la marque et l'accroche du site", () => {
-    expect(manifest.background_color).toBe("#fbf9f5");
-    expect(manifest.theme_color).toBe("#132238");
+    expect(manifest.background_color).toBe("#ece6d3");
+    expect(manifest.theme_color).toBe("#45201a");
     expect(manifest.description).toBe("Les enchères immobilières, en toute clarté");
     expect(manifest.name).toBe("Immojudis");
   });

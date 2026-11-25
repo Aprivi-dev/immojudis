@@ -18,7 +18,7 @@ const LazyAdminInformationAgentWorkspace = dynamic(
 // « des panneaux de l'agent d'information ».
 export function AgentPanelsLoading() {
   return (
-    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-brand-navy/60">
+    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-ink-soft">
       <span role="status">Chargement des panneaux de l’agent d’information…</span>
     </AdminPanel>
   );

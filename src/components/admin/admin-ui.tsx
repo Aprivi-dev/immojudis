@@ -8,7 +8,7 @@ import { AdminPill } from "@/components/admin/admin-pill";
 
 export function AdminPanelLoading({ label }: { label: string }) {
   return (
-    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-brand-navy/60">
+    <AdminPanel className="flex min-h-36 items-center justify-center p-6 text-sm text-ink-soft">
       <span role="status">Chargement de {label}…</span>
     </AdminPanel>
   );
@@ -70,7 +70,7 @@ export function OverviewMetric({
         <strong className="block text-2xl font-semibold tabular-nums text-brand-navy">
           {value}
         </strong>
-        <span className="mt-0.5 block text-sm text-brand-navy/62">{label}</span>
+        <span className="mt-0.5 block text-sm text-ink-soft">{label}</span>
       </span>
     </div>
   );
@@ -87,7 +87,7 @@ export function PipelineStat({
 }) {
   return (
     <div className="flex items-center justify-between py-4 text-sm">
-      <span className="text-brand-navy/68">{label}</span>
+      <span className="text-ink-soft">{label}</span>
       <strong className={`text-xl tabular-nums ${danger ? "text-red-600" : "text-info"}`}>
         {value == null ? "—" : formatInteger(value)}
       </strong>

@@ -143,10 +143,10 @@ it("masque les pages des notaires et de l'État quand l'interrupteur des pilotes
   ]);
 });
 
-it("reprend le pictogramme du favicon (le temple) et l'accroche unique", () => {
+it("reprend le pictogramme du favicon (le fronton) et l'accroche unique", () => {
   const { container } = renderFooter();
   expect(container.textContent).toContain("Les enchères immobilières, en toute clarté.");
-  expect(container.querySelector("svg path.stroke-gold")).not.toBeNull();
+  expect(container.querySelector("svg path.fill-brand-navy-soft")).not.toBeNull();
   expect(container.querySelector(".lucide")).toBeNull();
 });
 

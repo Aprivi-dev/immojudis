@@ -1,23 +1,12 @@
 import Link from "next/link";
-import type { CSSProperties } from "react";
-import {
-  exampleVerdictData,
-  findExampleScenario,
-  type ExampleOccupation,
-  type ExampleProject,
-  type ExampleWorks,
-} from "@/lib/example-verdict";
 import { formatNumber, formatNumericDate } from "@/lib/format";
 import type { HomeCatalogueSummary } from "@/lib/home-catalogue-summary.server";
 import { isFeeRegimeOpen, type FeeRegimeKey } from "@/lib/fee-regime-open";
 import { notaryAndStatePilotsEnabled } from "@/lib/sale-types";
-import { HomeExamplePhoto, type ExamplePhotoProps } from "./HomeExamplePhoto";
-import { HomePrimaryAction } from "./HomePrimaryAction";
+import { HomePainting } from "./HomePainting";
+import { HomeHeroActions } from "./HomePrimaryAction";
 import styles from "./HomePage.module.css";
-
-function delay(ms: number): CSSProperties {
-  return { "--delay": `${ms}ms` } as CSSProperties;
-}
+import scenes from "./HomeScenes.module.css";
 
 /**
  * « 1 753 ventes à venir · données vérifiées le 15/10/2026 » ; la date seule peut manquer. C'est la
@@ -30,7 +19,10 @@ export function catalogueSummaryLine({ count, verifiedAt }: HomeCatalogueSummary
   return date ? `${sales} · données vérifiées le ${date}` : sales;
 }
 
-/** Premier écran : la promesse, l'action principale, les chiffres réels et la photo qui analyse. */
+/**
+ * Premier écran (refonte du 24/11/2026) : la promesse, ce que la fiche réunit, le catalogue en
+ * action principale, les chiffres réels, et la peinture de la Justice au travail.
+ */
 export function HomeHero({
   summary = null,
   departments = null,
@@ -47,112 +39,61 @@ export function HomeHero({
     isFeeRegimeOpen("notary_auction", openFeeRegimes) ||
     isFeeRegimeOpen("notary_online", openFeeRegimes);
   return (
-    <section className={styles.hero} aria-labelledby="home-title">
-      <div className={`${styles.container} ${styles.heroGrid}`}>
-        <div className={styles.heroCopy}>
-          <p className={`${styles.eyebrow} ${styles.heroAnim}`}>
-            Pour acheter aux enchères en sachant jusqu’où monter
-          </p>
-          <h1 id="home-title" className={styles.heroAnim} style={delay(80)}>
-            Les enchères <br />
-            immobilières, <br />
-            en toute <span className={styles.clarte}>clarté.</span>
-          </h1>
-          <p className={`${styles.lead} ${styles.heroAnim}`} style={delay(160)}>
-            Pour chaque vente au tribunal{notaryCeiling ? " et chez le notaire" : ""} : ce que
-            disent les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas
-            dépasser selon votre projet.{" "}
-            {notaryAndStatePilotsEnabled()
-              ? "Les ventes des tribunaux, des notaires et de l’État sur une carte."
-              : "Les ventes des tribunaux sur une carte."}
-          </p>
-          <div className={styles.heroAnim} style={delay(240)}>
-            <HomePrimaryAction browseLink />
-          </div>
-          {summary ? (
-            <p className={`${styles.proof} ${styles.heroAnim}`} style={delay(320)}>
-              <Link href="/sales" prefetch={false}>
-                <span className={styles.proofDot} aria-hidden />
-                <span className={styles.proofFigure}>
-                  <b>{formatNumber(summary.count)}</b> vente{summary.count > 1 ? "s" : ""} à venir
-                </span>
-                {departments ? (
-                  <>
-                    {" "}
-                    <span className={styles.proofSep} aria-hidden>
-                      ·
-                    </span>{" "}
-                    <span>
-                      <b>{formatNumber(departments)}</b> département{departments > 1 ? "s" : ""}
-                    </span>
-                  </>
-                ) : null}
-                {formatNumericDate(summary.verifiedAt, "") ? (
-                  <>
-                    {" "}
-                    <span className={styles.proofSep} aria-hidden>
-                      ·
-                    </span>{" "}
-                    <span>données vérifiées le {formatNumericDate(summary.verifiedAt, "")}</span>
-                  </>
-                ) : null}
-              </Link>
-            </p>
-          ) : null}
+    <section className={scenes.hero} aria-labelledby="home-title">
+      <HomePainting
+        name="01-hero"
+        alt="Peinture : la Justice, assise de profil, travaille sur un ordinateur portable ; une balance est posée près d’elle."
+        sizes="(max-width: 960px) 200vw, 100vw"
+        eager
+        className={scenes.heroPainting}
+      />
+      <div className={`${styles.container} ${scenes.heroCopy}`} data-home-scene="hero-copy">
+        <h1 id="home-title" className={scenes.rise}>
+          Le prix se décide <br />
+          avant l’audience.
+        </h1>
+        <p className={`${styles.lead} ${scenes.rise}`}>
+          Pour chaque vente au tribunal{notaryCeiling ? " et chez le notaire" : ""} : ce que disent
+          les pièces quand elles sont publiées, la valeur du quartier et l’enchère à ne pas dépasser
+          selon votre projet.{" "}
+          {notaryAndStatePilotsEnabled()
+            ? "Les ventes des tribunaux, des notaires et de l’État sur une carte."
+            : "Les ventes des tribunaux sur une carte."}
+        </p>
+        <div className={scenes.rise}>
+          <HomeHeroActions />
         </div>
-        <HomeExamplePhoto {...photoProps()} />
+        {summary ? (
+          <p className={`${styles.proof} ${scenes.rise}`}>
+            <Link href="/sales" prefetch={false}>
+              <span className={styles.proofDot} aria-hidden />
+              <span className={styles.proofFigure}>
+                <b>{formatNumber(summary.count)}</b> vente{summary.count > 1 ? "s" : ""} à venir
+              </span>
+              {departments ? (
+                <>
+                  {" "}
+                  <span className={styles.proofSep} aria-hidden>
+                    ·
+                  </span>{" "}
+                  <span>
+                    <b>{formatNumber(departments)}</b> département{departments > 1 ? "s" : ""}
+                  </span>
+                </>
+              ) : null}
+              {formatNumericDate(summary.verifiedAt, "") ? (
+                <>
+                  {" "}
+                  <span className={styles.proofSep} aria-hidden>
+                    ·
+                  </span>{" "}
+                  <span>données vérifiées le {formatNumericDate(summary.verifiedAt, "")}</span>
+                </>
+              ) : null}
+            </Link>
+          </p>
+        ) : null}
       </div>
     </section>
   );
-}
-
-/** Les trois situations du premier écran, du vert au rouge (calculées par le moteur). */
-function photoProps(): ExamplePhotoProps {
-  const data = exampleVerdictData();
-  // Un scénario absent est une erreur de l'exemple (le test de l'accueil la rattrape), pas un
-  // « 0 € » affiché sur le premier écran.
-  const ceilingOf = (
-    project: ExampleProject,
-    occupation: ExampleOccupation,
-    works: ExampleWorks,
-  ): number => {
-    const scenario = findExampleScenario(data.scenarios, project, occupation, works);
-    if (!scenario)
-      throw new Error(`Scénario d’exemple absent : ${project}, ${occupation}, ${works}`);
-    return scenario.ceiling;
-  };
-  return {
-    photo: data.photo,
-    surfaceM2: data.surfaceM2,
-    city: data.city,
-    hearingInDays: data.hearingInDays,
-    startingPrice: data.startingPrice,
-    value: data.value,
-    valueLow: data.valueLow,
-    valueHigh: data.valueHigh,
-    comparables: data.comparables,
-    radiusM: data.radiusM,
-    sameBuildingYear: data.sameBuilding?.year ?? null,
-    sameBuildingPrice: data.sameBuilding?.totalPrice ?? null,
-    startingPricePerM2: data.startingPricePerM2,
-    medianPricePerM2: data.medianPricePerM2,
-    dpe: data.dpe,
-    presets: [
-      {
-        button: "Y habiter",
-        label: "Pour y habiter, occupé, rafraîchissement",
-        ceiling: ceilingOf("habiter", "occupe", "rafraichissement"),
-      },
-      {
-        button: "Revendre, loué",
-        label: "Pour revendre, bien loué, rafraîchissement",
-        ceiling: ceilingOf("revendre", "loue", "rafraichissement"),
-      },
-      {
-        button: "Louer après rénovation",
-        label: "Pour louer, occupé, rénovation confort",
-        ceiling: ceilingOf("louer", "occupe", "confort"),
-      },
-    ],
-  };
 }

@@ -2,8 +2,8 @@
   margin-top: 24px;
   padding: clamp(1.1rem, 3vw, 1.6rem);
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--brand-navy);
 }
 

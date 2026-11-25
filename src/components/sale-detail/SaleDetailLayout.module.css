@@ -60,8 +60,8 @@
   margin-top: 28px;
   padding: 6px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .tocList {
@@ -90,7 +90,7 @@
   gap: 8px;
   min-height: 44px;
   padding: 11px 14px;
-  border-radius: 6px;
+  border-radius: 9999px;
   color: var(--ink-strong);
   font-size: 14px;
   font-weight: 600;
@@ -122,7 +122,7 @@
 }
 
 .tocLink[aria-current="true"] {
-  background: var(--brand-navy);
+  background: var(--ink-black);
   color: #ffffff;
 }
 
@@ -150,8 +150,8 @@
     min-height: 44px;
     padding: 0 14px;
     border: 1px solid var(--line);
-    border-radius: 999px;
-    background: #ffffff;
+    border-radius: 9999px;
+    background: var(--surface);
     color: var(--brand-navy);
   }
 
@@ -262,7 +262,7 @@
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius);
   color: var(--ink-soft);
   font-size: 14px;
 }

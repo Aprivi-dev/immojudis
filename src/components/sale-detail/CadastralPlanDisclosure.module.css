@@ -2,8 +2,8 @@
   margin-top: 14px;
   overflow: hidden;
   border: 1px solid var(--line-soft);
-  border-radius: 13px;
-  background: #ffffff;
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--brand-navy);
 }
 
@@ -27,7 +27,7 @@
   height: 37px;
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--radius);
   background: var(--background);
   color: var(--info);
 }
@@ -62,7 +62,7 @@
   place-content: center;
   gap: 12px;
   padding: 20px;
-  border-radius: 11px;
+  border-radius: var(--radius);
   background: var(--surface-muted);
   color: var(--ink-soft);
   font-size: 13px;

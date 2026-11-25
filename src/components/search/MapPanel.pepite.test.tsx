@@ -174,7 +174,7 @@ describe("carte : repère « Pépite »", () => {
     expect(JSON.stringify(paint["circle-stroke-width"])).toBe(
       JSON.stringify(["case", ["==", ["get", "pepite"], 1], 4, 2]),
     );
-    expect(JSON.stringify(paint["circle-stroke-color"])).toContain("#c98d45");
+    expect(JSON.stringify(paint["circle-stroke-color"])).toContain("#cf8760");
 
     const glyph = mocks.layers.find((layer) => layer.id === "immojudis-sales-pepite")!;
     expect(glyph.type).toBe("symbol");
@@ -205,11 +205,11 @@ describe("carte : repère « Pépite »", () => {
     const cluster = mocks.layers.find((layer) => layer.id === "immojudis-sales-clusters")!;
     const paint = cluster.paint as Record<string, unknown>;
     expect(paint["circle-color"]).toBe("#ffffff");
-    expect(paint["circle-stroke-color"]).toBe("#132238");
+    expect(paint["circle-stroke-color"]).toBe("#45201a");
     const count = mocks.layers.find((layer) => layer.id === "immojudis-sales-cluster-count")!;
-    expect((count.paint as Record<string, unknown>)["text-color"]).toBe("#132238");
+    expect((count.paint as Record<string, unknown>)["text-color"]).toBe("#45201a");
     // Aucune couleur or dans le style des regroupements (ni disque, ni liseré, ni nombre).
-    expect(JSON.stringify([cluster.paint, count.paint]).toLowerCase()).not.toContain("#c98d45");
+    expect(JSON.stringify([cluster.paint, count.paint]).toLowerCase()).not.toContain("#cf8760");
   });
 
   it("agrandit les regroupements par paliers : 18, 24, 30 px, puis 36 px à partir de 100 ventes", async () => {
@@ -248,7 +248,7 @@ describe("carte : repère « Pépite »", () => {
     for (let index = 4; index < pointRadius.length; index += 2) {
       expect(activeRadius[index]).toBe((pointRadius[index] as number) + 6);
     }
-    expect(paint["circle-stroke-color"]).toBe("#9c642b");
+    expect(paint["circle-stroke-color"]).toBe("#8f4526");
     expect(paint["circle-stroke-width"]).toBe(3);
   });
 

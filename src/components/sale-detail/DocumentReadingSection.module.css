@@ -2,7 +2,7 @@
   margin-top: 24px;
   padding: 24px 27px;
   border: 1px solid var(--line-soft);
-  border-radius: 18px;
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink-strong);
 }
@@ -149,7 +149,7 @@
   margin-top: 16px;
   padding: 16px 18px;
   border: 1px solid var(--line-soft);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--surface);
 }
 

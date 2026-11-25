@@ -8,6 +8,23 @@ Cormorant Garamond et d'IBM Plex Sans), la navigation est une pilule flottante e
 sa maquette (`src/components/home/HomePage.module.css`, qui a sa propre échelle). Les jetons vivent dans `src/styles.css`, les composants de base
 dans `src/components/ui/primitives.tsx`.
 
+## Refonte du 24/11/2026 : pierre, bordeaux et Cormorant Garamond
+
+Depuis le 24/11/2026, tout le site suit la direction de la nouvelle page d'accueil :
+
+- **Palette « pierre et bordeaux »**. Les jetons de `src/styles.css` gardent leurs noms et changent
+  de valeur : `--background` est la pierre (#ece6d3), `--brand-navy` l'encre bordeaux (#45201a),
+  `--brand-navy-soft` le bordeaux des bandeaux (#56251e), `--gold` la terracotta des fonds et des
+  boutons (#cf8760), `--gold-text` la terracotta foncée des textes (#8f4526). Partout où ce document
+  dit « marine » ou « or », lire ces couleurs.
+- **Titres en Cormorant Garamond**, texte courant en Manrope, toujours sans italique.
+  `--font-display-adjust` ramène la hauteur d'œil de Cormorant à 0,47 em pour que les tailles en
+  pixels ci-dessous gardent leur présence.
+- **Logo** : le fronton plein sur tuile bordeaux (`BrandMark`, favicon, icônes, emails).
+- **Peintures et boucles vidéo** : propres à l'accueil (`src/components/home/`).
+
+Les règles de rôle ci-dessous (qui porte quelle couleur, échelle de texte, arrondis) ne changent pas.
+
 ## Fond et surfaces
 
 - Un seul fond de page : le **papier chaud** `--background` (#fbf9f5). Le ciel #eef7ff n'est plus
@@ -116,3 +133,16 @@ de photo, et chacune occupait 273 px de gris.
 Page par page, dans cet ordre : fiche vente, /sales, accueil ; le reste du site suit au fil des
 changements. Chaque migration n'ajoute que du CSS et des composants serveur : le budget de
 JavaScript client (`scripts/check-build-budgets.mjs`) reste tenu.
+
+### Tout le site au registre de l'accueil (24/11/2026)
+
+Le socle commun porte désormais les règles de l'accueil, pour toutes les pages :
+
+- **Surfaces à plat** : aucun blanc pur. `bg-white` rend l'ivoire (`--surface`) ; les gris froids de
+  Tailwind (`slate`, `sky`) sont ramenés aux neutres chauds de la palette dans `src/styles.css`.
+- **Angles** : 4 px pour les champs, les cartes et les blocs (`--radius`), pilule pour les boutons et
+  les pastilles.
+- **Boutons** : le bouton principal est une pilule presque noire (`--ink-black`), le bouton
+  secondaire une pilule à filet. Le bordeaux reste aux bandeaux et aux titres.
+- **États** : succès en vert olive, information en encre sur teinte pierre, alerte et erreur en tons
+  chauds ; plus de bleu ni de vert froid.

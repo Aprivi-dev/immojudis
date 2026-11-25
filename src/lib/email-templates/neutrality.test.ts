@@ -81,26 +81,32 @@ import { EMAIL_TEMPLATES } from "./registry";
  * Limited, Irlande ; données stockées aux États-Unis) » du pied diffère (libellé de la politique 2026-11-22.1). Avec LLM_PROVIDER=replicate, le rendu redonne les empreintes d'avant
  * (vérifié). Le test fixe LLM_PROVIDER à vide pour ne pas dépendre de l'environnement.
  *
+ * Mise à jour explicite du 24/11/2026 (refonte de la marque, demandée par le propriétaire : palette pierre et
+ * bordeaux, nouveau logo) : les quatorze empreintes ont changé. Aucun texte ne change : seuls diffèrent les
+ * codes couleur de `EMAIL_COLORS` (copies des jetons de `src/styles.css`) et l'adresse du logo (fichiers
+ * `immojudis-logo-email-v2.png` et `-dark-v2.png`). Vérifié gabarit par gabarit : en remettant les anciens
+ * codes couleur et l'ancien nom de fichier dans le HTML rendu, chaque rendu redonne l'empreinte d'avant.
+ *
  * Mise à jour explicite du 25/11/2026 (passage en Réel du pilote, point 5, validé par le propriétaire) :
- * l'empreinte de agent_request a changé, et SEULEMENT celle-là. Seul l'objet diffère : « Immojudis – question
- * sur la vente … », sans « audience » ni date. Avec l'ancien objet, le rendu redonne l'empreinte d'avant
+ * l'empreinte de agent_request a de nouveau changé (après la refonte du 24/11), et SEULEMENT celle-là. Seul l'objet diffère : « Immojudis – question
+ * sur la vente … », sans « audience » ni date. Avec l'ancien objet, le rendu redonne l'empreinte de la refonte (ae664543…)
  * (vérifié). agent_court_registry n'est pas concerné.
  */
 const BASELINE: Record<string, string> = {
-  alert: "953d168d3a3d76c0d918d05717b2e62c72de9d91fc42a9219c060efa1dc1ddc1",
-  sale_reminder: "89b4e771c33a8e3ba65dd0013af35fd14e355bcf0626bbd58ad5b14cf867a4ce",
-  weekly_digest: "da2f3c451922e5683f5c531a57099c45b57c16becd516aa0b6defd7d3961e19e",
-  sale_result: "7c64c7e5a5b08e1b888fefc460c6759d69c12c695d60bfba30f5d585e1d96d3f",
-  trial_end: "c81b13a29d9e2e2a65502b3c3ea4f92ebfd867b774b65936bb1d7092847e0ad9",
-  offer_opening: "33f6b0d764b9bb7b9e611de5250b6ac1cff11fd47139ace9da41154322d17f47",
-  payment_failed: "a7cf5adb71220d3a7e3125032c3f5b22a82cbb7d713b29bb11b52c13352c4a40",
-  trial_ending: "40d19feefa61fd75b6075103ed2ff7229ddf5a73988c9f8495ad619ff3fc9f13",
-  cancellation: "2eb50b198be9349501148ada5fcaa716f796b516f3c1b001ec9d636d14220bb2",
-  lawyer_referral: "57b2a20ad88d3316f9aabc5db9fafe799ab0fe22a733775963697aebcd72a108",
-  operations_incident: "8dc2d6e71f97afacbf5670fb793ba904df1a01b06c26c660721eab3ee17e9311",
-  replies_review_digest: "3aa56a8a32fda9dbdff6993248f105e11eed80ea4070185b8468dd6d0a39696d",
-  agent_request: "b4db542b67b08cd897044271078921e7e352d7a79b47034f31933e44e8f80b7b",
-  agent_court_registry: "03b772680143d2d698239c06bca83be1a6f6be537a1ffc4308460c735cb9372e",
+  alert: "e5edf96964d49e74667515e78a52b1853863b288b42023e733b41bc5090c1b0f",
+  sale_reminder: "31b3ff3fbdcd57b166e9a8db80843e7f34e98a54f7cfc8aa5891d7581935f2b6",
+  weekly_digest: "730825c8af442b9fd51d93fd6bbd0800289ba21a917f4f679baf9d7fd63a3eaa",
+  sale_result: "25d1c25ad625792e26567276b9fa9ff004aae736edf6061cc401d69bc2679a56",
+  trial_end: "f2e540570c97bdfb8abf403c5eaf5eaa583a12c0f99be36ffc4f092556387eab",
+  offer_opening: "cd130735e7b8cc848a6788046f77d40f8a2e9893da17bd6be2654291cf935bee",
+  payment_failed: "7f9dd590191bf1347f4370fb659008857810cdad6629d628ba54e3daef6e5e53",
+  trial_ending: "29a7398e1ee2ff6e92918ed84a727d676148dc75065a5460797a7ba93046fcd3",
+  cancellation: "608cf3a4489cb9fa036b4c416a50559a6d321e5ecdec65ba6846d445dd63136c",
+  lawyer_referral: "13e2a2e884e8138a6afb70af09f463d85401002d5e4028961adbff98c21a6e89",
+  operations_incident: "1e060cf4fa5ff9c44ea4d501b95f3962eea981cd5aadb410f39d6e446f3dd5cc",
+  replies_review_digest: "f7297b7ee825ceccae19102bbff8a98ffd01ae4c55e07ae4a1f8b0eb268a0852",
+  agent_request: "ab04a4ffa91349ba24009ed3b05bd2051244c7ee476c7594a5a1c37e04370fc9",
+  agent_court_registry: "d404b8cd9c0b7c7cc77d94b02110b1d2d47ef9b77d9f68a207d64414af648c24",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

@@ -151,8 +151,8 @@ export function PropertyIdentity({
                 setChosen(choice);
                 setClicked(true);
               }}
-              className={`min-h-10 rounded-md px-4 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
-                view === choice ? "bg-brand-navy text-white" : "text-brand-navy hover:bg-surface"
+              className={`min-h-10 rounded-full px-4 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+                view === choice ? "bg-ink-black text-white" : "text-brand-navy hover:bg-surface"
               }`}
             >
               {choice === "photos" ? "Photos" : "Vue 360°"}

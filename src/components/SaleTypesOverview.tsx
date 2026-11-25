@@ -23,7 +23,7 @@ export function SaleTypesOverview({ detailed = false }: { detailed?: boolean }) 
               <h3 className="font-display text-2xl font-semibold text-brand-navy">
                 {family.title}
               </h3>
-              <p className="mt-1 text-xs font-semibold text-brand-navy/65">{family.subtitle}</p>
+              <p className="mt-1 text-xs font-semibold text-ink-soft">{family.subtitle}</p>
               <p className="mt-4 text-sm leading-relaxed text-brand-navy/80">
                 {family.description}
               </p>

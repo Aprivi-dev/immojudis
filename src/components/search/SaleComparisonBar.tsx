@@ -90,7 +90,7 @@ export function SaleComparisonBar({
                 setHasOpened(true);
                 setOpen(true);
               }}
-              className="min-h-11 rounded-md bg-brand-navy px-3 text-sm font-bold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-11 rounded-full bg-ink-black px-3 text-sm font-bold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft disabled:cursor-not-allowed disabled:opacity-50"
             >
               {items.length === 0 && userId ? "Mes comparaisons" : `Comparer (${items.length})`}
             </button>

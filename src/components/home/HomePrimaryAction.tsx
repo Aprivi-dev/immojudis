@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
-import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
 import { HOME_TRIAL_NOTE } from "@/lib/launch-offer";
 import { loginPathWithRedirect } from "@/lib/navigation";
 import { trackProductEvent } from "@/lib/product-events";
@@ -12,13 +11,57 @@ import { ArrowRight, ShieldCheck } from "./HomeIcons";
 import styles from "./HomePage.module.css";
 
 /**
- * L'action principale de l'accueil, la même en haut et en bas de page : pour un visiteur, créer son
- * compte gratuit, avec en dessous l'essai de 7 jours (ou, l'essai fermé, la ligne du compte
- * gratuit) ; pour un compte connecté, explorer les ventes. Le rendu serveur est celui du visiteur.
- * Les règles complètes de l'essai sont dans la carte Analyse des offres, sur la même page.
- * `browseLink` (premier écran) : le lien vers le catalogue sans compte, à côté du bouton.
+ * Premier écran (refonte du 24/11/2026) : le catalogue d'abord, l'analyse exemple à côté. On fait
+ * goûter le produit avant de demander un compte ; pour un visiteur, l'inscription reste proposée
+ * sur la ligne du dessous, avec l'essai de 7 jours (ou, l'essai fermé, la ligne du compte gratuit).
+ * Le rendu serveur est celui du visiteur.
  */
-export function HomePrimaryAction({ browseLink = false }: { browseLink?: boolean } = {}) {
+export function HomeHeroActions() {
+  const { user } = useAuth();
+  const trialOpen = useLaunchOffer().active;
+  return (
+    <div className={styles.ctaBlock}>
+      <div className={styles.ctaRow}>
+        <Link
+          href="/sales"
+          prefetch={false}
+          className={styles.button}
+          onClick={() => trackProductEvent("home_cta_clicked", { target: "browse" })}
+        >
+          Voir les ventes <ArrowRight aria-hidden size={20} />
+        </Link>
+        <Link href="/annonce-exemple" prefetch={false} className={styles.buttonGhost}>
+          Une analyse exemple
+        </Link>
+      </div>
+      {user ? null : (
+        <p className={styles.ctaNote}>
+          <ShieldCheck aria-hidden size={16} />
+          <span>
+            <Link
+              href={loginPathWithRedirect(undefined)}
+              prefetch={false}
+              className={styles.noteLink}
+              onClick={() => trackProductEvent("home_cta_clicked", { target: "signup" })}
+            >
+              Créer mon compte gratuit
+            </Link>
+            {" · "}
+            <span>{trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}</span>
+          </span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * L'action principale du dernier écran : pour un visiteur, créer son compte gratuit, avec en dessous
+ * l'essai de 7 jours (ou, l'essai fermé, la ligne du compte gratuit) ; pour un compte connecté,
+ * explorer les ventes. Le rendu serveur est celui du visiteur. Les règles complètes de l'essai sont
+ * dans la carte Analyse des offres, sur la même page.
+ */
+export function HomePrimaryAction() {
   const { user } = useAuth();
   const trialOpen = useLaunchOffer().active;
   if (user) {
@@ -30,33 +73,16 @@ export function HomePrimaryAction({ browseLink = false }: { browseLink?: boolean
       </div>
     );
   }
-  const signUp = (
-    <Link
-      href={loginPathWithRedirect(undefined)}
-      prefetch={false}
-      className={styles.button}
-      onClick={() => trackProductEvent("home_cta_clicked", { target: "signup" })}
-    >
-      Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
-    </Link>
-  );
   return (
     <div className={styles.ctaBlock}>
-      {browseLink ? (
-        <div className={styles.ctaRow}>
-          {signUp}
-          <Link
-            href="/sales"
-            prefetch={false}
-            className={styles.quietLink}
-            onClick={() => trackProductEvent("home_cta_clicked", { target: "browse" })}
-          >
-            Explorer les ventes sans compte <ArrowRight aria-hidden size={16} />
-          </Link>
-        </div>
-      ) : (
-        signUp
-      )}
+      <Link
+        href={loginPathWithRedirect(undefined)}
+        prefetch={false}
+        className={styles.button}
+        onClick={() => trackProductEvent("home_cta_clicked", { target: "signup" })}
+      >
+        Créer mon compte gratuit <ArrowRight aria-hidden size={20} />
+      </Link>
       <p className={styles.ctaNote}>
         <ShieldCheck aria-hidden size={16} />
         {trialOpen ? HOME_TRIAL_NOTE : FREE_ACCESS_LINE}
@@ -78,17 +104,5 @@ export function HomeBrowseWithoutAccount({ className }: { className?: string }) 
     >
       Ou explorez les ventes sans compte
     </Link>
-  );
-}
-
-/** Première étape du « comment ça marche » : ce que donne la confirmation de l'adresse email. */
-export function HomeSignupStepText() {
-  const trialOpen = useLaunchOffer().active;
-  return (
-    <p>
-      {trialOpen
-        ? `Confirmez votre adresse email : vos ${ANALYSIS_TRIAL_DAYS} jours d’offre Analyse commencent. Aucune carte bancaire demandée.`
-        : "Confirmez votre adresse email : votre compte Découverte est ouvert, gratuit et sans carte bancaire."}
-    </p>
   );
 }

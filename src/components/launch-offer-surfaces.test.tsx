@@ -97,7 +97,7 @@ describe("accueil", () => {
     render(<HomeHero />);
     expect(screen.queryByText(HOME_TRIAL_NOTE)).toBeNull();
     expect(screen.queryByRole("link", { name: /Créer mon compte gratuit/ })).toBeNull();
-    expect(screen.getByRole("link", { name: /Explorer les ventes/ }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: /Voir les ventes/ }).getAttribute("href")).toBe(
       "/sales",
     );
   });

@@ -178,7 +178,7 @@ function AdminPublications({
                   className={`rounded-md px-3 py-2 text-xs font-semibold transition ${
                     filter === value
                       ? "bg-white text-brand-navy shadow-sm"
-                      : "text-brand-navy/55 hover:text-brand-navy"
+                      : "text-ink-soft hover:text-brand-navy"
                   }`}
                 >
                   {label}
@@ -223,7 +223,7 @@ function AdminPublications({
             />
           ))
         ) : (
-          <div className="py-16 text-center text-sm text-brand-navy/58">
+          <div className="py-16 text-center text-sm text-ink-soft">
             {error
               ? "Les demandes sont indisponibles pour le moment."
               : "Aucune demande ne correspond aux filtres."}
@@ -231,7 +231,7 @@ function AdminPublications({
         )}
         {hasMore && !loading && !error ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-brand-navy/10 pt-4">
-            <span className="text-xs text-brand-navy/58">
+            <span className="text-xs text-ink-soft">
               {requests.length} demande{requests.length > 1 ? "s" : ""} affichée
               {requests.length > 1 ? "s" : ""}
               {totalRequests != null ? " sur " + totalRequests : ""} · filtre et recherche serveur

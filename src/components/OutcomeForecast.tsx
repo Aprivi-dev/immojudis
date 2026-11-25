@@ -180,7 +180,7 @@ function OutcomeForecastReady({
                 />
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-display text-xl text-brand-navy/65"
+                  className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-display text-xl text-ink-soft"
                 >
                   €
                 </span>
@@ -200,11 +200,11 @@ function OutcomeForecastReady({
                   Probabilité que le prix final reste inférieur ou égal à votre plafond, si le lot
                   est adjugé
                 </p>
-                <p className="mt-2 max-w-sm text-xs leading-relaxed text-brand-navy/65">
+                <p className="mt-2 max-w-sm text-xs leading-relaxed text-ink-soft">
                   Arrondie à 5 % près. Elle se lit sur trois repères estimés (10 %, 50 % et 90 %) et
                   ne tient pas compte de la concurrence le jour de la vente.
                 </p>
-                <p className="mt-4 text-xs leading-relaxed text-brand-navy/65">
+                <p className="mt-4 text-xs leading-relaxed text-ink-soft">
                   Probabilité combinée avec une adjudication :{" "}
                   <strong className="text-brand-navy">
                     <ApproximateProbability inline reading={combinedReading} />
@@ -225,7 +225,7 @@ function OutcomeForecastReady({
 
         <ForecastMeta forecast={displayedForecast} />
 
-        <details className="mt-7 border-t border-brand-navy/12 pt-5 text-sm text-brand-navy/68">
+        <details className="mt-7 border-t border-brand-navy/12 pt-5 text-sm text-ink-soft">
           <summary className="cursor-pointer font-semibold text-brand-navy">
             Méthode, facteurs et limites
           </summary>
@@ -265,7 +265,7 @@ function FlowStep({
       ? "border-brand-navy bg-brand-navy text-white"
       : tone === "gold"
         ? "border-gold bg-white text-gold-text"
-        : "border-brand-navy/18 bg-white text-brand-navy/65";
+        : "border-brand-navy/18 bg-white text-ink-soft";
   return (
     <div className="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-4 pb-7 last:pb-0 md:block md:pb-0 md:text-center">
       <span
@@ -317,7 +317,7 @@ function PriceDistribution({
         </strong>
       </p>
       <div className="mt-7">
-        <p className="text-xs text-brand-navy/66">
+        <p className="text-xs text-ink-soft">
           Repères sur une échelle en euros : 10 %, médiane et 90 %.
         </p>
         <div className="relative mt-3 h-1 rounded-full bg-brand-navy/12" aria-hidden>
@@ -341,22 +341,22 @@ function PriceDistribution({
             style={{ left: position(quantiles.p90Cents) }}
           />
         </div>
-        <div className="mt-1 flex justify-between text-xs tabular-nums text-brand-navy/55">
+        <div className="mt-1 flex justify-between text-xs tabular-nums text-ink-soft">
           <span>{formatPrice(euros(lowCents))}</span>
           <span>Prix, en euros</span>
           <span>{formatPrice(euros(highCents))}</span>
         </div>
         <dl className="mt-3 grid grid-cols-3 font-display text-base font-semibold text-brand-navy/72 sm:text-lg">
           <div>
-            <dt className="font-sans text-xs font-normal text-brand-navy/66">10 %</dt>
+            <dt className="font-sans text-xs font-normal text-ink-soft">10 %</dt>
             <dd>{formatPrice(euros(quantiles.p10Cents))}</dd>
           </div>
           <div className="text-center">
-            <dt className="font-sans text-xs font-normal text-brand-navy/66">Médiane</dt>
+            <dt className="font-sans text-xs font-normal text-ink-soft">Médiane</dt>
             <dd className="text-gold-text">{formatPrice(euros(quantiles.p50Cents))}</dd>
           </div>
           <div className="text-right">
-            <dt className="font-sans text-xs font-normal text-brand-navy/66">90 %</dt>
+            <dt className="font-sans text-xs font-normal text-ink-soft">90 %</dt>
             <dd>{formatPrice(euros(quantiles.p90Cents))}</dd>
           </div>
         </dl>

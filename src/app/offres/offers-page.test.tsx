@@ -467,7 +467,7 @@ describe("page Offres", () => {
   it("un seul bouton primaire dans l'en-tête : l'essai pour un visiteur quand il est proposé", () => {
     const primaryOf = (container: HTMLElement) =>
       Array.from(container.querySelector("section")!.querySelectorAll("a, button")).filter((node) =>
-        node.className.includes("bg-brand-navy text-white hover:bg-brand-navy-soft"),
+        node.className.includes("bg-ink-black text-white hover:bg-brand-navy"),
       );
     mocks.launch.mockReturnValue({ active: true, pending: false });
     const trial = render(<OffersPage />);

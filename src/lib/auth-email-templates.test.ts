@@ -112,15 +112,15 @@ describe("gabarits des emails d'authentification Supabase", () => {
         expect(html).toContain('<meta name="color-scheme" content="light dark">');
         expect(html).toContain(`<title>${definition.subject}</title>`);
         expect(html).toContain("@media (prefers-color-scheme: dark)");
-        expect(html).toContain("https://immojudis.com/brand/email/immojudis-logo-email-v1.png");
+        expect(html).toContain("https://immojudis.com/brand/email/immojudis-logo-email-v2.png");
         expect(html).toContain(
-          "https://immojudis.com/brand/email/immojudis-logo-email-dark-v1.png",
+          "https://immojudis.com/brand/email/immojudis-logo-email-dark-v2.png",
         );
         expect(html).toContain('alt="Immojudis"');
         expect(html).toContain('<table role="presentation"');
         expect(html).not.toContain("<div");
-        expect(html).toContain("border-top:1px solid #e1d8ca"); // filet du pied
-        expect(html).toContain("#c98d45"); // filet or de la carte
+        expect(html).toContain("border-top:1px solid #d6c9ad"); // filet du pied
+        expect(html).toContain("#cf8760"); // filet or de la carte
         expect(html).not.toMatch(/ImmoJudis|IMMOJUDIS/);
       }
     });

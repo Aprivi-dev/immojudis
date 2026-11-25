@@ -486,7 +486,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onReset}
-          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-sand bg-surface px-4 text-sm font-bold text-gold-text transition-colors hover:border-gold"
         >
           <RotateCcw className="h-4 w-4" />
           Réinitialiser
@@ -494,7 +494,7 @@ export function MobileFilterDrawer({
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy-soft"
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full bg-ink-black px-4 text-sm font-bold text-white transition-colors hover:bg-brand-navy"
         >
           {showResultsLabel(resultCount)}
         </button>
@@ -589,9 +589,9 @@ export function ChipToggle({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex min-h-11 cursor-pointer items-center rounded-md border px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+      className={`inline-flex min-h-11 cursor-pointer items-center rounded-full border px-3 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
         active
-          ? "border-brand-navy bg-brand-navy text-white"
+          ? "border-brand-navy bg-ink-black text-white"
           : "border-line-soft bg-white text-brand-navy hover:border-brand-navy"
       }`}
     >

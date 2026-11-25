@@ -527,7 +527,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
                 <button
                   type="button"
                   onClick={retryLoad}
-                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-light"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full bg-gold px-4 py-2 text-sm font-semibold text-brand-navy transition hover:bg-gold-light"
                 >
                   Réessayer
                 </button>
@@ -867,7 +867,7 @@ export function InformationAgentContributionForm({ missionId }: { missionId: str
 
                   <button
                     type="submit"
-                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-light hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-gold px-5 py-3 text-sm font-semibold text-brand-navy transition hover:bg-gold-light hover:text-brand-navy disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={submitting}
                   >
                     {submitting ? (

@@ -74,14 +74,14 @@ export function AdminOfferOpeningPanel() {
           </div>
           <h2 className="mt-2 text-xl font-semibold">Prévenir la liste d’attente</h2>
           {query.isPending ? (
-            <p className="mt-2 text-sm text-brand-navy/65">Chargement de la liste d’attente…</p>
+            <p className="mt-2 text-sm text-ink-soft">Chargement de la liste d’attente…</p>
           ) : query.isError || !audience ? (
             <p role="alert" className="mt-2 text-sm text-red-700">
               Liste d’attente indisponible.
             </p>
           ) : (
             <>
-              <p className="mt-2 text-sm leading-6 text-brand-navy/65" data-testid="opening-count">
+              <p className="mt-2 text-sm leading-6 text-ink-soft" data-testid="opening-count">
                 <strong className="text-brand-navy">{audience.recipients}</strong> destinataire
                 {audience.recipients > 1 ? "s" : ""} actif{audience.recipients > 1 ? "s" : ""}{" "}
                 (demande active, adresse confirmée, jamais prévenu). {audience.alreadyNotified} déjà
@@ -119,7 +119,7 @@ export function AdminOfferOpeningPanel() {
                 >
                   {audience.preview.text}
                 </pre>
-                <p className="mt-2 text-xs text-brand-navy/60">
+                <p className="mt-2 text-xs text-ink-soft">
                   Texte sobre, sans prix : il renvoie vers la page Offres. À faire relire avant le
                   premier envoi réel.
                 </p>

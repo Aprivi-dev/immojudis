@@ -13,7 +13,7 @@ const VIEWPORTS = [
   [600, "Bureau (600 px)"],
   [375, "Mobile (375 px)"],
 ] as const;
-const MUTED = "text-brand-navy/62";
+const MUTED = "text-ink-soft";
 
 async function copy(value: string, done: string) {
   try {

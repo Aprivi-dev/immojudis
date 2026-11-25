@@ -90,7 +90,7 @@ export function AdminAuctionFactClaimReviewPanel() {
             <h2 id="fact-review-title" className="mt-2 font-semibold">
               Faits à vérifier, valeur inchangée
             </h2>
-            <p className="mt-1 max-w-3xl text-sm text-brand-navy/60">
+            <p className="mt-1 max-w-3xl text-sm text-ink-soft">
               La valeur affichée ne change pas ; la fiche la signale comme vérifiée sur source.
             </p>
           </div>
@@ -107,7 +107,7 @@ export function AdminAuctionFactClaimReviewPanel() {
       </div>
 
       {query.isPending ? (
-        <p role="status" className="p-5 text-sm text-brand-navy/55">
+        <p role="status" className="p-5 text-sm text-ink-soft">
           Chargement des faits…
         </p>
       ) : query.error ? (
@@ -159,7 +159,7 @@ export function AdminAuctionFactClaimReviewPanel() {
           />
         </div>
       ) : (
-        <p className="p-5 text-sm text-brand-navy/60">Aucun fait en attente de revue.</p>
+        <p className="p-5 text-sm text-ink-soft">Aucun fait en attente de revue.</p>
       )}
     </section>
   );
@@ -203,7 +203,7 @@ function ClaimLine({
               )}
               {item.status === "conflicted" ? "Conflit" : "À confirmer"}
             </AdminPill>
-            <span className="text-xs text-brand-navy/55">{factFieldLabel(item.fieldKey)}</span>
+            <span className="text-xs text-ink-soft">{factFieldLabel(item.fieldKey)}</span>
             <span className="font-mono text-[11px] text-brand-navy/45">
               {shortId(item.claimId)}
             </span>
@@ -211,24 +211,24 @@ function ClaimLine({
           <h3 className="mt-2 truncate font-semibold">
             {item.sale.title || item.sale.city || `Vente ${shortId(item.saleId)}`}
           </h3>
-          <p className="mt-1 text-xs text-brand-navy/55">
+          <p className="mt-1 text-xs text-ink-soft">
             {[item.sale.city, item.sale.saleDate ? formatShortDateTime(item.sale.saleDate) : null]
               .filter(Boolean)
               .join(" · ")}
           </p>
           <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-lg border bg-amber-50/60 p-3">
-              <dt className="text-xs font-medium text-brand-navy/60">Valeur extraite</dt>
+              <dt className="text-xs font-medium text-ink-soft">Valeur extraite</dt>
               <dd className="mt-1 font-semibold text-amber-900">{formatFactValue(item.value)}</dd>
             </div>
             <div className="rounded-lg border bg-slate-50 p-3">
-              <dt className="text-xs font-medium text-brand-navy/60">Valeur canonique actuelle</dt>
+              <dt className="text-xs font-medium text-ink-soft">Valeur canonique actuelle</dt>
               <dd className="mt-1 font-semibold text-brand-navy">
                 {formatFactValue(item.currentCanonicalValue)}
               </dd>
             </div>
           </dl>
-          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-brand-navy/65">
+          <div className="mt-3 rounded-lg border border-dashed p-3 text-xs text-ink-soft">
             <p className="font-medium text-brand-navy">Preuve · {item.evidence.kind}</p>
             {locatorQuote ? <p className="mt-1 whitespace-pre-wrap">« {locatorQuote} »</p> : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -315,7 +315,7 @@ function ClaimLine({
               />
             </label>
           ) : (
-            <p className="mt-1 text-xs text-brand-navy/60">
+            <p className="mt-1 text-xs text-ink-soft">
               La valeur doit encore correspondre au canonique au moment de la validation.
             </p>
           )}

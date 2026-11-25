@@ -1,11 +1,8 @@
 /*
- * Accueil (maquette validée le 25/10/2026, d'après le skill « landing-page-design ») : premier écran
- * classique puis sections empilées, une seule action principale répétée en bas. Manrope seule, sans
- * italique ; tailles de l'échelle Tailwind (12/14/16/18/20/24/30/36/48/60 px) ; espacements de la
- * grille 2/4/8/12/16/24/32/40/48/64/80/96 px ; courbe cubic-bezier(0.32, 0.72, 0, 1).
- * Apparitions au défilement : `HomeMotion` (blocs `data-reveal`, masqués seulement une fois le script
- * chargé), phrase révélée mot à mot : `HomeTagline`. Rien ne bouge quand le visiteur réduit les
- * animations.
+ * Accueil, refonte du 24/11/2026 : peintures vivantes, sur la palette et la typographie du site. Cette feuille porte la palette, la typographie, les boutons
+ * et les sections de contenu (chiffres, guides, offres, questions) ; les sections peintes
+ * et leurs scènes sont dans `HomeScenes.module.css`. Apparitions au défilement des blocs
+ * `data-reveal` : `HomeMotion`. Rien ne bouge quand le visiteur réduit les animations.
  */
 
 .page {
@@ -13,21 +10,21 @@
   --home-soft: var(--ink-soft);
   --home-line: var(--line-soft);
   --home-line-strong: var(--line);
-  --home-surface: #ffffff;
+  --home-surface: var(--surface);
   --home-surface-2: var(--sand);
   --home-accent: var(--gold-text);
   --home-accent-fill: var(--gold);
-  /* « clarté. » du titre : cuivre lisible sur le papier (contraste 4,9:1). */
-  --home-accent-title: var(--gold-soft);
-  /* Bandeau final en marine, comme les autres bandeaux forts (décision du 13/11/2026). */
-  --home-band: var(--brand-navy);
+  --home-band: var(--brand-navy-soft);
   --home-band-fg: var(--band-dark-fg);
   --home-band-soft: var(--band-dark-soft);
-  /* Filet des liens, visible sur le marine. */
-  --home-band-line: rgb(255 255 255 / 22%);
-  --home-ease: cubic-bezier(0.32, 0.72, 0, 1);
-  /* Les titres de l'accueil suivent leur propre échelle, sans l'ajustement des autres pages. */
-  --font-display-adjust: none;
+  --home-olive: var(--olive);
+  /* Marge de la page, comme sur le site de référence : un douzième de la largeur de l'écran, sans
+     largeur maximale du contenu (120 px à 1 440, 160 px à 1 920) ; 20 px sur écran étroit. */
+  --home-gutter: max(20px, 8.3333vw);
+  --home-button: var(--ink-black);
+  --home-button-fg: var(--band-dark-fg);
+  --home-ease: cubic-bezier(0.48, 0.05, 0.35, 0.99);
+  --home-display: var(--font-display);
   background: var(--background);
   color: var(--home-ink);
   font-family: var(--font-sans);
@@ -43,9 +40,11 @@
 }
 
 .page :where(h1, h2, h3) {
-  font-family: var(--font-sans);
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-family: var(--home-display);
+  font-size-adjust: var(--font-display-adjust);
+  font-variant-numeric: lining-nums;
+  font-weight: 600;
+  letter-spacing: -0.022em;
   text-wrap: balance;
 }
 
@@ -60,10 +59,9 @@
 }
 
 .container {
-  width: min(1152px, 100%);
-  margin-inline: auto;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  width: 100%;
+  padding-left: max(var(--home-gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--home-gutter), env(safe-area-inset-right, 0px));
 }
 
 .section {
@@ -85,8 +83,8 @@
 
 .h2 {
   max-width: 680px;
-  font-size: 36px;
-  line-height: 40px;
+  font-size: 44px;
+  line-height: 46px;
 }
 
 .lead {
@@ -115,29 +113,55 @@
 
 /* Boutons et liens --------------------------------------------------------------------------- */
 
-.button {
+.button,
+.buttonGhost {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   /* Cible tactile d'au moins 44 px. */
-  min-height: 44px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--home-ink);
-  color: #ffffff;
-  font-size: 16px;
+  min-height: 48px;
+  padding: 12px 24px;
+  border: 1px solid var(--home-button);
+  border-radius: 9999px;
+  background: var(--home-button);
+  color: var(--home-button-fg);
+  font-size: 15px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 22px;
   text-decoration: none;
   cursor: pointer;
   transition:
     background-color 300ms var(--home-ease),
+    border-color 300ms var(--home-ease),
+    color 300ms var(--home-ease),
     transform 300ms var(--home-ease);
 }
 
-.button:hover {
-  background: var(--brand-navy-soft);
+.buttonGhost {
+  border-color: var(--home-line-strong);
+  background: transparent;
+  color: var(--home-ink);
+}
+
+.button:hover,
+.buttonGhost:hover {
+  border-color: var(--home-surface-2);
+  background: var(--home-surface-2);
+  color: var(--home-ink);
+}
+
+/* Lien dans la ligne sous les boutons : il suit la phrase (exception « en ligne » du critère
+   WCAG 2.5.8). */
+.noteLink {
+  color: var(--home-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--home-line-strong);
+  text-underline-offset: 4px;
+}
+
+.noteLink:hover {
+  color: var(--home-accent);
 }
 
 .button:active {
@@ -186,31 +210,6 @@
   gap: 12px 24px;
 }
 
-.quietLink {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 44px;
-  color: var(--home-ink);
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 24px;
-  text-decoration: none;
-  transition: color 300ms var(--home-ease);
-}
-
-.quietLink:hover {
-  color: var(--home-accent);
-}
-
-.quietLink svg {
-  transition: transform 300ms var(--home-ease);
-}
-
-.quietLink:hover svg {
-  transform: translateX(2px);
-}
-
 .ctaNote {
   display: flex;
   align-items: center;
@@ -225,60 +224,9 @@
   color: var(--home-accent);
 }
 
-/* Premier écran -------------------------------------------------------------------------------- */
-
-.hero {
-  position: relative;
-  isolation: isolate;
-  overflow: clip;
-  padding-top: 64px;
-  padding-bottom: 96px;
-}
+/* Ligne des chiffres du premier écran ------------------------------------------------------------ */
 
 /* Deux grandes courbes sable derrière le premier écran, comme un papier qui ondule. */
-.hero::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background:
-    radial-gradient(120% 70% at 0% 100%, var(--surface-tint) 0 48%, transparent 48.2%),
-    radial-gradient(80% 90% at 100% 0%, var(--surface-muted) 0 55%, transparent 55.2%);
-  content: "";
-  pointer-events: none;
-  /* S'efface vers le bas : pas de bord net contre la bande de chiffres qui suit. */
-  mask-image: linear-gradient(180deg, black 55%, transparent 100%);
-}
-
-.heroGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  align-items: center;
-  gap: 64px;
-}
-
-.heroCopy {
-  display: grid;
-  gap: 24px;
-  min-width: 0;
-}
-
-.hero h1 {
-  max-width: 680px;
-  padding-bottom: 4px;
-  background: linear-gradient(180deg, var(--title-gradient-from), var(--title-gradient-to));
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-  font-size: 60px;
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.035em;
-}
-
-.clarte {
-  color: var(--home-accent-title);
-  -webkit-text-fill-color: var(--home-accent-title);
-}
 
 .proof {
   display: flex;
@@ -323,53 +271,6 @@
 
 .proofSep {
   color: var(--home-soft);
-}
-
-/* Fiche exemple : le calcul de l'enchère plafond, à l'échelle */
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  background: var(--background);
-  color: var(--home-soft);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-}
-
-.bar {
-  display: flex;
-  gap: 2px;
-  height: 12px;
-  overflow: hidden;
-  border-radius: 9999px;
-}
-
-.barSmall {
-  height: 8px;
-}
-
-.bar i {
-  display: block;
-  height: 100%;
-  transform-origin: left;
-}
-
-.barCeiling {
-  background: var(--home-accent-fill);
-}
-
-.barCosts {
-  background: var(--home-soft);
-  opacity: 0.55;
-}
-
-.barMargin {
-  background: var(--home-line-strong);
 }
 
 /* Chiffres du catalogue ----------------------------------------------------------------------- */
@@ -418,239 +319,12 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Problème et réponse ------------------------------------------------------------------------ */
-
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  align-items: start;
-  gap: 64px;
-}
-
-/* Phrase révélée mot à mot -------------------------------------------------------------------- */
-
-.taglineSection {
-  padding-block: 96px;
-}
-
-.tagline {
-  max-width: 960px;
-  font-size: 60px;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-}
-
-.taglineAccent {
-  color: var(--home-accent);
-}
-
-/* Bénéfices -------------------------------------------------------------------------------- */
-
-.benefits {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.benefit {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
-  padding: 32px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
-  background: var(--home-surface);
-  transition:
-    border-color 300ms var(--home-ease),
-    transform 700ms var(--home-ease);
-}
-
-.benefit:hover {
-  border-color: var(--home-accent-fill);
-  transform: translateY(-2px);
-}
-
-.benefit h3 {
-  font-size: 20px;
-  line-height: 28px;
-}
-
-.benefit p {
-  color: var(--home-soft);
-}
-
-.icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  background: var(--home-surface-2);
-  color: var(--home-accent);
-}
-
-.visual {
-  padding: 12px;
-  border: 1px solid var(--home-line);
-  border-radius: 12px;
-  background: var(--background);
-}
-
-/* L'illustration se pose sur le bas de la carte : les deux d'une rangée s'alignent. */
-.benefit > .visual {
-  margin-top: auto;
-}
-
-.docLines {
-  display: grid;
-  gap: 8px;
-}
-
-.docLines i {
-  display: block;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--home-line);
-}
-
-.docLines i.highlight {
-  background: var(--home-accent-fill);
-  opacity: 0.6;
-}
-
-.miniBars {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  height: 64px;
-}
-
-.miniBars i {
-  flex: 1;
-  border-radius: 4px 4px 0 0;
-  background: var(--home-line);
-}
-
-.miniBars i.mine {
-  background: var(--home-accent-fill);
-}
-
-.visualLegend {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.toast {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--home-line);
-  border-radius: 8px;
-  background: var(--home-surface);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.toast + .toast {
-  margin-top: 8px;
-}
-
-.toast i {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: var(--home-accent-fill);
-}
-
-/* Étapes -------------------------------------------------------------------------------------- */
-
-.stepsBand {
-  border-block: 1px solid var(--home-line);
-  background: var(--home-surface);
-}
-
-.steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.step {
-  display: grid;
-  align-content: start;
-  gap: 8px;
-  min-width: 0;
-  padding-top: 24px;
-  border-top: 2px solid var(--home-line);
-}
-
-.stepNumber {
-  color: var(--home-accent);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 20px;
-}
-
-.step h3 {
-  font-size: 20px;
-  line-height: 28px;
-}
-
-.step p {
-  color: var(--home-soft);
-}
-
-/* Sources --------------------------------------------------------------------------------------- */
+/* Liens des guides ------------------------------------------------------------------------------ */
 
 .sourceLinks {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-}
-
-.sources {
-  display: grid;
-  overflow: hidden;
-  border: 1px solid var(--home-line);
-  border-radius: 16px;
-  background: var(--home-surface);
-}
-
-.sources li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 12px;
-  padding: 16px;
-}
-
-.sources li + li {
-  border-top: 1px solid var(--home-line);
-}
-
-.sources li > svg {
-  margin-top: 2px;
-  color: var(--home-accent);
-}
-
-.sources b {
-  display: block;
-  font-weight: 600;
-}
-
-.sources span {
-  color: var(--home-soft);
-  font-size: 14px;
-  line-height: 20px;
 }
 
 /* Offres ---------------------------------------------------------------------------------------- */
@@ -662,18 +336,23 @@
   gap: 16px;
 }
 
+/* Deux feuillets à plat, comme les tuiles des règles du tribunal : pas d'ombre ni de grand arrondi. */
 .plan {
   display: grid;
   align-content: start;
   gap: 16px;
   padding: 32px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
+  border-radius: 4px;
   background: var(--home-surface);
 }
 
 .planFeatured {
-  border-color: var(--home-accent-fill);
+  background: var(--home-band);
+  color: var(--home-band-fg);
+  /* Sur le bordeaux : textes secondaires, accents et filets dans les teintes du bandeau. */
+  --home-soft: var(--home-band-soft);
+  --home-accent: var(--gold-light);
+  --home-line-strong: rgb(255 255 255 / 34%);
 }
 
 .planHead {
@@ -748,8 +427,7 @@
 
 .faq {
   overflow: hidden;
-  border: 1px solid var(--home-line);
-  border-radius: 16px;
+  border-radius: 4px;
   background: var(--home-surface);
 }
 
@@ -817,83 +495,9 @@
   color: var(--home-soft);
 }
 
-/* Dernier écran --------------------------------------------------------------------------------- */
-
-.closing {
-  background: var(--home-band);
-  color: var(--home-band-fg);
-}
-
-.closingInner {
-  display: grid;
-  justify-items: center;
-  gap: 24px;
-  padding-block: 96px;
-  text-align: center;
-}
-
-.closing h2 {
-  max-width: 680px;
-  font-size: 48px;
-  line-height: 1;
-  letter-spacing: -0.03em;
-}
-
-.closing p {
-  max-width: 560px;
-  color: var(--home-band-soft);
-  font-size: 18px;
-  line-height: 28px;
-}
-
-.closing .button {
-  background: var(--gold-light);
-  color: var(--home-band);
-}
-
-.closing .button:hover {
-  background: var(--gold-light-hover);
-}
-
-.closing .ctaBlock {
-  justify-items: center;
-}
-
-.closing .ctaNote {
-  justify-content: center;
-  color: var(--home-band-soft);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.closing .ctaNote svg {
-  color: var(--gold-light);
-}
-
-.closing .textLink {
-  color: var(--home-band-fg);
-  text-decoration-color: var(--home-band-line);
-}
-
-.closing .textLink:hover {
-  color: var(--gold-light);
-  text-decoration-color: currentColor;
-}
-
-.page .closing :where(a, button):focus-visible {
-  outline-color: var(--gold-light);
-}
-
 /* Largeurs ------------------------------------------------------------------------------------- */
 
-/* Sur grand écran, l'explication reste à côté de la carte de l'exemple et des réponses ouvertes.
-   104 px : la même valeur que `.tryAnchor`, sous l'en-tête flottant. */
-@media (min-width: 961px) {
-  .trySplit > .headAside {
-    position: sticky;
-    top: 104px;
-  }
-}
+/* Sur grand écran, l'explication reste à côté des réponses ouvertes, 104 px sous l'en-tête flottant. */
 
 @media (min-width: 861px) {
   .faqGrid > .headAside {
@@ -902,29 +506,10 @@
   }
 }
 
-@media (max-width: 1100px) {
-  .hero h1,
-  .tagline {
-    font-size: 48px;
-  }
-}
-
-@media (max-width: 960px) {
-  .heroGrid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 48px;
-  }
-}
-
 @media (max-width: 860px) {
-  .split,
   .faqGrid {
     grid-template-columns: minmax(0, 1fr);
     gap: 32px;
-  }
-
-  .steps {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .stats {
@@ -951,32 +536,12 @@
 }
 
 @media (max-width: 720px) {
-  .section,
-  .taglineSection {
+  .section {
     padding-block: 64px;
   }
 
   .sectionFlush {
     padding-top: 0;
-  }
-
-  .hero {
-    padding-top: 32px;
-    padding-bottom: 64px;
-  }
-
-  .hero::before {
-    background: radial-gradient(160% 40% at 0% 100%, var(--surface-tint) 0 60%, transparent 60.2%);
-  }
-
-  .hero h1,
-  .tagline {
-    font-size: 36px;
-    line-height: 40px;
-  }
-
-  .hero h1 br {
-    display: none;
   }
 
   /* La ligne passe sur deux lignes : l'espacement sépare les éléments, sans « · » en bout de ligne. */
@@ -989,390 +554,12 @@
     line-height: 36px;
   }
 
-  .benefits,
   .plans {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .benefit,
   .plan {
     padding: 24px;
-  }
-
-  .closingInner {
-    padding-block: 64px;
-  }
-
-  .closing h2 {
-    font-size: 36px;
-    line-height: 40px;
-  }
-}
-
-/* Fiche exemple qui rend un verdict (maquette validée le 26/10/2026) ------------------------- */
-
-.verdict_go {
-  --verdict: var(--success);
-  --verdict-tint: var(--success-tint);
-}
-
-.verdict_tight {
-  --verdict: var(--warning);
-  --verdict-tint: var(--warning-tint);
-}
-
-.verdict_pass {
-  --verdict: var(--danger);
-  --verdict-tint: var(--danger-tint);
-}
-
-.verdictPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  border-radius: 9999px;
-  background: var(--verdict);
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 20px;
-  white-space: nowrap;
-  transition: background-color 500ms var(--home-ease);
-}
-
-.verdictPill i {
-  width: 8px;
-  height: 8px;
-  border-radius: 9999px;
-  background: currentColor;
-}
-
-.verdictAmount {
-  color: var(--verdict);
-  font-size: 44px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transition: color 500ms var(--home-ease);
-}
-
-.verdictText {
-  color: var(--verdict);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 20px;
-  transition: color 500ms var(--home-ease);
-}
-
-.analysisCheck {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 9999px;
-  background: var(--success);
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.analysisWarn .analysisCheck {
-  background: var(--warning);
-}
-
-/* Premier écran : la fiche exemple sur un panneau blanc, posée sur une trame de points */
-.exampleStage {
-  position: relative;
-  min-width: 0;
-}
-
-.exampleStage::before {
-  position: absolute;
-  top: -32px;
-  right: -32px;
-  width: 176px;
-  height: 176px;
-  background-image: radial-gradient(var(--home-line-strong) 1.5px, transparent 1.5px);
-  background-size: 16px 16px;
-  content: "";
-  mask-image: radial-gradient(circle at 70% 30%, black 30%, transparent 72%);
-}
-
-.exampleCard {
-  position: relative;
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-  padding: 16px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
-  background: var(--home-surface);
-  box-shadow:
-    0 1px 2px rgb(19 34 56 / 6%),
-    0 32px 80px -32px rgb(19 34 56 / 32%);
-}
-
-.exampleHeader {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-}
-
-.exampleThumb {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  overflow: hidden;
-  border-radius: 16px;
-  background: var(--home-surface-2);
-}
-
-.exampleThumbImage {
-  object-fit: cover;
-  object-position: 35% 50%;
-}
-
-.exampleBadge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgb(19 34 56 / 82%);
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.exampleTitle {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.exampleTitle > p:first-child {
-  font-size: 20px;
-  font-weight: 700;
-  line-height: 28px;
-  letter-spacing: -0.01em;
-}
-
-.exampleSub {
-  color: var(--home-soft);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.exampleChip {
-  justify-self: start;
-  margin-top: 8px;
-  padding: 4px 12px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  color: var(--home-soft);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.exampleChip b {
-  color: var(--home-ink);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.analysisBlock {
-  display: grid;
-  gap: 8px;
-  padding: 12px 16px;
-  border: 1px solid var(--home-line);
-  border-radius: 16px;
-}
-
-.analysisHead {
-  display: flex;
-  justify-content: space-between;
-  color: var(--home-ink);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 20px;
-}
-
-.analysisHead span:last-child {
-  color: var(--success);
-  font-size: 12px;
-}
-
-.analysisBlock ul {
-  display: grid;
-}
-
-.analysisBlock li {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding-block: 6px;
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.analysisBlock li + li {
-  border-top: 1px solid var(--home-line);
-}
-
-.analysisBlock li b {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.exampleTiles {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
-.valueTile,
-.ceilingTile {
-  display: grid;
-  align-content: start;
-  justify-items: start;
-  gap: 4px;
-  padding: 16px;
-  border: 1px solid var(--home-line);
-  border-radius: 16px;
-  background: var(--surface-muted);
-}
-
-.ceilingTile {
-  border-color: color-mix(in srgb, var(--verdict) 28%, transparent);
-  background: var(--verdict-tint);
-  transition:
-    background-color 500ms var(--home-ease),
-    border-color 500ms var(--home-ease);
-}
-
-.tileLabel {
-  color: var(--home-soft);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.tileAmount,
-.ceilingTile .verdictAmount {
-  font-size: 30px;
-  font-weight: 800;
-  line-height: 36px;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.tileNote {
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ceilingTile .verdictPill {
-  margin-top: 4px;
-  padding: 2px 10px;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.exampleSituation {
-  display: grid;
-  gap: 2px;
-  margin-top: 12px;
-}
-
-.situationLabel {
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.presetButtons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.presetButtons button {
-  min-height: 44px;
-  padding: 4px 10px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  background: var(--home-surface);
-  color: var(--home-soft);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  cursor: pointer;
-  transition:
-    background-color 300ms var(--home-ease),
-    border-color 300ms var(--home-ease),
-    color 300ms var(--home-ease);
-}
-
-.presetButtons button:hover {
-  border-color: var(--home-ink);
-  color: var(--home-ink);
-}
-
-.presetButtons button[aria-pressed="true"] {
-  border-color: var(--home-ink);
-  background: var(--home-ink);
-  color: #ffffff;
-}
-
-/* Sous les situations de l'exemple : le lien vers l'analyse complète et la pause de l'animation. */
-.exampleFoot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.pauseButton {
-  min-height: 44px;
-  padding: 4px 10px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  background: var(--home-surface);
-  color: var(--home-soft);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.pauseButton:hover,
-.pauseButton[aria-pressed="true"] {
-  border-color: var(--home-ink);
-  color: var(--home-ink);
-}
-
-/* Animation terminée ou arrêtée : le bouton garde sa place (pas de saut de page) mais disparaît. */
-.pauseButtonOff {
-  visibility: hidden;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pauseButton {
-    display: none;
   }
 }
 
@@ -1415,398 +602,9 @@
   line-height: 24px;
 }
 
-/* Lien « #essayer » : la section arrive sous l'en-tête flottant. */
-.tryAnchor {
-  scroll-margin-top: 104px;
-}
-
-/* Essayez sur un exemple */
-.trySplit {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  align-items: start;
-  gap: 64px;
-}
-
-.tryCard {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-  padding: 24px;
-  border: 1px solid var(--home-line);
-  border-radius: 24px;
-  background: var(--home-surface);
-  box-shadow: 0 32px 80px -40px rgb(19 34 56 / 35%);
-}
-
-.tryTop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tryTop b {
-  display: block;
-  font-size: 18px;
-  line-height: 28px;
-}
-
-.tryTop span:not(.tag) {
-  color: var(--home-soft);
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.tryDataHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 14px;
-  line-height: 20px;
-}
-
-.tryDataHead span {
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.tryData {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.tryData li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 0 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--home-line);
-  border-radius: 10px;
-  background: var(--background);
-}
-
-.tryData .analysisCheck {
-  grid-row: span 2;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-}
-
-.tryData b {
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.tryData li > span:last-child {
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.tryControls {
-  display: grid;
-  gap: 8px;
-}
-
-.tryControl {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.tryControl > span {
-  color: var(--home-soft);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.segmented {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border: 1px solid var(--home-line);
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-
-.segmented button {
-  flex: 1;
-  min-height: 44px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--home-soft);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 18px;
-  cursor: pointer;
-  transition:
-    background-color 300ms var(--home-ease),
-    color 300ms var(--home-ease);
-}
-
-.segmented button:hover {
-  color: var(--home-ink);
-}
-
-.segmented button[aria-pressed="true"] {
-  background: var(--home-surface);
-  color: var(--home-ink);
-  box-shadow: 0 4px 10px -6px rgb(19 34 56 / 40%);
-}
-
-.tryVerdict {
-  display: grid;
-  gap: 4px;
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--verdict-tint);
-  transition: background-color 500ms var(--home-ease);
-}
-
-.tryVerdictTop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.tryVerdictTop small {
-  color: var(--home-soft);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.gauge {
-  position: relative;
-  height: 10px;
-  margin: 32px 0 4px;
-  border: 1px solid var(--home-line);
-  border-radius: 9999px;
-  background: var(--surface-muted);
-}
-
-.gaugeBand {
-  position: absolute;
-  top: -4px;
-  bottom: -4px;
-  border: 1px dashed var(--home-line-strong);
-  border-radius: 4px;
-}
-
-.gaugeFill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 9999px;
-  background: var(--verdict);
-  transition:
-    width 900ms var(--home-ease),
-    background-color 500ms var(--home-ease);
-}
-
-.gaugeMark {
-  position: absolute;
-  top: -24px;
-  bottom: -6px;
-  border-left: 2px dashed var(--home-soft);
-}
-
-.gaugeMark span {
-  position: absolute;
-  top: 0;
-  left: 6px;
-  color: var(--home-soft);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 16px;
-  white-space: nowrap;
-}
-
-.gaugeMarkEnd span {
-  right: 6px;
-  left: auto;
-}
-
-.gaugeAxis {
-  display: flex;
-  justify-content: space-between;
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.tryWhy {
-  color: var(--home-soft);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.tryHint {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--home-soft);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.tryHint i {
-  width: 6px;
-  height: 6px;
-  border-radius: 9999px;
-  background: var(--home-accent-fill);
-}
-
-.tryHintOff i {
-  background: var(--home-line-strong);
-}
-
-.verdictRules {
-  display: grid;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.verdictRules li {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 12px;
-  color: var(--home-soft);
-}
-
-.verdictRules li > span:first-child {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 9999px;
-  background: var(--verdict-tint);
-  color: var(--verdict);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.verdictRules b {
-  color: var(--home-ink);
-  font-weight: 600;
-}
-
-@media (max-width: 960px) {
-  .trySplit {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
-  }
-
-  .trySplit .head {
-    order: -1;
-  }
-}
-
-@media (max-width: 1100px) and (min-width: 961px) {
-  .exampleHeader {
-    grid-template-columns: 152px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 520px) {
-  .exampleStage::before {
-    display: none;
-  }
-
-  .exampleCard {
-    padding: 12px;
-    border-radius: 20px;
-  }
-
-  .exampleHeader {
-    grid-template-columns: 128px minmax(0, 1fr);
-    gap: 12px;
-  }
-
-  .exampleTitle > p:first-child {
-    font-size: 16px;
-    line-height: 22px;
-  }
-
-  .exampleSub {
-    font-size: 13px;
-    line-height: 18px;
-  }
-
-  .exampleChip {
-    margin-top: 4px;
-  }
-
-  .tileAmount,
-  .ceilingTile .verdictAmount {
-    font-size: 24px;
-    line-height: 32px;
-  }
-
-  .tryData {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tryControl {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* Mouvement ------------------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: no-preference) {
-  /* Fiche exemple : lignes d'analyse cochées une à une, puis l'estimation et l'enchère qui se posent. */
-  .analysisBlock li {
-    animation: home-slide 500ms var(--home-ease) both;
-    animation-delay: calc(var(--i) * 260ms + 600ms);
-  }
-
-  .analysisBlock .analysisCheck {
-    animation: home-tick 400ms var(--home-ease) both;
-    animation-delay: calc(var(--i) * 260ms + 800ms);
-  }
-
-  .exampleTiles {
-    animation: home-rise 800ms var(--home-ease) both;
-    animation-delay: 2000ms;
-  }
-
-  :global(html[data-home-motion]) .tryCard[data-shown] .tryData li {
-    animation: home-slide 600ms var(--home-ease) both;
-    animation-delay: calc(var(--i) * 160ms + 300ms);
-  }
-
-  :global(html[data-home-motion]) .tryCard[data-shown] .tryData .analysisCheck {
-    animation: home-tick 500ms var(--home-ease) both;
-    animation-delay: calc(var(--i) * 160ms + 500ms);
-  }
-
-  .tryHint:not(.tryHintOff) i {
-    animation: home-blink 1200ms ease-in-out 3;
-  }
-
-  .heroAnim {
-    animation: home-rise 900ms var(--home-ease) both;
-    animation-delay: var(--delay, 0ms);
-  }
-
   :global(html[data-home-motion]) .page [data-reveal] {
     transition:
       opacity 900ms var(--home-ease),
@@ -1820,54 +618,11 @@
     filter: blur(12px);
     transform: translateY(64px);
   }
-
-  /* Phrase révélée : les mots passent de 50 % à 100 % d'opacité, un à un, au défilement. Le skill
-     dit 30 % ; 50 % est le minimum pour un contraste de 3:1 (grand texte, WCAG AA) : 1,9:1 à 30 %.
-     L'accent cuivre n'apparaît qu'une fois le mot allumé (cuivre à 50 % : 2,1:1). */
-  :global(html[data-home-motion]) .tagline [data-word] {
-    opacity: 0.5;
-    transition:
-      opacity 300ms var(--home-ease),
-      color 300ms var(--home-ease);
-  }
-
-  :global(html[data-home-motion]) .tagline [data-word]:not([data-lit]) {
-    color: var(--home-ink);
-  }
-
-  :global(html[data-home-motion]) .tagline [data-word][data-lit] {
-    opacity: 1;
-  }
 }
 
-/* Départ à 0,01 et sans flou : à 0, le navigateur ne retient ni le titre ni la photo comme plus grand
-   élément affiché (LCP), et le bandeau cookies le devient (4,3 à 5,7 s mesurés sur mobile). */
-@keyframes home-rise {
-  from {
-    opacity: 0.01;
-    transform: translateY(24px);
-  }
-}
-
-@keyframes home-slide {
-  from {
-    opacity: 0.01;
-    transform: translateX(-16px);
-  }
-}
-
-@keyframes home-tick {
-  from {
-    transform: scale(0);
-  }
-
-  70% {
-    transform: scale(1.2);
-  }
-}
-
-@keyframes home-blink {
-  50% {
-    opacity: 0.2;
+/* Écran étroit : la marge ne suit plus la largeur, elle reste à 20 px. */
+@media (max-width: 809px) {
+  .page {
+    --home-gutter: 20px;
   }
 }

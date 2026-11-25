@@ -75,9 +75,9 @@ describe("erreur globale", () => {
       container: document.createElement("div"),
     });
     const main = container.querySelector("main") as HTMLElement;
-    expect(main.style.background).toBe("rgb(251, 249, 245)");
+    expect(main.style.background).toBe("rgb(236, 230, 211)");
     const button = within(container).getByRole("button", { name: "Réessayer" });
-    expect(button.style.background).toBe("rgb(19, 34, 56)");
+    expect(button.style.background).toBe("rgb(69, 32, 26)");
     expect(button.style.color).toBe("rgb(255, 255, 255)");
     fireEvent.click(button);
     expect(retry).toHaveBeenCalledTimes(1);
@@ -89,7 +89,7 @@ describe("erreur globale", () => {
 
   it("prend le papier de la charte dans EMAIL_COLORS, sans hexadécimal en dur", () => {
     const source = readFileSync(resolve("src/app/global-error.tsx"), "utf8");
-    expect(EMAIL_COLORS.paper).toBe("#fbf9f5");
+    expect(EMAIL_COLORS.paper).toBe("#ece6d3");
     expect(source).toContain("EMAIL_COLORS.paper");
     expect(source).not.toMatch(/#[0-9a-f]{6}\b/i);
   });

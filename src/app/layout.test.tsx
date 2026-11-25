@@ -44,9 +44,18 @@ describe("root layout metadata", () => {
     expect(metadata.openGraph).toMatchObject({ siteName: "Immojudis", locale: "fr_FR" });
   });
 
-  it("loads Manrope only, preloaded, in the weights the stylesheet uses", () => {
-    // Une seule police depuis le 25/10/2026 (Cormorant Garamond et IBM Plex Sans retirées).
-    expect(fonts.calls.map((call) => call.variable)).toEqual(["--font-manrope"]);
+  it("loads Manrope, preloaded, in the weights the stylesheet uses, and Cormorant for titles, not preloaded", () => {
+    // Deux polices depuis la refonte du 24/11/2026 : Manrope (texte) et Cormorant Garamond (titres).
+    expect(fonts.calls.map((call) => call.variable)).toEqual([
+      "--font-manrope",
+      "--font-cormorant",
+    ]);
+    expect(fontCall("--font-cormorant")).toMatchObject({
+      preload: false,
+      display: "swap",
+      adjustFontFallback: "Times New Roman",
+    });
+    expect(faces("--font-cormorant")).toEqual(["normal 300 700"]);
     expect(fontCall("--font-manrope")).toMatchObject({
       preload: true,
       display: "swap",
@@ -68,11 +77,7 @@ describe("root layout metadata", () => {
     const css = readFileSync(join(process.cwd(), "src", "styles.css"), "utf8");
     expect(css).not.toMatch(/@font-face/);
     expect(css).not.toMatch(/font-style:\s*italic/);
-    for (const removed of [
-      "cormorant-garamond-latin-normal.woff2",
-      "cormorant-garamond-latin-italic.woff2",
-      "ibm-plex-sans-latin.woff2",
-    ]) {
+    for (const removed of ["cormorant-garamond-latin-italic.woff2", "ibm-plex-sans-latin.woff2"]) {
       expect(existsSync(join(process.cwd(), "src", "fonts", removed)), removed).toBe(false);
     }
     expect(existsSync(join(process.cwd(), "src", "components", "PreloadCormorantItalic.tsx"))).toBe(
@@ -91,6 +96,9 @@ describe("root layout metadata", () => {
       }
     }
     expect(existsSync(join(process.cwd(), "src", "fonts", "OFL-manrope.txt"))).toBe(true);
+    expect(existsSync(join(process.cwd(), "src", "fonts", "OFL-cormorant-garamond.txt"))).toBe(
+      true,
+    );
     expect(readFileSync(join(layoutDir, "layout.tsx"), "utf8")).not.toMatch(
       /from\s+["']next\/font\/google["']/,
     );

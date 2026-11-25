@@ -26,7 +26,7 @@ export function MapFallback({
             <button
               type="button"
               onClick={onRetry}
-              className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-md bg-brand-navy px-4 text-sm font-semibold text-white hover:bg-brand-navy-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
+              className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full bg-ink-black px-4 text-sm font-semibold text-white hover:bg-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
             >
               Réessayer
             </button>
@@ -34,10 +34,10 @@ export function MapFallback({
           <a
             href="#sales-results"
             onClick={onShowList}
-            className={`inline-flex min-h-11 items-center justify-center rounded-md px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
+            className={`inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft ${
               onRetry
                 ? "border border-line bg-white text-brand-navy hover:border-brand-navy"
-                : "bg-brand-navy text-white hover:bg-brand-navy-soft"
+                : "bg-ink-black text-white hover:bg-brand-navy"
             }`}
           >
             Voir la liste

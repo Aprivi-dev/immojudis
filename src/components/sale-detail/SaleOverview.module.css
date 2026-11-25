@@ -41,7 +41,7 @@
   margin: 0;
   padding: 12px;
   border: 1px dashed var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--surface-muted);
   color: var(--ink-strong);
   font-size: 14px;
@@ -72,7 +72,7 @@
   position: absolute;
   top: 6px;
   height: 14px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: #5f9f80;
 }
 
@@ -182,7 +182,7 @@
   padding: 22px 24px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: #ffffff;
+  background: var(--surface);
   color: var(--brand-navy);
 }
 
@@ -226,7 +226,7 @@
   min-width: 0;
   padding: 13px 14px;
   border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .tile dt {
@@ -324,7 +324,7 @@
   height: 12px;
   border: 2px solid var(--gold);
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--surface);
 }
 
 .keyStep .rail::after {
@@ -388,7 +388,7 @@
   padding: 10px max(16px, env(safe-area-inset-right, 0px))
     calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
   border-top: 1px solid var(--line);
-  background: #ffffff;
+  background: var(--surface);
   box-shadow: 0 -8px 24px -16px rgb(19 34 56 / 35%);
 }
 
@@ -446,8 +446,8 @@
   justify-content: center;
   min-height: 44px;
   padding: 10px 16px;
-  border-radius: 8px;
-  background: var(--brand-navy);
+  border-radius: 9999px;
+  background: var(--ink-black);
   color: #ffffff;
   font-size: 14.5px;
   font-weight: 700;
@@ -490,7 +490,7 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 0;
     border: 1px solid var(--line-soft);
-    border-radius: 8px;
+    border-radius: var(--radius);
   }
 
   .tile {

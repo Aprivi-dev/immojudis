@@ -52,7 +52,7 @@ export function PremiumAdjudicationExplorer({
       {authLoading || (session && planQuery.isLoading) ? (
         // Message de navigateur seulement : absent du HTML du serveur (voir `useHasHydrated`).
         hydrated ? (
-          <p className="mt-6 text-sm text-brand-navy/65" role="status">
+          <p className="mt-6 text-sm text-ink-soft" role="status">
             Vérification de votre accès Analyse…
           </p>
         ) : (
@@ -77,14 +77,14 @@ export function PremiumAdjudicationExplorer({
           <p className="font-semibold text-brand-navy">
             Les résultats chiffrés sont réservés à l’offre Analyse.
           </p>
-          <p className="mt-2 text-sm text-brand-navy/65">
+          <p className="mt-2 text-sm text-ink-soft">
             Accédez aux prix médians, aux répartitions des résultats, aux comparaisons par type de
             bien et au tableau des tribunaux avec export CSV.
           </p>
           <BillingActions className="mt-5" hideHelper />
         </div>
       ) : statisticsQuery.isLoading ? (
-        <p className="mt-6 text-sm text-brand-navy/65" role="status">
+        <p className="mt-6 text-sm text-ink-soft" role="status">
           Chargement des résultats d’adjudication…
         </p>
       ) : statisticsQuery.isError || !data ? (
