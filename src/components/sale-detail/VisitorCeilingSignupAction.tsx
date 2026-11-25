@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
 import { nonBreakingUnits } from "@/lib/non-breaking-units";
-import { unlockNextSaleText } from "@/lib/sale-unlocks";
+import { unlockNextSaleText } from "@/lib/sale-unlock-purchase-texts";
 
 /**
  * Plafond verrouillé d'un visiteur (C12, 08/11) : « choisissez l’offre Analyse » seulement quand la garde

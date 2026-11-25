@@ -12,7 +12,6 @@ import {
   UNLOCK_CALL_TO_ACTION_LABEL,
   UNLOCK_CHOICE_TEXT,
   UNLOCK_CONFIRMATION_TEXT,
-  unlockNextSaleText,
   UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
@@ -22,6 +21,7 @@ import {
   unlockQuotaReachedText,
   unlockUsageLine,
 } from "@/lib/sale-unlocks";
+import { unlockNextSaleText } from "@/lib/sale-unlock-purchase-texts";
 import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 
 const rpcStatus = {

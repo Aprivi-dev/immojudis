@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
-import { InvestorOnboarding } from "./InvestorOnboarding";
+import { PREVIEW_SEARCH_API_PATH } from "@/lib/search/preview-search-request";
+import { InvestorOnboarding, ONBOARDING_PREVIEW_PATH } from "./InvestorOnboarding";
 
 const navigate = vi.hoisted(() => vi.fn());
 const alerts = vi.hoisted(() => ({
@@ -11,10 +12,10 @@ const alerts = vi.hoisted(() => ({
   analysis: false as boolean | undefined,
   // Les droits du compte, tels que /api/feature-entitlements les rend (`undefined` : pas encore lus).
   plan: undefined as Record<string, unknown> | undefined,
-  // Ventes rendues par la recherche d'aperçu (vide : l'accueil mène au catalogue).
+  // Lecture de la route d'aperçu : reçoit l'adresse, rend les ventes (vide : l'accueil mène au catalogue).
   search: vi.fn(),
 }));
-vi.mock("@/lib/search/search-service", () => ({ fetchSearchResults: alerts.search }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
@@ -32,9 +33,17 @@ beforeEach(() => {
   alerts.saving = false;
   alerts.create.mockResolvedValue({ status: "created", emailConsent: true });
   alerts.search.mockResolvedValue([]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const items = await alerts.search(url);
+      return { ok: true, json: async () => ({ items, count: items.length, mirrors: [] }) };
+    }),
+  );
 });
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -241,10 +250,10 @@ describe("investor welcome flow", () => {
       const block = await screen.findByTestId("onboarding-suggested-sale");
       // Même recherche que le catalogue d'un visiteur, avec les critères saisis.
       expect(alerts.search).toHaveBeenCalledTimes(1);
-      expect(alerts.search.mock.calls[0][0]).toMatchObject({
-        preview: true,
-        search: { department: "33", maxPrice: 150000 },
-      });
+      expect(alerts.search).toHaveBeenCalledWith(
+        "/api/catalogue/preview?department=33&maxPrice=150000",
+      );
+      expect(ONBOARDING_PREVIEW_PATH).toBe(PREVIEW_SEARCH_API_PATH);
       const text = (block.textContent ?? "").replace(/[\u00a0\u202f]/g, " ");
       expect(text).toContain("Pour finir : ouvrez cette vente et voyez son plafond");
       expect(text).toContain("Appartement de 3 pièces");

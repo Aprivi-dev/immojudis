@@ -227,7 +227,7 @@ describe("SaleUnlockPanel", () => {
     expect(screen.getByRole("link", { name: "Voir les tarifs" }).getAttribute("href")).toBe(
       "/offres#tarifs",
     );
-    expect(mocks.track.mock.calls).toEqual([["purchase_choices_viewed", { state: "free_unlock" }]]);
+    expect(mocks.track.mock.calls).toEqual([["prices_viewed", { spent: false }]]);
     closed.unmount();
 
     // Abonnement ouvert : son prix aussi, lu dans l'offre.
@@ -938,7 +938,7 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     expect(headings).toEqual(["Cette vente : 19 €", "Toutes les ventes pendant un mois : 59 €"]);
     const text = bodyText();
     expect(text).not.toContain("Recommandée");
-    expect(mocks.track.mock.calls).toEqual([["purchase_choices_viewed", { state: "spent" }]]);
+    expect(mocks.track.mock.calls).toEqual([["prices_viewed", { spent: true }]]);
     expect(text).toContain(
       "Sans engagement. À partir de quatre ventes à l’unité, l’abonnement revient moins cher.",
     );
@@ -954,8 +954,8 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
     const subscribe = screen.getByRole("link", { name: "Choisir l’abonnement Analyse" });
     expect(subscribe.getAttribute("href")).toBe("/offres#tarifs");
     fireEvent.click(subscribe);
-    expect(mocks.track).toHaveBeenLastCalledWith("purchase_choice_clicked", {
-      choice: "subscription",
+    expect(mocks.track).toHaveBeenLastCalledWith("buy_clicked", {
+      product: "subscription",
     });
     expect(screen.getByRole("button", { name: /Acheter cette vente : 19.€/ })).toBeTruthy();
     // No countdown, no scarcity, no pressure to bid.
@@ -1039,8 +1039,8 @@ describe("SaleUnlockPanel, achat d'une vente à l'unité (lot 3)", () => {
       await waitFor(() => expect(assign).toHaveBeenCalledWith("https://checkout.stripe.test/s"));
       // Mesure : les choix affichés, le clic sur l'achat, puis la page de paiement obtenue.
       expect(mocks.track.mock.calls).toEqual([
-        ["purchase_choices_viewed", { state: "spent" }],
-        ["purchase_choice_clicked", { choice: "unit" }],
+        ["prices_viewed", { spent: true }],
+        ["buy_clicked", { product: "unit" }],
         ["checkout_started", { product: "unit" }],
       ]);
       // The credits before leaving for Stripe, to recognise a purchase turned into a credit.

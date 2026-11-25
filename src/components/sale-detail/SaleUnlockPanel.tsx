@@ -25,7 +25,6 @@ import {
   UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
-  unlockNextSaleText,
   unlockQuotaReachedText,
   type SaleUnlockResult,
   type SaleUnlockStatus,
@@ -38,6 +37,7 @@ import {
   UNLOCK_CREDIT_CONFIRMATION_TEXT,
   UNLOCK_CREDIT_TEXT,
   UNLOCK_CREDIT_TITLE,
+  unlockNextSaleText,
 } from "@/lib/sale-unlock-purchase-texts";
 import { userMessage } from "@/lib/user-messages";
 
@@ -500,7 +500,7 @@ function NextSaleHint() {
   const purchase = offer.status === "ready" ? offer.purchase : null;
   const shown = purchase !== null;
   useEffect(() => {
-    if (shown) trackProductEvent("purchase_choices_viewed", { state: "free_unlock" });
+    if (shown) trackProductEvent("prices_viewed", { spent: false });
   }, [shown]);
   if (offer.status !== "ready" || !purchase) return null;
   return (

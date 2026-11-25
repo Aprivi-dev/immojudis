@@ -80,11 +80,11 @@ export function SaleUnlockPurchaseChoices({
 
   // Les deux achats sont à l'écran : une mesure par affichage.
   useEffect(() => {
-    trackProductEvent("purchase_choices_viewed", { state: "spent" });
+    trackProductEvent("prices_viewed", { spent: true });
   }, []);
 
   function openConsent() {
-    trackProductEvent("purchase_choice_clicked", { choice: "unit" });
+    trackProductEvent("buy_clicked", { product: "unit" });
     setTermsAccepted(false);
     setAccessAccepted(false);
     setError(null);
@@ -274,7 +274,7 @@ export function SaleUnlockPurchaseChoices({
         <div className="mt-auto pt-4">
           <Link
             href="/offres#tarifs"
-            onClick={() => trackProductEvent("purchase_choice_clicked", { choice: "subscription" })}
+            onClick={() => trackProductEvent("buy_clicked", { product: "subscription" })}
             className={buttonClasses({ className: "w-full" })}
           >
             Choisir l’abonnement Analyse

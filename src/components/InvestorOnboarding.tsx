@@ -18,7 +18,7 @@ import {
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/onboarding";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
-import { validateSalesSearch, type SalesSearchParams } from "@/lib/search/search-url-state";
+import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatDate, formatPrice, formatStartingPrice } from "@/lib/format";
 import { saleDisplayTitle } from "@/lib/sale-title";
 import type { AuctionSale } from "@/lib/types";
@@ -60,29 +60,31 @@ function accessSentence(
 }
 
 /**
- * La première vente du catalogue public qui correspond à la première recherche, lue quand la dernière
- * étape s'affiche (`enabled`). L'accueil se termine sur elle plutôt que sur la liste (décision du
- * 25/11/2026) : le déblocage du compte gratuit sert surtout le jour de l'inscription. Même
- * recherche d'aperçu que le catalogue d'un visiteur : rien de réservé, réponse mise en cache.
- * `null` tant qu'elle n'est pas lue, sans résultat ou en cas de panne : l'accueil mène alors au
- * catalogue, comme avant.
+ * Route publique d'aperçu du catalogue (`PREVIEW_SEARCH_API_PATH`). Écrite ici pour ne pas charger
+ * le module de la recherche dans l'accueil ; `InvestorOnboarding.test.tsx` vérifie l'égalité.
  */
-function useSuggestedSale(search: SalesSearchParams, enabled: boolean): AuctionSale | null {
-  const [found, setFound] = useState<{ key: string; sale: AuctionSale } | null>(null);
-  const key = JSON.stringify(search);
+export const ONBOARDING_PREVIEW_PATH = "/api/catalogue/preview";
+
+/**
+ * La première vente du catalogue public qui correspond à la première recherche, lue quand la dernière
+ * étape s'affiche (`url` non nul). L'accueil se termine sur elle plutôt que sur la liste (décision du
+ * 25/11/2026) : le déblocage du compte gratuit sert surtout le jour de l'inscription. Même route
+ * d'aperçu que le catalogue d'un visiteur : rien de réservé, réponse mise en cache. Appel direct,
+ * sans le service de recherche (requêtes Supabase, carte, copies de photos : une centaine de Ko pour
+ * lire une seule vente).
+ * `null` tant qu'elle n'est pas lue, sans résultat, si la route refuse les critères ou en cas de
+ * panne : l'accueil mène alors au catalogue, comme avant.
+ */
+function useSuggestedSale(url: string | null): AuctionSale | null {
+  const [found, setFound] = useState<{ url: string; sale: AuctionSale } | null>(null);
   useEffect(() => {
-    if (!enabled) return;
+    if (!url) return;
     let active = true;
-    // Le service de recherche n'est chargé qu'ici : il n'alourdit pas l'ouverture de l'accueil.
-    import("@/lib/search/search-service")
-      .then(({ fetchSearchResults }) =>
-        // Étape quittée ou critères changés pendant le chargement : aucune recherche ne part.
-        active
-          ? fetchSearchResults({ search: JSON.parse(key) as SalesSearchParams, preview: true })
-          : [],
-      )
-      .then((sales) => {
-        if (active && sales[0]) setFound({ key, sale: sales[0] });
+    fetch(url, { headers: { accept: "application/json" } })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { items?: unknown } | null) => {
+        const sale = Array.isArray(body?.items) ? (body.items[0] as AuctionSale | undefined) : null;
+        if (active && sale) setFound({ url, sale });
       })
       .catch(() => {
         // Sans vente proposée, le bouton mène au catalogue.
@@ -90,9 +92,9 @@ function useSuggestedSale(search: SalesSearchParams, enabled: boolean): AuctionS
     return () => {
       active = false;
     };
-  }, [enabled, key]);
+  }, [url]);
   // Une vente lue pour d'autres critères n'est jamais proposée.
-  return enabled && found?.key === key ? found.sale : null;
+  return url && found?.url === url ? found.sale : null;
 }
 
 export function InvestorOnboarding({
@@ -147,7 +149,11 @@ export function InvestorOnboarding({
   // (`alert-matches.ts`).
   const dailyDuringTrial = trialRunning(plan, now);
   // Inscription lancée depuis une fiche : c'est elle que l'on retrouve, aucune autre n'est proposée.
-  const suggestedSale = useSuggestedSale(alertSearch, step === steps.length - 1 && !returnTo);
+  const suggestedSale = useSuggestedSale(
+    step === steps.length - 1 && !returnTo
+      ? pathWithSearch(ONBOARDING_PREVIEW_PATH, criteria)
+      : null,
+  );
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

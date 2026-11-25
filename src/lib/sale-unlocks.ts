@@ -189,20 +189,6 @@ export const UNLOCK_CHOICE_TEXT =
 export const UNLOCK_CONFIRMATION_TEXT =
   "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
 
-/**
- * Sur la carte du déblocage gratuit, dès qu'elle s'affiche et quand l'achat à l'unité est ouvert : les
- * prix de la suite, avant que le déblocage soit utilisé (décision du 25/11/2026 : personne ne doit
- * dépenser son déblocage pour apprendre ce que coûte la vente suivante). `priceLabel` : le prix lu dans l'offre
- * (« 19 € »), jamais écrit ici. `subscriptionLabel` : le libellé de l'abonnement (« 59 € TTC / mois »)
- * quand il se souscrit vraiment ; absent, l'offre Analyse est nommée sans prix.
- */
-export function unlockNextSaleText(priceLabel: string, subscriptionLabel?: string | null): string {
-  const subscription = subscriptionLabel
-    ? `toutes avec l’offre Analyse (${subscriptionLabel}, sans engagement)`
-    : "toutes avec l’offre Analyse";
-  return `Ensuite, chaque autre vente s’ouvre à l’unité pour ${priceLabel}, ou ${subscription}.`;
-}
-
 /** Le titre de la fiche quand le déblocage du compte a servi pour une autre vente. */
 export const UNLOCK_QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
 
