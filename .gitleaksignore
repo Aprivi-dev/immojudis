@@ -18,3 +18,9 @@ ef03f7697beb655f2e56241991d7f19aefee8aa6:services/data-pipeline/src/commune_inse
 
 # Licitor multi-lot capture (03/11/2026): public Google Maps browser key of licitor.com, redacted in the next commit.
 8697f761cda9fe040c15979787c83a5d43453c0e:services/data-pipeline/tests/fixtures/licitor_fiche_deux_lots_cannes_le_cannet.html:gcp-api-key:288
+
+# Faux positifs (accord du propriétaire, 25/11/2026) : deux lignes de données de test,
+# `fact_key: "land_surface_m2"`, un nom de champ et non un secret. Le commit est sur la branche de la
+# PR 564 ; le scan parcourt toutes les branches et faisait donc échouer la CI de chaque PR.
+0ddffdcdbceaa5dd4db02d3d85749857128fe8f3:src/lib/document-fact-sources.test.ts:generic-api-key:59
+0ddffdcdbceaa5dd4db02d3d85749857128fe8f3:src/lib/document-fact-sources.test.ts:generic-api-key:60
