@@ -22,7 +22,6 @@
   font-size-adjust: var(--font-display-adjust);
   font-size: var(--block-title-size, clamp(26px, 2.6vw, 30px));
   font-weight: 500;
-  letter-spacing: -0.025em;
   line-height: 1.15;
 }
 
@@ -228,7 +227,6 @@
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);
   font-size: 25px;
-  letter-spacing: -0.02em;
 }
 
 .dialogContent [data-slot="dialog-description"] {
@@ -271,7 +269,7 @@
   gap: 3px;
   color: var(--brand-navy);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .noteLabel span {

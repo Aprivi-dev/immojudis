@@ -46,14 +46,14 @@
 
 .pointTitle {
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .badge {
   border-radius: 999px;
   padding: 2px 9px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .alerte {
@@ -96,7 +96,7 @@
 .source a,
 .cta {
   color: var(--gold-text);
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -134,7 +134,7 @@
   color: var(--gold-text);
   font: inherit;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;

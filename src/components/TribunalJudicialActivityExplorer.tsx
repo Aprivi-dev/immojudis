@@ -83,7 +83,7 @@ export function TribunalJudicialActivityExplorer({
     <main id="contenu" className="min-h-screen bg-background text-brand-navy">
       <header className="border-b border-brand-navy/10 bg-white/80">
         <div className="mx-auto max-w-[1260px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">
+          <p className="flex items-center gap-2 text-xs font-semibold text-gold-text">
             <Landmark className="h-4 w-4" aria-hidden />
             Observatoire des ventes judiciaires
           </p>
@@ -154,9 +154,7 @@ export function TribunalJudicialActivityExplorer({
               className="grid gap-4 lg:grid-cols-[1fr_auto]"
             >
               <label>
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-                  Rechercher un tribunal
-                </span>
+                <span className="text-xs font-semibold text-ink-soft">Rechercher un tribunal</span>
                 <span className="relative mt-2 block">
                   <Search
                     className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-soft"
@@ -172,9 +170,7 @@ export function TribunalJudicialActivityExplorer({
                 </span>
               </label>
               <fieldset>
-                <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-                  Historique observé
-                </legend>
+                <legend className="text-xs font-semibold text-ink-soft">Historique observé</legend>
                 <div className="mt-2 inline-flex rounded-md border border-brand-navy/15 bg-white p-1">
                   {WINDOWS.map((value) => (
                     <button
@@ -229,9 +225,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
     <section aria-labelledby="national-overview-title" className="mb-10">
       <div className="flex flex-col gap-3 border-b border-brand-navy/14 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-            Niveau 1 · Périmètre suivi
-          </p>
+          <p className="text-xs font-semibold text-gold-text">Niveau 1 · Périmètre suivi</p>
           <h2
             id="national-overview-title"
             className="mt-2 font-display text-3xl font-semibold sm:text-4xl"
@@ -258,9 +252,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-observed-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-              Historique observé
-            </p>
+            <p className="text-xs font-semibold text-gold-text">Historique observé</p>
             <h3 id="national-observed-title" className="mt-1 font-display text-2xl font-semibold">
               Audiences passées suivies
             </h3>
@@ -291,9 +283,7 @@ function NationalOverview({ data }: { data: TribunalJudicialActivityDirectoryDat
           aria-labelledby="national-upcoming-title"
         >
           <div className="border-b border-brand-navy/10 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-              Pipeline à venir
-            </p>
+            <p className="text-xs font-semibold text-gold-text">Pipeline à venir</p>
             <h3 id="national-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
               Audiences programmées
             </h3>
@@ -364,9 +354,7 @@ function RegionalCoverage({
     >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-            Niveau 2 · Ressorts judiciaires
-          </p>
+          <p className="text-xs font-semibold text-gold-text">Niveau 2 · Ressorts judiciaires</p>
           <h2
             id="regional-coverage-title"
             className="mt-2 font-display text-2xl font-semibold sm:text-3xl"
@@ -457,9 +445,7 @@ function TribunalProfile({
     <article className="mt-8 border-t border-brand-navy/14 pt-7" aria-labelledby="court-title">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-end">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-            Profil statistique du tribunal
-          </p>
+          <p className="text-xs font-semibold text-gold-text">Profil statistique du tribunal</p>
           <h2 id="court-title" className="mt-2 font-display text-3xl font-semibold sm:text-5xl">
             {tribunal.court.name}
           </h2>
@@ -468,9 +454,7 @@ function TribunalProfile({
           </p>
         </div>
         <label>
-          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-soft">
-            Tribunal affiché
-          </span>
+          <span className="text-xs font-semibold text-ink-soft">Tribunal affiché</span>
           <select
             value={tribunal.court.code}
             onChange={(event) => onCourtChange(event.target.value)}
@@ -512,9 +496,7 @@ function TribunalProfile({
 
       <section aria-labelledby="court-observed-title" className="mt-6">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-            Historique observé
-          </p>
+          <p className="text-xs font-semibold text-gold-text">Historique observé</p>
           <h3 id="court-observed-title" className="mt-1 font-display text-2xl font-semibold">
             Audiences passées · {tribunal.period.historyMonths} mois
           </h3>
@@ -545,9 +527,7 @@ function TribunalProfile({
 
       <section aria-labelledby="court-upcoming-title" className="mt-7">
         <div className="mb-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-            Pipeline à venir
-          </p>
+          <p className="text-xs font-semibold text-gold-text">Pipeline à venir</p>
           <h3 id="court-upcoming-title" className="mt-1 font-display text-2xl font-semibold">
             Audiences programmées sur les 12 prochains mois
           </h3>
@@ -605,7 +585,7 @@ function TribunalProfile({
           className="border border-warning/30 bg-warning-tint p-5"
           aria-labelledby="outcome-title"
         >
-          <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-warning">
+          <p className="flex items-center gap-2 text-xs font-semibold text-warning">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             Résultats d’adjudication
           </p>
@@ -645,8 +625,8 @@ function ProfileMetric({
 }) {
   return (
     <div className="border-b border-brand-navy/10 p-5 last:border-b-0 md:[&:nth-last-child(-n+2)]:border-b-0 xl:border-b-0 xl:border-r xl:last:border-r-0">
-      <Icon className="h-5 w-5 text-gold-text" aria-hidden />
-      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-ink-soft">{label}</p>
+      <Icon className="h-4 w-4 text-gold-text" aria-hidden />
+      <p className="mt-4 text-xs font-semibold text-ink-soft">{label}</p>
       <p className="mt-2 font-display text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-2 text-xs leading-relaxed text-ink-soft">{detail}</p>
     </div>

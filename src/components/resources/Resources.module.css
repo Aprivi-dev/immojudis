@@ -29,9 +29,7 @@
   color: var(--copper);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
   line-height: 1.6;
-  text-transform: uppercase;
 }
 
 .hero {
@@ -99,7 +97,7 @@
   position: relative;
   min-height: 440px;
   overflow: hidden;
-  background: radial-gradient(ellipse at 50% 30%, var(--secondary), var(--sand));
+  background: var(--sand);
 }
 
 .featuredArt img {
@@ -114,8 +112,6 @@
   left: 30px;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .artLabel {
@@ -294,7 +290,6 @@
   margin-top: 10px;
   font-size: 29px;
   line-height: 1.12;
-  letter-spacing: -0.015em;
 }
 
 .cardDescription {
@@ -426,8 +421,6 @@
   font-size-adjust: none;
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .toc ol {
@@ -468,7 +461,6 @@
   color: var(--ink);
   font-size: 34px;
   line-height: 1.12;
-  letter-spacing: -0.015em;
 }
 
 .articleBody ul {

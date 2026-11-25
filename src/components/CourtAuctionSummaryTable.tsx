@@ -89,7 +89,7 @@ export function CourtAuctionSummaryTable() {
               d’adjudication médians, part des ventes adjugées à au moins 2 fois la mise à prix et
               adjudications DVF
             </caption>
-            <thead className="text-xs uppercase tracking-wide text-ink-soft">
+            <thead className="text-xs text-ink-soft">
               <tr>
                 <th scope="col" className="sticky left-0 z-10 bg-white py-2 pr-4">
                   Tribunal

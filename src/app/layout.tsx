@@ -6,6 +6,7 @@ import { AppProviders } from "./providers";
 import { AudienceMeasurement } from "@/components/AudienceMeasurement";
 import { DeferredGoogleAnalytics } from "@/components/DeferredGoogleAnalytics";
 import { SiteFooter } from "@/components/SiteFooter";
+import { SiteFooterFrieze } from "@/components/SiteFooterFrieze";
 import { SiteFooterSaleTypes } from "@/components/SiteFooterSaleTypes";
 import { SkipLink } from "@/components/SkipLink";
 import { COMPANY_DESCRIPTION } from "@/lib/company-description";
@@ -91,7 +92,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="fr" className={`${manrope.variable} ${cormorant.variable}`}>
       <body>
         <SkipLink />
-        <AppProviders footer={<SiteFooter saleTypes={<SiteFooterSaleTypes />} />}>
+        <AppProviders
+          footer={<SiteFooter saleTypes={<SiteFooterSaleTypes />} frieze={<SiteFooterFrieze />} />}
+        >
           {children}
         </AppProviders>
         <AudienceMeasurement />

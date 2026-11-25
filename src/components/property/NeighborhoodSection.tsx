@@ -29,7 +29,7 @@ export function NeighborhoodSection({ property }: { property: Property }) {
   return (
     <AnimatedSection id="neighborhood" aria-labelledby="neighborhood-title">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gold-text">Quartier</p>
+        <p className="text-xs font-semibold text-gold-text">Quartier</p>
         <h2 id="neighborhood-title" className="mt-2 font-display text-3xl text-foreground">
           Environnement
         </h2>
@@ -39,10 +39,8 @@ export function NeighborhoodSection({ property }: { property: Property }) {
           const Icon = item.icon;
           return (
             <article key={item.label} className="rounded-md border border-border bg-white p-4">
-              <Icon className="h-5 w-5 text-gold-text" />
-              <h3 className="mt-3 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                {item.label}
-              </h3>
+              <Icon className="h-4 w-4 text-gold-text" />
+              <h3 className="mt-3 text-sm font-semibold text-muted-foreground">{item.label}</h3>
               <p className="mt-2 text-lg font-semibold text-foreground">{item.value}</p>
               <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{item.detail}</p>
             </article>

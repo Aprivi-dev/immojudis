@@ -132,7 +132,7 @@ export function SaleComparisonTable({
           <tr>
             <th
               scope="col"
-              className="sticky left-0 top-0 z-20 w-[80px] border-b border-r border-line-soft bg-surface-tint p-2 align-bottom text-xs font-bold text-ink-soft sm:w-[140px] sm:p-3"
+              className="sticky left-0 top-0 z-20 w-[80px] border-b border-r border-line-soft bg-surface-tint p-2 align-bottom text-xs font-semibold text-ink-soft sm:w-[140px] sm:p-3"
             >
               Critères
             </th>
@@ -142,14 +142,14 @@ export function SaleComparisonTable({
                 scope="col"
                 className="sticky top-0 z-10 w-[140px] border-b border-r border-line-soft bg-white p-3 align-top sm:w-[180px] sm:p-4"
               >
-                <p className="text-xs font-bold text-brand-navy">Bien {index + 1}</p>
-                <p className="mt-1 break-words font-extrabold">{comparedSaleTitle(sale)}</p>
+                <p className="text-xs font-semibold text-brand-navy">Bien {index + 1}</p>
+                <p className="mt-1 break-words font-semibold">{comparedSaleTitle(sale)}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-3">
                   <Link
                     href={saleDetailPath(sale.id, returnTo)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center text-xs font-bold text-brand-navy underline underline-offset-2"
+                    className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-navy underline underline-offset-2"
                     aria-label={`Voir la fiche du bien ${index + 1} (nouvel onglet)`}
                   >
                     Voir la fiche ↗
@@ -162,7 +162,7 @@ export function SaleComparisonTable({
                         onRemove(sale.id);
                       }}
                       aria-label={`Retirer le bien ${index + 1} de la comparaison`}
-                      className="min-h-11 rounded-md px-1 text-xs font-bold text-ink-soft hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-gold-soft"
+                      className="min-h-11 rounded-md px-1 text-xs font-semibold text-ink-soft hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-gold-soft"
                     >
                       Retirer
                     </button>
@@ -177,7 +177,7 @@ export function SaleComparisonTable({
             <tr key={row.label}>
               <th
                 scope="row"
-                className="sticky left-0 z-10 border-b border-r border-line-soft bg-surface-tint p-2 text-xs font-bold sm:p-3"
+                className="sticky left-0 z-10 border-b border-r border-line-soft bg-surface-tint p-2 text-xs font-semibold sm:p-3"
               >
                 {row.label}
               </th>

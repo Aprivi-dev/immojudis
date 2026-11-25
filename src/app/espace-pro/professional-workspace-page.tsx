@@ -47,7 +47,7 @@ import { formatFileSize } from "@/lib/format-file-size";
 import { PublicationStatusPill as StatusPill } from "@/components/PublicationStatusPill";
 
 /** Libellés en capitales des petits blocs : 12 px, encre douce (plus de 10 ou 11 px). */
-const LABEL_CLASS = "text-xs font-semibold uppercase tracking-[0.14em] text-ink-soft";
+const LABEL_CLASS = "text-xs font-semibold text-ink-soft";
 
 export function ProfessionalWorkspacePage() {
   const { user, profile, loading } = useAuth();
@@ -210,7 +210,7 @@ export function ProfessionalWorkspacePage() {
             </div>
             {pendingProfessional ? (
               <Badge tone="warning">
-                <Clock3 className="h-3.5 w-3.5" aria-hidden />
+                <Clock3 className="h-4 w-4" aria-hidden />
                 Validation en cours
               </Badge>
             ) : (
@@ -256,7 +256,7 @@ export function ProfessionalWorkspacePage() {
             </div>
           ) : (
             <div className="mt-6 rounded-lg border border-line bg-surface-muted p-5">
-              <FileText className="h-5 w-5 text-gold-text" aria-hidden />
+              <FileText className="h-4 w-4 text-gold-text" aria-hidden />
               <p className="mt-3 text-sm leading-relaxed text-ink-soft">
                 Aucune demande n'est encore associée à ce compte.
               </p>
@@ -343,7 +343,7 @@ function RequestCard({
           href={request.publishedUrl}
           className="mt-3 inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-gold-text underline"
         >
-          Voir la vente publiée <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          Voir la vente publiée <ExternalLink className="h-4 w-4" aria-hidden />
         </a>
       ) : null}
     </div>
@@ -483,7 +483,7 @@ function DocumentRow({ document }: { document: PublicationDocumentView }) {
           rel="noopener noreferrer"
           className="inline-flex min-h-11 shrink-0 items-center gap-1 text-sm font-semibold text-gold-text underline"
         >
-          Ouvrir <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+          Ouvrir <ExternalLink className="h-4 w-4" aria-hidden />
         </a>
       ) : (
         <span className="text-xs text-ink-soft">Indisponible</span>
@@ -539,7 +539,7 @@ function WorkspaceLoading() {
       className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-10 text-foreground"
     >
       <Card role="status" className="flex w-full max-w-2xl items-center gap-3 p-6">
-        <RefreshCw className="h-5 w-5 animate-spin text-gold-text" aria-hidden />
+        <RefreshCw className="h-4 w-4 animate-spin text-gold-text" aria-hidden />
         <span className="text-sm text-ink-soft">Vérification de votre espace pro...</span>
       </Card>
     </main>
@@ -564,7 +564,7 @@ function WorkspaceMessage({
     >
       <Card className="w-full max-w-2xl p-6 sm:p-8">
         <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-surface-tint text-gold-text">
-          <Icon className="h-5 w-5" aria-hidden />
+          <Icon className="h-4 w-4" aria-hidden />
         </div>
         <PageTitle className="mt-5 text-brand-navy">{title}</PageTitle>
         <p className="mt-3 max-w-xl text-base leading-relaxed text-ink-soft">{description}</p>

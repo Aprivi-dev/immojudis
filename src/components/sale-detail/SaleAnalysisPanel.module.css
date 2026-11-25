@@ -7,9 +7,7 @@
   margin: 0;
   color: var(--gold-text);
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .label {
@@ -144,7 +142,7 @@
   margin: 0 0 8px;
   color: var(--brand-navy);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .changes ul {

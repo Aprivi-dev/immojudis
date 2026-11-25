@@ -74,7 +74,7 @@ export function PepiteBlockLazy({
         className="min-h-44 rounded-lg border border-gold bg-white p-4 sm:p-5"
       >
         <p className="flex items-center gap-2 text-lg font-semibold text-brand-navy">
-          <PepiteIcon className="size-5" />
+          <PepiteIcon className="size-4" />
           Pépite
         </p>
         <div className="mt-4 space-y-3" aria-hidden>

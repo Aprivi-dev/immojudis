@@ -237,8 +237,6 @@
   padding: 0 10px;
   background: rgb(19 34 56 / 82%);
   color: #ffffff;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .photoCounter {
@@ -298,8 +296,6 @@
   color: var(--gold-text);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .priceBlock {
@@ -316,7 +312,6 @@
   color: var(--brand-navy);
   font-size: clamp(30px, 8vw, 36px);
   font-weight: 600;
-  letter-spacing: -0.01em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -598,7 +593,7 @@
   align-items: center;
   gap: 6px;
   border: 1px solid var(--line);
-  border-radius: 9999px;
+  border-radius: var(--radius);
   background: var(--surface);
   padding: 0 14px;
   color: var(--brand-navy);
@@ -671,7 +666,6 @@
   font-size-adjust: var(--font-display-adjust);
   font-size: 24px;
   font-weight: 500;
-  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
@@ -807,7 +801,7 @@
 
 .stepNow small {
   color: var(--brand-navy);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .steps p {
@@ -1057,8 +1051,6 @@
   color: var(--gold-light);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .lockTitle {
@@ -1067,7 +1059,6 @@
   font-size-adjust: var(--font-display-adjust);
   font-size: 26px;
   font-weight: 500;
-  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
@@ -1350,7 +1341,7 @@
   background: var(--ink-black);
   color: #ffffff;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .primary:hover {
@@ -1367,7 +1358,7 @@
   background: var(--surface);
   color: var(--brand-navy);
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .white:hover {
@@ -1423,13 +1414,13 @@
   background: var(--surface);
   padding: 0 16px env(safe-area-inset-bottom, 0px);
   /* La seule ombre de la page : ce qui flotte au-dessus d'elle. */
-  box-shadow: 0 -4px 16px rgb(19 34 56 / 8%);
+  box-shadow: var(--shadow-float);
 }
 
 .mobileBarPrice {
   color: var(--brand-navy);
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
@@ -1512,7 +1503,7 @@
     align-items: baseline;
     gap: 8px;
     border: 0;
-    border-radius: 9999px;
+    border-radius: var(--radius);
     padding: 12px 14px;
     color: var(--ink-strong);
   }

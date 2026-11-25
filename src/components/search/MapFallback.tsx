@@ -19,7 +19,7 @@ export function MapFallback({
     <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-surface-tint/80 px-6 text-center">
       <div className="pointer-events-auto max-w-sm rounded-md border border-line bg-white p-5 shadow-lg">
         <MapPin className="mx-auto h-8 w-8 text-brand-navy" />
-        <h2 className="mt-3 text-base font-bold text-brand-navy">Carte indisponible</h2>
+        <h2 className="mt-3 text-base font-semibold text-brand-navy">Carte indisponible</h2>
         <p className="mt-2 text-sm leading-relaxed text-ink-soft">{message}</p>
         <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
           {onRetry ? (

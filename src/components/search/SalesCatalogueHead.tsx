@@ -111,9 +111,7 @@ export function SalesCatalogueHead({
   return (
     <div className="mx-auto flex max-w-[90rem] flex-wrap items-end justify-between gap-x-6 gap-y-4 px-4 pb-4 pt-6 sm:pt-8 lg:px-6 lg:pt-10">
       <div className="min-w-0 flex-[1_1_36rem]">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-gold-text">
-          Catalogue · {label}
-        </p>
+        <p className="text-xs font-semibold text-gold-text">Catalogue · {label}</p>
         <h1 className="mt-2 max-w-[58rem] font-display text-[1.65rem] font-medium leading-snug text-balance text-brand-navy sm:text-[2.125rem] lg:text-[2.5rem]">
           <CatalogueTitle search={search} total={total} week={week} />
         </h1>

@@ -40,7 +40,7 @@ export function SearchStatisticsPanel({
   if (locked) {
     return (
       <div className="border-b border-brand-navy/10 bg-white px-4 py-4 sm:px-5">
-        <h2 className="text-sm font-bold text-brand-navy">
+        <h2 className="text-sm font-semibold text-brand-navy">
           Repérez un bien, puis préparez votre analyse
         </h2>
         <p className="mt-1 text-sm leading-relaxed text-ink-soft">
@@ -50,7 +50,7 @@ export function SearchStatisticsPanel({
         </p>
         <Link
           href={signedIn ? "/offres" : "/annonce-exemple"}
-          className="mt-2 inline-flex min-h-10 items-center text-sm font-bold text-brand-navy underline underline-offset-4"
+          className="mt-2 inline-flex min-h-10 items-center text-sm font-semibold text-brand-navy underline underline-offset-4"
         >
           {signedIn ? "Découvrir l’offre Analyse" : "Essayer une analyse complète sans compte"}
         </Link>
@@ -85,13 +85,13 @@ export function SearchStatisticsPanel({
   return (
     <div className="border-b border-brand-navy/10 bg-white px-4 py-3 sm:px-5">
       <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-[0.14em] text-brand-navy">
+        <div className="flex items-center gap-2 text-xs font-semibold text-brand-navy">
           <BarChart3 className="h-4 w-4" />
           Repères sur votre recherche
         </div>
         {locked ? (
-          <span className="inline-flex items-center gap-1 rounded-md border border-sand bg-surface px-2 py-1 text-[10px] font-bold text-gold-text">
-            <LockKeyhole className="h-3 w-3" />
+          <span className="inline-flex items-center gap-1 rounded-md border border-sand bg-surface px-2 py-1 text-xs font-semibold text-gold-text">
+            <LockKeyhole className="h-4 w-4" />
             Analyse
           </span>
         ) : null}
@@ -102,11 +102,11 @@ export function SearchStatisticsPanel({
             key={item.label}
             className="min-w-0 rounded-md border border-line-soft bg-surface-muted px-3 py-2"
           >
-            <dt className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-ink-soft">
+            <dt className="flex items-center gap-1.5 text-xs font-semibold text-ink-soft">
               <span className="text-brand-navy">{item.icon}</span>
               {item.label}
             </dt>
-            <dd className="mt-0.5 text-sm font-extrabold tabular-nums text-brand-navy">
+            <dd className="mt-0.5 text-sm font-semibold tabular-nums text-brand-navy">
               {loading ? "…" : item.locked ? "Réservé à Analyse" : item.value}
             </dd>
           </div>
@@ -120,7 +120,7 @@ export function SearchStatisticsPanel({
               return (
                 <span
                   key={dpeClass}
-                  className="inline-flex min-h-7 items-center gap-1 rounded-md border px-2 text-xs font-bold"
+                  className="inline-flex min-h-7 items-center gap-1 rounded-md border px-2 text-xs font-semibold"
                   style={{
                     backgroundColor: color?.background,
                     borderColor: color?.border,
@@ -136,7 +136,7 @@ export function SearchStatisticsPanel({
               type="button"
               onClick={onLoadDpeExplorer}
               disabled={dpeExplorerLoading}
-              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-line bg-white px-2.5 text-xs font-extrabold text-brand-navy hover:border-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
+              className="ml-auto inline-flex min-h-7 items-center rounded-md border border-line bg-white px-2.5 text-xs font-semibold text-brand-navy hover:border-brand-navy disabled:cursor-not-allowed disabled:opacity-60"
             >
               {dpeExplorerLoading
                 ? "Chargement DPE..."
@@ -161,7 +161,7 @@ export function SearchStatisticsPanel({
                     <div key={item.id} className="grid gap-1 py-2 text-xs sm:grid-cols-[1fr_auto]">
                       <div className="min-w-0">
                         <Link
-                          className="font-bold text-brand-navy hover:text-brand-navy"
+                          className="font-semibold text-brand-navy hover:text-brand-navy"
                           href={`/sales/${item.id}`}
                         >
                           {cleanSaleTitle(item.title) ?? "Vente judiciaire"}
@@ -172,7 +172,7 @@ export function SearchStatisticsPanel({
                             .join(" · ")}
                         </div>
                       </div>
-                      <span className="font-extrabold text-brand-navy">
+                      <span className="font-semibold text-brand-navy">
                         {item.dpeLabel ?? "DPE repéré"}
                       </span>
                     </div>
@@ -186,7 +186,7 @@ export function SearchStatisticsPanel({
             </div>
           ) : null}
           {dpeExplorerError ? (
-            <p className="mt-2 text-xs font-bold text-red-700">{dpeExplorerError}</p>
+            <p className="mt-2 text-xs font-semibold text-red-700">{dpeExplorerError}</p>
           ) : null}
         </>
       ) : null}
@@ -196,8 +196,8 @@ export function SearchStatisticsPanel({
 export function DpeExplorerMetric({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-ink-soft">{label}</div>
-      <div className="mt-1 text-sm font-extrabold tabular-nums text-brand-navy">
+      <div className="text-xs font-semibold text-ink-soft">{label}</div>
+      <div className="mt-1 text-sm font-semibold tabular-nums text-brand-navy">
         {value.toLocaleString("fr-FR")}
       </div>
     </div>

@@ -64,7 +64,7 @@ export function TribunalAlert({
   return (
     <Card as="section" aria-labelledby={titleId} className="grid gap-3">
       <h2 id={titleId} className="flex items-center gap-2 font-display text-2xl font-semibold">
-        <Bell className="size-5 shrink-0 text-gold-text" aria-hidden />
+        <Bell className="size-4 shrink-0 text-gold-text" aria-hidden />
         {tribunal ? TRIBUNAL_ALERT_TITLE : DEPARTMENT_ALERT_TITLE}
       </h2>
       <TribunalAlertChoice

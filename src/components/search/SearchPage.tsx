@@ -118,7 +118,7 @@ const MAP_POINT_LIMIT = 500;
 
 /** Liens d'évitement : invisibles tant qu'ils n'ont pas le focus clavier. */
 const SKIP_LINK_CLASSES =
-  "sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-brand-navy focus:shadow-lg";
+  "sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-brand-navy focus:shadow-lg";
 
 const NO_SALES: AuctionSale[] = [];
 const NO_PHOTO_MIRRORS: ReadonlyMap<string, SaleMediaMirror> = new Map();
@@ -1396,13 +1396,13 @@ export function SearchPage({
                 <button
                   type="button"
                   onClick={closeMobileMap}
-                  className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-bold text-brand-navy shadow-sm"
+                  className="inline-flex h-11 cursor-pointer items-center gap-2 rounded-md border border-line-soft bg-white px-3 text-sm font-semibold text-brand-navy shadow-sm"
                 >
                   <List className="h-4 w-4" aria-hidden="true" />
                   Liste
                 </button>
                 {/* Titre court : la phrase qui explique la limite est dans la légende de la carte. */}
-                <span className="text-sm font-bold text-ink-strong">
+                <span className="text-sm font-semibold text-ink-strong">
                   {mappablePointsTotal > mapSales.length
                     ? `${mapSales.length.toLocaleString("fr-FR")} sur ${mappablePointsTotal.toLocaleString("fr-FR")} biens`
                     : `${mapSales.length.toLocaleString("fr-FR")} biens sur la carte`}

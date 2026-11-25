@@ -95,7 +95,7 @@
   gap: 6px;
   min-height: 44px;
   padding: 11px 10px;
-  border-radius: 9999px;
+  border-radius: var(--radius);
   color: var(--ink-strong);
   font-size: 14px;
   font-weight: 600;
@@ -163,7 +163,7 @@
     min-height: 44px;
     padding: 0 14px;
     border: 1px solid var(--line);
-    border-radius: 9999px;
+    border-radius: var(--radius);
     background: var(--surface);
     color: var(--brand-navy);
   }
@@ -205,7 +205,6 @@
   font-size: 28px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.01em;
 }
 
 .sectionIntro {

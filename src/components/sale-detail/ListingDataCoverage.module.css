@@ -169,7 +169,7 @@
   border: 1px solid;
   border-radius: 999px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -278,7 +278,6 @@
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);
   font-size: 25px;
-  letter-spacing: -0.02em;
   line-height: 1.1;
 }
 
@@ -339,9 +338,7 @@
   margin: 0;
   color: var(--gold-text, var(--gold-text));
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .sourceTitle {
@@ -356,7 +353,7 @@
   flex: 0 0 auto;
   color: var(--ink-soft);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .excerpt {

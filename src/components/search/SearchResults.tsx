@@ -617,14 +617,14 @@ export const ListingCard = memo(function ListingCard({
           <div className="absolute left-3 top-3 z-20 flex flex-wrap items-start gap-1">
             {pepite && <PepiteInfoBadge floodExposed={pepiteFloodExposed} />}
             {unlocked && (
-              <Badge tone="gold" className="border-gold bg-gold font-bold text-brand-navy">
+              <Badge tone="gold" className="border-gold bg-gold font-semibold text-brand-navy">
                 Débloquée
               </Badge>
             )}
             {/* Deux pastilles au plus sur la photo (docs/design/fondations.md) : « Vu », la moins utile, cède la
                 place quand « Pépite » et « Débloquée » s'appliquent ensemble. */}
             {viewed && !(pepite && unlocked) && (
-              <Badge tone="neutral" className="bg-white/95 font-bold">
+              <Badge tone="neutral" className="bg-white/95 font-semibold">
                 Vu
               </Badge>
             )}
@@ -739,7 +739,7 @@ export const ListingCard = memo(function ListingCard({
             className="flex items-start gap-1.5 text-caption font-semibold text-warning"
             data-testid="card-last-change"
           >
-            <Bell className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <Bell className="mt-0.5 size-4 shrink-0" aria-hidden />
             <span>
               {lastChange.label}
               {lastChange.detail ? (

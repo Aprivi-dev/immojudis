@@ -13,9 +13,7 @@ export function FactsGrid({ facts }: { facts: Property["facts"] }) {
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {facts.map((fact) => (
         <div key={fact.label} className="rounded-md border border-border bg-white p-4">
-          <dt className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-            {fact.label}
-          </dt>
+          <dt className="text-xs font-semibold text-muted-foreground">{fact.label}</dt>
           <dd className="mt-1 text-base font-semibold text-foreground">{fact.value}</dd>
         </div>
       ))}

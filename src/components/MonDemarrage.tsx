@@ -36,9 +36,9 @@ function StepMark({ done }: { done: boolean }) {
   return (
     <>
       {done ? (
-        <CircleCheck className="mt-0.5 size-5 shrink-0 text-emerald-700" aria-hidden />
+        <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" aria-hidden />
       ) : (
-        <Circle className="mt-0.5 size-5 shrink-0 text-ink-soft" aria-hidden />
+        <Circle className="mt-0.5 size-4 shrink-0 text-ink-soft" aria-hidden />
       )}
       <span className="sr-only">{done ? "Fait : " : "À faire : "}</span>
     </>
@@ -126,7 +126,7 @@ export function MonDemarrage({ className = "" }: { className?: string }) {
           }}
           className="-m-2 grid size-11 shrink-0 place-items-center rounded-md text-ink-soft hover:text-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-soft"
         >
-          <X className="size-5" aria-hidden />
+          <X className="size-4" aria-hidden />
         </button>
       </div>
 

@@ -352,9 +352,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {marketComparables.available ? (
           <section className="border-b border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Comparables DVF
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Comparables DVF</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -376,9 +374,7 @@ export default async function SharedReportPage({ params }: PageParams) {
             <SharedList items={retainedComparables} limit={5} />
             {addressHistory.length ? (
               <div className="mt-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-                  Historique adresse
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground">Historique adresse</p>
                 <ul className="mt-2 space-y-2 text-sm leading-relaxed text-foreground">
                   {addressHistory.slice(0, 3).map((row) => (
                     <li key={row}>{row}</li>
@@ -392,9 +388,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {valuationAudit.available || valuationCheckpoints.length ? (
           <section className="border-b border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Audit de valorisation
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Audit de valorisation</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -433,7 +427,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {activeComparablesAnalysis.available ? (
           <section className="border-b border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               Biens comparables en vente
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -467,7 +461,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {audienceReadinessAnalysis.available ? (
           <section className="border-b border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               {wording.audiencePreparation}
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -634,9 +628,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {cadastral.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Analyse cadastrale
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Analyse cadastrale</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
@@ -659,9 +651,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {dpe.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              DPE et diagnostics
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">DPE et diagnostics</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
@@ -684,9 +674,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {renovationAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Travaux et état
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Travaux et état</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Priorité"
@@ -715,7 +703,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {urbanPlanningAnalysis.status || urbanPlanningMissingChecks.length ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="text-xs font-semibold text-muted-foreground">
               Urbanisme, permis et servitudes
             </p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -755,9 +743,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {streetFacadeAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Façade et rue
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Façade et rue</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -802,9 +788,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {neighborhoodAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Analyse du quartier
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Analyse du quartier</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -849,9 +833,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {demographicAnalysis.status || demographicMissingData.length ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Analyse démographique
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Analyse démographique</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -897,9 +879,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {nearbyServices.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Services de proximité
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Services de proximité</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
@@ -917,9 +897,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {occupancyAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Occupation
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Occupation</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
@@ -940,9 +918,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {auctionCostAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Frais et consignation
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Frais et consignation</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Niveau de confiance"
@@ -968,9 +944,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {legalAttentionAnalysis.available ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Revue juridique
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Revue juridique</p>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <SharedMetric
                 label="Synthèse"
@@ -994,9 +968,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {legalAttentionPoints.length ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Points d'attention
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Points d'attention</p>
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-foreground">
               {legalAttentionPoints.map((point, index) => (
                 <li key={`${index}-${String(point)}`}>{stringOrNumberValue(point, "")}</li>
@@ -1007,9 +979,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {sourceTrace.length ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Sources et traçabilité
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Sources et traçabilité</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               {sourceTrace.map((entry) => (
                 <div key={entry.id} className="rounded-lg border border-border bg-muted/25 p-3">
@@ -1042,9 +1012,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 
         {limitations.length ? (
           <section className="border-t border-border py-5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              Limites à confirmer
-            </p>
+            <p className="text-xs font-semibold text-muted-foreground">Limites à confirmer</p>
             <ul className="mt-3 space-y-2 text-sm leading-relaxed text-muted-foreground">
               {limitations.map((limitation, index) => (
                 <li key={`${index}-${limitation}`}>{limitation}</li>
@@ -1078,7 +1046,7 @@ export default async function SharedReportPage({ params }: PageParams) {
 function SharedMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
       <p className="mt-1 text-sm font-semibold text-foreground">{value || "À confirmer"}</p>
     </div>
   );

@@ -81,11 +81,11 @@ export function WorksScenarioSelector({
             <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
               <span className="text-sm font-semibold text-foreground">{option.label}</span>
               {option.checked ? (
-                <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-semibold text-brand-navy">
+                <span className="rounded-md bg-gold px-2 py-0.5 text-xs font-semibold text-brand-navy">
                   Retenu
                 </span>
               ) : suggestedScenario === option.key ? (
-                <span className="rounded-full border border-gold/40 px-2 py-0.5 text-xs font-semibold text-gold-text">
+                <span className="rounded-md border border-gold/40 px-2 py-0.5 text-xs font-semibold text-gold-text">
                   Suggéré
                 </span>
               ) : null}

@@ -15,7 +15,7 @@ export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
   // la couleur ne marque que ce qui demande l'attention (sources en conflit, vente non vérifiée).
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-caption font-medium backdrop-blur ${
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-caption font-medium backdrop-blur ${
         verified
           ? "border-line bg-white/95 text-brand-navy"
           : procedure.verificationStatus === "conflict"
@@ -25,9 +25,9 @@ export function SaleProcedureBadge({ sale }: { sale: AuctionSale }) {
       title={`${saleVenueLabel(procedure.venueType)} · ${saleVerificationExplanation(procedure.verificationStatus)}`}
     >
       {verified ? (
-        <ShieldCheck className="h-3.5 w-3.5 text-success" aria-hidden />
+        <ShieldCheck className="h-4 w-4 text-success" aria-hidden />
       ) : (
-        <CircleAlert className="h-3.5 w-3.5" aria-hidden />
+        <CircleAlert className="h-4 w-4" aria-hidden />
       )}
       {saleVenueLabel(procedure.venueType)}
     </span>

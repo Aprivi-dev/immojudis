@@ -299,9 +299,7 @@ export function CeilingHypothesesPanel({
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset className="grid gap-3 sm:grid-cols-2">
-      <legend className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-gold-text">
-        {title}
-      </legend>
+      <legend className="mb-2 text-xs font-semibold text-gold-text">{title}</legend>
       {children}
     </fieldset>
   );

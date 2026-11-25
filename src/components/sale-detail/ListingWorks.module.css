@@ -31,9 +31,7 @@
   margin: 0;
   color: var(--gold-text, var(--gold-text));
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-weight: 600;
 }
 
 .title {
@@ -41,7 +39,6 @@
   font-family: var(--font-display, Georgia, serif);
   font-size: var(--block-title-size, clamp(28px, 4cqi, 38px));
   font-weight: 500;
-  letter-spacing: -0.025em;
   line-height: 1.1;
 }
 
@@ -71,7 +68,7 @@
   color: var(--gold-text, var(--gold-text));
   padding: 7px 11px;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -146,7 +143,7 @@
 .facts dd {
   margin: 0;
   font-size: 16px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .dpeNote {
@@ -223,7 +220,7 @@
   list-style: none;
   padding: 12px 20px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .evidenceDisclosure summary::-webkit-details-marker {
@@ -269,7 +266,7 @@
 
 .evidenceTitle {
   margin: 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .evidenceText p {
