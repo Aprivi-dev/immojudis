@@ -159,7 +159,7 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   template_not_approved: "modèle de message non approuvé pour l’envoi automatique",
   draft_stale: "brouillon caduc (vente changée), annulé",
   draft_rotated:
-    "brouillon simulé le plus ancien annulé par le pilote (rotation automatique, plafond atteint)",
+    "brouillon simulé le plus ancien annulé par le pilote (rotation automatique du jour, plafond atteint)",
   policy_rejected: "rejet de politique à l’aperçu",
   content_rejected: "rejet de contenu à l’aperçu",
   send_refused: "refusé au dernier contrôle avant l’envoi",
@@ -403,7 +403,7 @@ export function buildAutopilotView({
       label: `Prêtes à valider (${prepared.total} sur ${AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS} au plus)`,
       notice:
         prepared.total >= AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS
-          ? "Plafond atteint : à chaque passage, la simulation annule son brouillon en attente le plus ancien pour en préparer un nouveau. Envoyez ceux que vous retenez avant qu’ils ne soient annulés."
+          ? "Plafond atteint : une fois par jour au plus, tant qu’aucun passage planifié n’a fait d’envoi simulé ce jour-là, la simulation annule son brouillon en attente le plus ancien pour en préparer un nouveau. Envoyez ceux que vous retenez avant qu’ils ne soient annulés."
           : null,
       items: prepared.items,
     },

@@ -219,7 +219,13 @@ export async function loadExcludedIdentityKeys(keys: readonly string[]): Promise
 
 export type PendingSimulatedDrafts = {
   /** Brouillons lus (au plus `limit`), du plus récent au plus ancien. */
-  rows: Array<{ id: string; sale_id: string | null; created_at: string; sale_snapshot: Json }>;
+  rows: Array<{
+    id: string;
+    user_id: string;
+    sale_id: string | null;
+    created_at: string;
+    sale_snapshot: Json;
+  }>;
   /** Nombre total de brouillons simulés en attente (dans les ventes demandées, si `saleIds` est donné). */
   total: number;
 };
@@ -239,7 +245,7 @@ export async function loadPendingSimulatedDrafts({
 }): Promise<PendingSimulatedDrafts> {
   let query = supabaseAdmin
     .from("information_agent_missions")
-    .select("id,sale_id,created_at,sale_snapshot", { count: "exact" })
+    .select("id,user_id,sale_id,created_at,sale_snapshot", { count: "exact" })
     .eq("status", "draft")
     .eq("metadata->>trigger", "autopilot")
     .eq("metadata->>autopilot_simulated", "true");
@@ -325,6 +331,41 @@ export async function lastOnDemandAutopilotRunAt(since: Date): Promise<Date | nu
   if (error) throw error;
   const at = data?.[0]?.at;
   return at ? new Date(at) : null;
+}
+
+/** Évènements `would_send` lus au plus pour une journée (5 par passage, 27 passages planifiés, plus les manuels). */
+const WOULD_SEND_READ_LIMIT = 1_000;
+
+/**
+ * Un envoi simulé d'un passage PLANIFIÉ a-t-il été journalisé depuis `since` ? Même définition que le compte des
+ * jours effectifs (`clean_simulation_days` de `information_agent_autopilot_stats`, migration 20261209100100) :
+ * évènement `would_send` dont le `run_id` n'a aucune trace `run` marquée `AUTOPILOT_MANUAL_RUN_MARK` ; un
+ * `run_id` absent compte comme planifié. RÈGLE LIÉE : les deux définitions changent ensemble. Lecture tronquée :
+ * vrai, par prudence (la rotation n'a alors pas lieu). Une lecture impossible est propagée.
+ */
+export async function scheduledWouldSendSince(since: Date): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("run_id")
+    .eq("kind", "would_send")
+    .gte("at", since.toISOString())
+    .limit(WOULD_SEND_READ_LIMIT);
+  if (error) throw error;
+  const rows = data ?? [];
+  if (rows.length >= WOULD_SEND_READ_LIMIT) return true;
+  if (rows.some((row) => row.run_id == null)) return true;
+  const runIds = [...new Set(rows.map((row) => row.run_id as string))];
+  if (!runIds.length) return false;
+  const { data: manual, error: manualError } = await supabaseAdmin
+    .from("information_agent_autopilot_events")
+    .select("run_id")
+    .eq("kind", "run")
+    .contains("details", AUTOPILOT_MANUAL_RUN_MARK)
+    .in("run_id", runIds)
+    .limit(runIds.length * 2);
+  if (manualError) throw manualError;
+  const manualRunIds = new Set((manual ?? []).map((row) => row.run_id));
+  return runIds.some((runId) => !manualRunIds.has(runId));
 }
 
 export async function loadRecentAutopilotEvents(limit = 20): Promise<AutopilotEventRow[]> {

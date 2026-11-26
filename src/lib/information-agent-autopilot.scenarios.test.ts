@@ -175,6 +175,8 @@ type Calls = {
   released: number;
   leases: number;
   cooldownSince: Date[];
+  /** Début de journée demandé à la lecture des envois simulés planifiés (rotation). */
+  wouldSendSince: Date[];
 };
 
 function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
@@ -187,6 +189,7 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     released: 0,
     leases: 0,
     cooldownSince: [],
+    wouldSendSince: [],
   };
   const deps: AutopilotDeps = {
     now: () => now,
@@ -208,6 +211,10 @@ function harness(overrides: Partial<AutopilotDeps> = {}, now = MONDAY_10H) {
     lastOnDemandRunAt: async (since) => {
       calls.cooldownSince.push(since);
       return null;
+    },
+    scheduledWouldSendSince: async (since) => {
+      calls.wouldSendSince.push(since);
+      return false;
     },
     findCandidates: async () => ({ candidates: [candidate()], skipped: {}, examined: 1 }),
     prepareDraft: async () => {
@@ -1363,6 +1370,7 @@ describe("passage de simulation lancé à la main (demande du 14/11/2026)", () =
         saleId: `s-${index}`,
         saleSnapshot: {},
         createdAt: new Date(Date.UTC(2026, 10, 13, 12) - index * 60_000).toISOString(),
+        ownerId: "admin-1",
       })),
     });
 
@@ -1875,6 +1883,7 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
         saleId: `s-${index}`,
         saleSnapshot: {},
         createdAt: new Date(Date.UTC(2026, 10, 13, 12) - index * 60_000).toISOString(),
+        ownerId: "admin-1",
       })),
     });
 
@@ -2105,6 +2114,95 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
       });
       expect(findCandidates).not.toHaveBeenCalled();
     });
+
+    it("une rotation par jour : un passage planifié a déjà fait un envoi simulé aujourd'hui, aucune annulation", async () => {
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { deps, calls } = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: pending(10),
+        scheduledWouldSendSince: async (since) => {
+          calls.wouldSendSince.push(since);
+          return true;
+        },
+        findCandidates,
+      });
+      const summary = await runInformationAgentAutopilot(deps);
+      expect(calls.wouldSendSince).toHaveLength(1);
+      expect(calls.cancels).toEqual([]);
+      expect(summary).toMatchObject({
+        code: "simulated_backlog",
+        skipped: { simulated_backlog: 1 },
+        errors: {},
+      });
+      expect(summary.skipped).not.toHaveProperty("draft_rotated");
+      expect(findCandidates).not.toHaveBeenCalled();
+    });
+
+    it("jour de Paris : la journée lue commence à minuit à Paris, pas à minuit UTC", async () => {
+      // Mardi 3/11 10 h 30 à Paris (heure d'hiver, UTC+1) : depuis lundi 23 h UTC.
+      const scheduled = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: pending(10),
+      });
+      await runInformationAgentAutopilot(scheduled.deps);
+      expect(scheduled.calls.wouldSendSince).toEqual([new Date("2026-11-02T23:00:00Z")]);
+
+      // Passage à la demande à 23 h 30 UTC le 17/11, soit 0 h 30 le 18/11 à Paris : nouvelle journée de Paris.
+      for (const [at, since] of [
+        ["2026-11-17T23:30:00Z", "2026-11-17T23:00:00Z"],
+        ["2026-11-17T22:30:00Z", "2026-11-16T23:00:00Z"],
+      ]) {
+        const now = new Date(at);
+        const onDemand = harness(
+          {
+            loadSettings: async () => settings({ mode: "simulation" }),
+            listPendingSimulatedDrafts: pending(10),
+          },
+          now,
+        );
+        await runAutopilotPass(onDemand.deps, {
+          adminId: "admin-2",
+          reason: "Essai",
+          finishBy: new Date(now.getTime() + 25_000),
+        });
+        expect(onDemand.calls.wouldSendSince).toEqual([new Date(since)]);
+      }
+    });
+
+    it("brouillons d'un autre administrateur (changement d'administrateur d'exécution) : jamais annulés, sans erreur", async () => {
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { drafts } = await pending(10)();
+      const formerOwner = drafts.map((item) => ({ ...item, ownerId: "ancien-admin" }));
+      const others = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: async () => ({ total: 10, drafts: formerOwner }),
+        findCandidates,
+      });
+      const summary = await runInformationAgentAutopilot(others.deps);
+      expect(others.calls.cancels).toEqual([]);
+      expect(others.calls.wouldSendSince).toEqual([]);
+      expect(summary).toMatchObject({
+        code: "simulated_backlog",
+        skipped: { simulated_backlog: 1 },
+        errors: {},
+      });
+
+      // Propriétaires mêlés : le plus ancien de l'administrateur d'exécution, jamais celui de l'ancien.
+      const mixed = drafts.map((item, index) =>
+        index >= 8 ? { ...item, ownerId: "ancien-admin" } : item,
+      );
+      const some = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: async () => ({ total: 10, drafts: mixed }),
+        findCandidates,
+      });
+      expect(await runInformationAgentAutopilot(some.deps)).toMatchObject({
+        code: null,
+        skipped: { draft_rotated: 1 },
+        errors: {},
+      });
+      expect(some.calls.cancels).toEqual(["pending-7"]);
+    });
   });
 
   it("brouillon en attente relu comme à l'aperçu : vente changée, caduc ; vente inchangée, gardé", async () => {
@@ -2121,6 +2219,7 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
         saleId: "sale-1",
         saleSnapshot: snapshot,
         createdAt: "2026-11-13T12:00:00Z",
+        ownerId: "admin-1",
       }),
     ).toBe(true);
     mocks.db.sale = { status: "upcoming", ...snapshot };
@@ -2130,6 +2229,7 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
         saleId: "sale-1",
         saleSnapshot: snapshot,
         createdAt: "2026-11-13T12:00:00Z",
+        ownerId: "admin-1",
       }),
     ).toBe(false);
   });

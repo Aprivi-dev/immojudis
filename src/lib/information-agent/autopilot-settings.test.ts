@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   rows: [] as Array<Record<string, unknown>> | null,
+  /** Lignes rendues lecture après lecture, avant `rows` (fonctions à plusieurs lectures). */
+  rowsQueue: [] as Array<Array<Record<string, unknown>>>,
   error: null as Error | null,
   /** Ligne des réglages (`maybeSingle`). */
   settingsRow: null as Record<string, unknown> | null,
@@ -20,7 +22,8 @@ vi.mock("@/integrations/supabase/client.server", () => {
     in: (...args: unknown[]) => (mocks.calls.push({ method: "in", args }), query),
     limit: (...args: unknown[]) => {
       mocks.calls.push({ method: "limit", args });
-      return Promise.resolve({ data: mocks.rows, error: mocks.error });
+      const data = mocks.rowsQueue.length ? mocks.rowsQueue.shift() : mocks.rows;
+      return Promise.resolve({ data, error: mocks.error });
     },
     maybeSingle: () => {
       mocks.calls.push({ method: "maybeSingle", args: [] });
@@ -42,6 +45,7 @@ import {
   loadAutopilotStats,
   loadLastAutopilotRunAt,
   sanitizeAutopilotEventDetails,
+  scheduledWouldSendSince,
 } from "@/lib/information-agent/autopilot-settings";
 
 // Adresses fictives : sous-domaine inexistant de `notaires.fr`, `example.test`.
@@ -64,6 +68,7 @@ beforeEach(() => {
     error: null,
   });
   mocks.rows = [];
+  mocks.rowsQueue = [];
   mocks.error = null;
   mocks.settingsRow = null;
   mocks.calls.length = 0;
@@ -157,6 +162,42 @@ describe("passages lancés à la main : journal", () => {
     ]);
     mocks.rows = [{ at: "2026-11-14T12:56:00+00:00" }];
     expect(await lastOnDemandAutopilotRunAt(since)).toEqual(new Date("2026-11-14T12:56:00Z"));
+  });
+
+  it("envoi simulé d'un passage planifié depuis le début du jour : même définition que les jours effectifs", async () => {
+    const since = new Date("2026-11-17T23:00:00Z");
+    // Aucun envoi simulé : une seule lecture.
+    expect(await scheduledWouldSendSince(since)).toBe(false);
+    expect(mocks.calls).toEqual([
+      { method: "from", args: ["information_agent_autopilot_events"] },
+      { method: "select", args: ["run_id"] },
+      { method: "eq", args: ["kind", "would_send"] },
+      { method: "gte", args: ["at", "2026-11-17T23:00:00.000Z"] },
+      { method: "limit", args: [1_000] },
+    ]);
+
+    // Envois simulés d'un seul passage, lancé à la main : ils ne comptent pas, la rotation reste permise.
+    mocks.calls.length = 0;
+    mocks.rowsQueue = [[{ run_id: "manuel" }, { run_id: "manuel" }], [{ run_id: "manuel" }]];
+    expect(await scheduledWouldSendSince(since)).toBe(false);
+    expect(mocks.calls.slice(5)).toEqual([
+      { method: "from", args: ["information_agent_autopilot_events"] },
+      { method: "select", args: ["run_id"] },
+      { method: "eq", args: ["kind", "run"] },
+      { method: "contains", args: ["details", { manual: true }] },
+      { method: "in", args: ["run_id", ["manuel"]] },
+      { method: "limit", args: [2] },
+    ]);
+
+    // Un passage planifié parmi eux : la journée compte déjà.
+    mocks.rowsQueue = [[{ run_id: "manuel" }, { run_id: "planifie" }], [{ run_id: "manuel" }]];
+    expect(await scheduledWouldSendSince(since)).toBe(true);
+    // Sans run_id : compté comme planifié, comme dans la fonction SQL.
+    mocks.rowsQueue = [[{ run_id: null }]];
+    expect(await scheduledWouldSendSince(since)).toBe(true);
+    // Lecture tronquée : vrai par prudence.
+    mocks.rowsQueue = [Array.from({ length: 1_000 }, () => ({ run_id: "manuel" }))];
+    expect(await scheduledWouldSendSince(since)).toBe(true);
   });
 
   it("une lecture impossible du journal est propagée (jamais un passage de plus)", async () => {
