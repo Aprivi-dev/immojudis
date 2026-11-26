@@ -21,14 +21,16 @@ import { ceilingTermText, ceilingTermWithArticleText } from "@/lib/fee-regime-la
 import {
   SALE_NOT_UNLOCKABLE_TEXT,
   UNLOCK_CALL_TO_ACTION_LABEL,
-  UNLOCK_CHOICE_TEXT,
-  UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
-  unlockQuotaReachedText,
   type SaleUnlockResult,
   type SaleUnlockStatus,
 } from "@/lib/sale-unlocks";
+import {
+  UNLOCK_CHOICE_TEXT,
+  UNLOCK_CONFIRMATION_TEXT,
+  unlockQuotaReachedText,
+} from "@/lib/sale-unlock-panel-texts";
 import {
   SALE_PURCHASE_CREDITED_TEXT,
   SALE_PURCHASE_DELAYED_TEXT,

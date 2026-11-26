@@ -161,13 +161,13 @@ export function unlockHighlightsInlineText(open?: readonly FeeRegimeKey[]): stri
 }
 
 // Ces deux textes sont ceux de `unlockHighlightsText()` et `unlockHighlightsInlineText()` pour les
-// régimes ouverts par défaut (tous ceux qui sont définis). Ils sont écrits en toutes lettres pour que
-// les pages qui les citent (accueil, connexion, accueil du compte, favoris) n'embarquent pas le
-// calcul des termes ; `sale-unlocks.test.ts` vérifie qu'ils restent égaux à ce calcul.
-export const UNLOCK_HIGHLIGHTS_TEXT =
-  "l’analyse complète de la vente : enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives), estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente";
-export const UNLOCK_HIGHLIGHTS_INLINE_TEXT =
-  "l’analyse complète de la vente : enchère plafond ou offre plafond, estimation détaillée et ventes comparables, lecture des pièces, historique, urbanisme et rapport PDF, selon la vente";
+// régimes ouverts par défaut (tous ceux qui sont définis). Le nom du plafond y est écrit en toutes
+// lettres pour que les pages qui les citent (accueil, connexion, accueil du compte, favoris)
+// n'embarquent pas le calcul des termes ; `sale-unlocks.test.ts` vérifie qu'ils restent égaux à ce
+// calcul. Le début et la fin sont ceux des deux fonctions : écrits une seule fois, ce module étant
+// recopié dans le JavaScript de nombreuses pages (`scripts/check-build-budgets.mjs`).
+export const UNLOCK_HIGHLIGHTS_TEXT = `${UNLOCK_HIGHLIGHTS_PREFIX}enchère plafond (ventes au tribunal et ventes notariales à la bougie) ou offre plafond (ventes notariales interactives)${UNLOCK_HIGHLIGHTS_REST}`;
+export const UNLOCK_HIGHLIGHTS_INLINE_TEXT = `${UNLOCK_HIGHLIGHTS_PREFIX}enchère plafond ou offre plafond${UNLOCK_HIGHLIGHTS_REST}`;
 
 /** « Cette vente ne peut pas être débloquée pour le moment. » */
 export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloquée pour le moment.";
@@ -175,33 +175,8 @@ export const SALE_NOT_UNLOCKABLE_TEXT = "Cette vente ne peut pas être débloqu�
 /** Le bouton de la fiche et le lien principal des aperçus payants. */
 export const UNLOCK_CALL_TO_ACTION_LABEL = "Débloquer cette vente avec mon compte gratuit";
 
-/**
- * Au-dessus du bouton, avant la confirmation. Le texte invite à se servir du déblocage (18/11/2026) :
- * « choisissez-la » poussait à le garder en réserve.
- */
-export const UNLOCK_CHOICE_TEXT =
-  "Votre déblocage gratuit est disponible : utilisez-le sur cette vente pour voir son analyse complète.";
-
-/**
- * Dit avant le clic que ce déblocage est celui du compte gratuit (il n'y en a qu'un), et quand il est
- * rendu. Les offres et les conditions générales (article 2) disent qu'il est définitif.
- */
-export const UNLOCK_CONFIRMATION_TEXT =
-  "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
-
 /** Le titre de la fiche quand le déblocage du compte a servi pour une autre vente. */
 export const UNLOCK_QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
-
-/**
- * Comment ouvrir la vente affichée quand le déblocage a servi ailleurs. `analysisOpen` : la
- * souscription à l'offre Analyse est réellement ouverte (`useAnalysisCheckoutOpen() === true`) ;
- * sinon la phrase constate sans promettre une souscription fermée.
- */
-export function unlockQuotaReachedText({ analysisOpen = false }: { analysisOpen?: boolean } = {}) {
-  return analysisOpen
-    ? "Pour ouvrir celle-ci aussi, passez à l’offre Analyse : elle ouvre toutes les ventes."
-    : "Le compte gratuit ne débloque qu’une vente ; l’offre Analyse les ouvre toutes.";
-}
 
 /** « Déblocage du compte gratuit : utilisé » ou « disponible » (Mon compte, ventes débloquées). */
 export function unlockUsageLine(status: Pick<SaleUnlockStatus, "remaining">): string {
