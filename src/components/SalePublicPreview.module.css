@@ -1141,7 +1141,7 @@
   margin-top: 18px;
 }
 
-.lockAction p {
+.lockAction :is(p, span) {
   color: var(--line-soft);
   font-size: 14px;
 }

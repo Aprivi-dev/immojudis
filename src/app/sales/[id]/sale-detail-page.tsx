@@ -81,6 +81,8 @@ type SaleDetailPageProps = {
   adjudicationStatisticsEnabled?: boolean;
   /** Fee regimes whose bid ceiling is open (see `parseOpenFeeRegimes`); absent: every regime whose rules are defined. */
   openFeeRegimes?: readonly FeeRegimeKey[];
+  /** Les prix de la suite pour la fiche publique (`publicNextSalePricesText`) ; absents : achat à l'unité fermé. */
+  nextSalePrices?: string | null;
   /**
    * Référence de loyer de la vente (carte ANIL à la commune), résolue par le serveur au rendu de la
    * page ; absente ou `null`, le simulateur retombe sur le loyer départemental.
@@ -115,6 +117,7 @@ function SaleDetailContent({
   housingTension = null,
   rentalYield = null,
   guides,
+  nextSalePrices,
 }: SaleDetailPageProps) {
   // The page is statically generated and cached (ISR): it must not read the URL
   // during rendering (useSearchParams would force client-side rendering and hide
@@ -368,6 +371,7 @@ function SaleDetailContent({
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        nextSalePrices={nextSalePrices}
         verifyingAccount={sessionHinted}
       />
     );
@@ -432,6 +436,7 @@ function SaleDetailContent({
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        nextSalePrices={nextSalePrices}
         verifyingAccount
       />
     );
@@ -453,6 +458,7 @@ function SaleDetailContent({
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        nextSalePrices={nextSalePrices}
       />
     );
   }
