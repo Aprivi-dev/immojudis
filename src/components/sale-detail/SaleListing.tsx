@@ -611,7 +611,7 @@ export function ListingPracticalDetails({
     role === "pursuing_lawyer" ? "Avocat poursuivant" : role === "notary" ? "Notaire" : null;
   return (
     <section id="rendez-vous" className={styles.section} aria-labelledby="listing-practical-title">
-      <h2 id="listing-practical-title" className={styles.heading}>
+      <h3 id="listing-practical-title" className={styles.heading}>
         {tribunal
           ? "L’audience et les visites"
           : notary
@@ -619,7 +619,7 @@ export function ListingPracticalDetails({
             : state
               ? "Échéance, visites et service vendeur"
               : "La vente et les visites"}
-      </h2>
+      </h3>
       {status && (
         <div
           role="status"
@@ -837,9 +837,9 @@ export function ListingDescription({
   const sourceUrl = safeExternalHttpUrl(sale.source_url);
   return (
     <section className={styles.section} aria-labelledby="listing-description-title">
-      <h2 id="listing-description-title" className={styles.heading}>
+      <h3 id="listing-description-title" className={styles.heading}>
         Description
-      </h2>
+      </h3>
       <p className={`${styles.body} ${styles.descriptionPreview}`}>
         {description.length > 360
           ? `${description.slice(0, 360).replace(/\s+\S*$/, "")}…`
@@ -924,9 +924,9 @@ export function ListingLocation({
   );
   return (
     <section id="localisation" className={styles.section} aria-labelledby="listing-location-title">
-      <h2 id="listing-location-title" className={styles.heading}>
+      <h3 id="listing-location-title" className={styles.heading}>
         Localisation
-      </h2>
+      </h3>
       <div className={styles.card}>
         {coordinates && !cityReview.blocked ? (
           <div className={styles.map}>

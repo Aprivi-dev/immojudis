@@ -98,7 +98,7 @@ export function AuctionScenariosSection({
   if (query.isLoading) {
     return (
       <section className={styles.card} aria-busy="true">
-        <h2>Scénarios d’enchères</h2>
+        <h3>Scénarios d’enchères</h3>
         <p className={styles.lead} role="status">
           Lecture des adjudications du tribunal…
         </p>
@@ -109,7 +109,7 @@ export function AuctionScenariosSection({
   if (query.isError) {
     return (
       <section className={styles.card} aria-labelledby="auction-scenarios-title">
-        <h2 id="auction-scenarios-title">Scénarios d’enchères</h2>
+        <h3 id="auction-scenarios-title">Scénarios d’enchères</h3>
         <div role="alert">
           <p className={styles.lead}>Les statistiques du tribunal n’ont pas pu être chargées.</p>
           <Button className="mt-3" onClick={() => void query.refetch()}>
@@ -144,7 +144,7 @@ export function AuctionScenariosSection({
 
   return (
     <section id="scenarios" className={styles.card} aria-labelledby="auction-scenarios-title">
-      <h2 id="auction-scenarios-title">Scénarios d’enchères</h2>
+      <h3 id="auction-scenarios-title">Scénarios d’enchères</h3>
       {asOf ? <p className={styles.asOf}>Données au {asOf}</p> : null}
 
       <p className={styles.warning} id="scenarios-caveat">
@@ -251,7 +251,7 @@ export function AuctionScenariosSection({
 
       {licitor ? (
         <div className={styles.court}>
-          <h3>Le {court} sur trois ans</h3>
+          <h4>Le {court} sur trois ans</h4>
           <dl>
             <div>
               <dt>Ventes adjugées</dt>

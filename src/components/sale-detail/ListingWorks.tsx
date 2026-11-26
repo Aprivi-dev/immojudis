@@ -94,9 +94,9 @@ export function ListingWorks({
       <div className={styles.inner}>
         <header className={styles.header}>
           <div>
-            <h2 id="listing-works-title" className={styles.title}>
+            <h3 id="listing-works-title" className={styles.title}>
               Travaux et état du bien
-            </h2>
+            </h3>
             <p className={styles.subtitle}>
               Chiffrez votre projet et faites confirmer les postes lors de la visite.
             </p>

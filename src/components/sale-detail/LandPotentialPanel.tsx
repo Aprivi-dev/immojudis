@@ -169,7 +169,7 @@ export function LandPotentialPanel({
           <p className={styles.eyebrow}>PLU et risques · sources officielles</p>
           {enabled ? null : (
             <>
-              <h3>Quel projet envisager sur ce bien ?</h3>
+              <h4>Quel projet envisager sur ce bien ?</h4>
               <p className={styles.intro}>
                 Parcelles, règles d’urbanisme, servitudes et risques liés au terrain, avec les
                 documents pour comprendre leurs conséquences.
@@ -500,7 +500,7 @@ export function LandPotentialPanel({
                     <div className={styles.riskGroups}>
                       {groupRisks(report.risks.findings).map(([category, findings]) => (
                         <div key={category}>
-                          <h3>{RISK_CATEGORY_LABELS[category]}</h3>
+                          <h4>{RISK_CATEGORY_LABELS[category]}</h4>
                           <ul className={styles.riskList}>
                             {findings.slice(0, 2).map((risk) => (
                               <RiskCard key={risk.id} risk={risk} />
@@ -741,7 +741,7 @@ function RiskCard({ risk }: { risk: LandRiskFinding }) {
       <p>{risk.description}</p>
       {risk.consequences.length ? (
         <div className={styles.consequences}>
-          <h4>Conséquences à vérifier</h4>
+          <h5>Conséquences à vérifier</h5>
           <ul>
             {risk.consequences.map((item) => (
               <li key={item}>{item}</li>

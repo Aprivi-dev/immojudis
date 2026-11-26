@@ -284,6 +284,13 @@
   margin-left: 0;
 }
 
+/* Le titre du bloc est un vrai titre pour les lecteurs d'écran, avec l'apparence du résumé. */
+.foldTitle {
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
 .foldSummary {
   display: block;
   margin-top: 2px;

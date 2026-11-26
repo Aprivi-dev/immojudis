@@ -28,9 +28,9 @@ export function ListingWeatherHistory({
   const weather = query.data?.weather;
   return (
     <section className={styles.section} aria-labelledby="weather-history-title">
-      <h2 id="weather-history-title" className={styles.heading}>
+      <h4 id="weather-history-title" className={styles.heading}>
         Historique météo
-      </h2>
+      </h4>
       {query.isPending ? <p role="status">Chargement des relevés Météo-France…</p> : null}
       {weather?.status === "ready" ? <ClimateHistoryView weather={weather} /> : null}
       {query.isError ? (

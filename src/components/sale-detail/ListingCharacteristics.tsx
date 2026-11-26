@@ -43,9 +43,9 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
       aria-labelledby="caracteristiques-title"
     >
       <div className={styles.header}>
-        <h2 id="caracteristiques-title" className={styles.heading}>
+        <h3 id="caracteristiques-title" className={styles.heading}>
           Caractéristiques du bien
-        </h2>
+        </h3>
         {sourceLabel ? <p className={styles.note}>{sourceLabel}</p> : null}
       </div>
 
@@ -71,21 +71,21 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
 
       {model.surfaces.length ? (
         <>
-          <h3 className={styles.subheading}>Surfaces</h3>
+          <h4 className={styles.subheading}>Surfaces</h4>
           <Facts items={model.surfaces} />
         </>
       ) : null}
 
       {primaryGroup ? (
         <>
-          <h3 className={styles.subheading}>{primaryGroup.title}</h3>
+          <h4 className={styles.subheading}>{primaryGroup.title}</h4>
           <Facts items={primaryGroup.items} />
         </>
       ) : null}
 
       {model.procedure && (model.procedure.facts.length || model.procedure.visits.length) ? (
         <>
-          <h3 className={styles.subheading}>Procédure de vente</h3>
+          <h4 className={styles.subheading}>Procédure de vente</h4>
           {model.procedure.facts.length ? <Facts items={model.procedure.facts} /> : null}
           {model.procedure.visits.length ? (
             <ul className={`${styles.list} mt-2`} aria-label="Visites">
@@ -107,29 +107,29 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
           <summary>Toutes les caractéristiques publiées</summary>
           {otherGroups.map((group) => (
             <div key={group.key}>
-              <h3 className={styles.subheading}>{group.title}</h3>
+              <h4 className={styles.subheading}>{group.title}</h4>
               <Facts items={group.items} />
             </div>
           ))}
           {model.location.length ? (
             <>
-              <h3 className={styles.subheading}>Localisation cadastrale</h3>
+              <h4 className={styles.subheading}>Localisation cadastrale</h4>
               <Facts items={model.location} />
             </>
           ) : null}
           {model.media.length ? (
             <>
-              <h3 className={styles.subheading}>Galerie de la fiche</h3>
+              <h4 className={styles.subheading}>Galerie de la fiche</h4>
               <Facts items={model.media} />
             </>
           ) : null}
           {model.attachments.length ? (
             <>
-              <h3 className={styles.subheading}>
+              <h4 className={styles.subheading}>
                 {model.attachmentsAccess
                   ? "Pièces du dossier (accès réservé)"
                   : "Pièces jointes publiées"}
-              </h3>
+              </h4>
               <ul className={styles.list}>
                 {model.attachments.map((attachment) => (
                   <li key={attachment.label}>
@@ -151,9 +151,9 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
           ) : null}
           {model.manager ? (
             <>
-              <h3 className={styles.subheading}>
+              <h4 className={styles.subheading}>
                 {model.manager.heading ?? "Service gestionnaire"}
-              </h3>
+              </h4>
               <p className={styles.note}>
                 {model.manager.service ? <span>{model.manager.service}</span> : null}
                 {model.manager.service && model.manager.email ? " · " : null}
@@ -167,9 +167,9 @@ export function ListingCharacteristics({ sale }: { sale: AuctionSale }) {
           ) : null}
           {model.dates.length ? (
             <>
-              <h3 className={styles.subheading}>
+              <h4 className={styles.subheading}>
                 {model.official ? "Fiche officielle" : "Annonce de la source"}
-              </h3>
+              </h4>
               <Facts items={model.dates} />
             </>
           ) : null}

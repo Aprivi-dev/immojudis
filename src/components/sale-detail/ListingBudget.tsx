@@ -49,9 +49,9 @@ export function ListingBudget({
       ];
   return (
     <section id="budget" className={styles.section} aria-labelledby="listing-budget-title">
-      <h2 id="listing-budget-title" className={styles.heading}>
+      <h3 id="listing-budget-title" className={styles.heading}>
         Préparer mon budget
-      </h2>
+      </h3>
       <div className={styles.card}>
         <p className={styles.muted}>
           {state
