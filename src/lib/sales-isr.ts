@@ -101,10 +101,21 @@ export function publicSalesAddress(pathname: string, search: string): string {
 }
 
 /**
+ * Chemin interne sous lequel l'hébergeur régénère la page d'accueil (ISR) : `usePathname()` vaut
+ * alors `/index` dans le HTML régénéré, et `/` dans le navigateur. Aucune page du site ne porte
+ * cette adresse.
+ */
+const HOME_INTERNAL_PATH = "/index";
+
+/**
  * Chemin de l'adresse publique : la variante interne (`/sales/defaut`, `/sales/defaut/N`) se
- * présente comme `/sales`.
+ * présente comme `/sales`, et l'accueil régénéré (`/index`) comme `/`. Sans cela, un composant qui
+ * compare le chemin à `/` (le pied de page et sa frise) rend autre chose dans le HTML régénéré que
+ * dans le navigateur : erreur d'hydratation sur l'accueil, invisible en local et juste après un
+ * déploiement, où la page vient du build.
  */
 export function publicPathname(pathname: string): string {
+  if (pathname === HOME_INTERNAL_PATH) return "/";
   return pathname === SALES_DEFAULT_PATH || /^\/sales\/defaut\/[1-9][0-9]*$/.test(pathname)
     ? SALES_PATH
     : pathname;
