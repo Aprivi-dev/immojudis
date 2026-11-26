@@ -68,6 +68,13 @@ describe("internal variant", () => {
     expect(publicPathname("/sales/abc")).toBe("/sales/abc");
     expect(publicPathname("/")).toBe("/");
   });
+
+  it("presents the regenerated home page (/index) as /", () => {
+    expect(publicPathname("/index")).toBe("/");
+    // Seul ce chemin exact : une page qui commencerait par « index » garde son adresse.
+    expect(publicPathname("/index/abc")).toBe("/index/abc");
+    expect(publicPathname("/indexation")).toBe("/indexation");
+  });
 });
 
 describe("page variants (?page=2 and ?page=3)", () => {

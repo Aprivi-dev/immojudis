@@ -62,6 +62,17 @@ it("pose la frise peinte en fond sur l'accueil seulement, liens par-dessus, vid�
   expect(screen.getByRole("link", { name: "Mentions légales" })).toBeTruthy();
 });
 
+it("pose la même frise quand le serveur régénère l'accueil sous son chemin interne /index", () => {
+  // L'hébergeur régénère l'accueil (ISR) sous `/index` ; le navigateur lit `/`. Les deux rendus
+  // doivent être identiques, sinon l'hydratation de l'accueil échoue.
+  pathname.current = "/index";
+  const regenerated = renderFooter().container.innerHTML;
+  cleanup();
+  pathname.current = "/";
+  expect(renderFooter().container.innerHTML).toBe(regenerated);
+  expect(regenerated).toContain("site-footer-frieze-ground");
+});
+
 it("gives every public page access to the legal documents", () => {
   renderFooter();
   const legal = within(screen.getByRole("navigation", { name: "Informations légales" }));
