@@ -338,6 +338,7 @@ export function SalePublicPreview({
   housingTension = null,
   rentalYield = null,
   guides,
+  nextSalePrices,
   verifyingAccount = false,
 }: {
   saleId: string;
@@ -355,6 +356,8 @@ export function SalePublicPreview({
   rentalYield?: PublicRentalYield | null;
   /** Articles du blog proposés en bas de fiche, choisis par le serveur ; absents : liens communs seuls. */
   guides?: readonly SaleGuideLink[];
+  /** Les prix de la suite, composés par le serveur (`publicNextSalePricesText`) ; absents : achat à l'unité fermé. */
+  nextSalePrices?: string | null;
   /**
    * Une session est détectée et ses droits sont en cours de lecture : l'inscription n'a pas de sens
    * pour ce visiteur, la page dit qu'elle vérifie son compte au lieu de proposer d'en créer un.
@@ -949,6 +952,14 @@ export function SalePublicPreview({
                         <ArrowRight className="h-4 w-4" aria-hidden />
                       </Link>
                       <p>Sans carte bancaire.</p>
+                      {/* Les prix de la suite, dès la fiche publique : personne ne devrait créer un
+                          compte pour apprendre ce que coûte la vente suivante. Texte composé sur
+                          le serveur (`publicNextSalePricesText`) ; absent, l'achat est fermé. */}
+                      {nextSalePrices ? (
+                        <span data-testid="public-next-sale" className="block w-full">
+                          {nonBreakingUnits(nextSalePrices)}
+                        </span>
+                      ) : null}
                     </div>
                   )}
                 </section>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { serverEnv } from "@/lib/env";
 import { openFeeRegimesFromEnv } from "@/lib/fee-regime.server";
+import { publicNextSalePricesText } from "@/lib/next-sale-prices.server";
 import { publicRentalYield } from "@/lib/public-rental-yield";
 import { lookupPublicSale } from "@/lib/public-sale.server";
 import { loadSaleHousingTension, loadSaleRentReference } from "@/lib/rent-reference.server";
@@ -159,6 +160,7 @@ export default async function Page({ params }: PageProps) {
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        nextSalePrices={publicNextSalePricesText()}
       />
     </>
   );

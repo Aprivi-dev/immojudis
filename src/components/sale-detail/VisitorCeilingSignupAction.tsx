@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useSaleUnlockPurchaseOffer } from "@/hooks/use-sale-unlock-purchase-offer";
-import { nonBreakingUnits } from "@/lib/non-breaking-units";
-import { unlockNextSaleText } from "@/lib/sale-unlock-purchase-texts";
+import { NextSalePrices } from "@/components/sale-detail/NextSalePrices";
+import { useAnalysisCheckoutOpen } from "@/hooks/use-analysis-checkout-open";
 
 /**
  * Plafond verrouillé d'un visiteur (C12, 08/11) : « choisissez l’offre Analyse » seulement quand la garde
@@ -12,23 +11,13 @@ import { unlockNextSaleText } from "@/lib/sale-unlock-purchase-texts";
  * de l'offre ne parte que pour un visiteur.
  */
 export function VisitorCeilingSignupAction({ signupHref }: { signupHref: string }) {
-  const offer = useSaleUnlockPurchaseOffer();
-  const ready = offer.status === "ready" ? offer : null;
+  const checkoutOpen = useAnalysisCheckoutOpen();
   return (
     <>
       <Link href={signupHref}>Créez un compte gratuit</Link>, puis débloquez la vente
-      {ready?.analysisOpen ? " ou choisissez l’offre Analyse" : null}
-      {ready?.purchase ? (
-        // Les prix dès la première visite (25/11/2026), seulement quand l'achat à l'unité est ouvert.
-        <span data-testid="visitor-next-sale" className="block">
-          {nonBreakingUnits(
-            unlockNextSaleText(
-              ready.purchase.label,
-              ready.analysisOpen ? ready.analysisLabel : null,
-            ),
-          )}
-        </span>
-      ) : null}
+      {checkoutOpen === true ? " ou choisissez l’offre Analyse" : null}
+      {/* Les prix dès la première visite (25/11/2026), seulement quand l'achat à l'unité est ouvert. */}
+      <NextSalePrices testId="visitor-next-sale" />
     </>
   );
 }
