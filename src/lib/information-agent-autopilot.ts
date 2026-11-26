@@ -46,6 +46,7 @@ import {
   loadAutopilotStats,
   loadPendingSimulatedDrafts,
   recordAutopilotAutoStop,
+  scheduledWouldSendSince,
   recordAutopilotEvent,
   syncAutopilotWarning,
 } from "@/lib/information-agent/autopilot-settings";
@@ -65,6 +66,7 @@ import { ResendRejectedError } from "@/lib/email-alerts";
 import { issueAutopilotTrigger } from "@/lib/information-agent/schemas";
 import { AutopilotSendRefusedError } from "@/lib/information-agent/autopilot-send-guard";
 import { PublicApiError } from "@/lib/api-errors";
+import { startOfParisDay } from "@/lib/paris-time";
 
 /**
  * Pilote automatique de l'agent d'information : UN passage (appelé par `pg_cron` toutes les 10 minutes, via la
@@ -125,6 +127,10 @@ export type PendingSimulatedDraft = {
   missionId: string;
   saleId: string | null;
   saleSnapshot: SaleSnapshot;
+  /** Date de préparation : la rotation annule les plus anciens d'abord. */
+  createdAt: string;
+  /** Administrateur propriétaire : la rotation n'annule que ceux de l'administrateur d'exécution. */
+  ownerId: string;
 };
 
 export type AutopilotDeps = {
@@ -146,6 +152,8 @@ export type AutopilotDeps = {
   releaseLease: (token: string) => Promise<void>;
   /** Heure du dernier passage lancé à la main journalisé depuis `since`, ou null. */
   lastOnDemandRunAt: (since: Date) => Promise<Date | null>;
+  /** Un envoi simulé d'un passage planifié a-t-il été journalisé depuis `since` (`scheduledWouldSendSince`) ? */
+  scheduledWouldSendSince: (since: Date) => Promise<boolean>;
   findCandidates: (
     settings: AutopilotSettings,
     now: Date,
@@ -197,6 +205,14 @@ const KNOWN_WARNINGS = [
  */
 const ROUNDTRIP_EXPIRY_WARNING = "roundtrip_expiry";
 const SIMULATION_PER_RUN = 5;
+/**
+ * Places rendues par la rotation des brouillons simulés quand le plafond est atteint (décision du propriétaire du
+ * 26/11/2026, relecture de la PR #574) : une seule, et au plus une rotation par jour de Paris, tant qu'aucun passage
+ * planifié n'a fait d'envoi simulé ce jour-là. Un tel envoi suffit à faire compter la journée
+ * (`clean_simulation_days`) ; au-delà, chaque rotation n'ajouterait qu'un aperçu, donc un risque de rejet de
+ * politique, et annulerait des brouillons encore à relire.
+ */
+const SIMULATION_ROTATED_PLACES = 1;
 const LIVE_PER_RUN = 3;
 /**
  * Bail du passage : `maxDuration = 300` de la route, plus 30 secondes de marge (T30, 14/11/2026). Un passage coupé
@@ -318,6 +334,7 @@ export function defaultAutopilotDeps(
     claimLease: () => claimCronLease("information-agent-autopilot", AUTOPILOT_LEASE_SECONDS),
     releaseLease: (token) => releaseCronLease("information-agent-autopilot", token),
     lastOnDemandRunAt: lastOnDemandAutopilotRunAt,
+    scheduledWouldSendSince,
     findCandidates: (settings, now, limit, shouldStop) =>
       findAutopilotCandidates({ settings, now, limit, env, shouldStop }),
     prepareDraft: (candidate, settings, runId) =>
@@ -357,6 +374,8 @@ export function defaultAutopilotDeps(
           missionId: row.id,
           saleId: row.sale_id,
           saleSnapshot: row.sale_snapshot,
+          createdAt: row.created_at,
+          ownerId: row.user_id,
         })),
       };
     },
@@ -499,6 +518,12 @@ function emptySummary(runId: string, mode: AutopilotSettings["mode"]): Autopilot
 }
 
 /**
+ * Relecture des brouillons simulés en attente : `pending`, ceux qui comptent encore pour le plafond ; `kept`, ceux
+ * relus et gardés ; `complete`, vrai si tous ont été relus, sans erreur.
+ */
+type PendingReview = { pending: number; kept: PendingSimulatedDraft[]; complete: boolean };
+
+/**
  * Brouillons simulés en attente qui comptent encore pour le plafond : chacun est relu comme à l'aperçu, et celui
  * dont la vente a changé est annulé (`draft_stale`) au lieu de bloquer la simulation jusqu'à une action humaine.
  * Une relecture ou une annulation impossible est une erreur du passage ; le brouillon reste compté. Une relecture
@@ -510,22 +535,83 @@ async function pendingAfterStaleReview(
   skip: (code: string) => void,
   runError: (code: string, error: unknown, saleId: string | null) => void,
   shouldStop: () => boolean,
-): Promise<number> {
+): Promise<PendingReview> {
   const { total, drafts } = await deps.listPendingSimulatedDrafts();
   let pending = total;
+  const kept: PendingSimulatedDraft[] = [];
+  // Liste tronquée (plus de brouillons en attente que la relecture n'en lit) : relecture incomplète.
+  let complete = drafts.length === total;
   for (const draft of drafts) {
-    if (shouldStop()) break;
+    if (shouldStop()) {
+      complete = false;
+      break;
+    }
     try {
-      if (!(await deps.draftIsStale(draft))) continue;
+      if (!(await deps.draftIsStale(draft))) {
+        kept.push(draft);
+        continue;
+      }
       await deps.cancelDraft(draft.missionId, settings);
     } catch (error) {
       const code =
         error instanceof AutopilotDraftCancelError ? "cancel_failed" : "stale_check_failed";
       runError(code, error, draft.saleId);
+      complete = false;
       continue;
     }
     skip("draft_stale");
     pending -= 1;
+  }
+  return { pending, kept, complete };
+}
+
+/**
+ * Rotation des brouillons simulés (simulation seulement, décision du propriétaire du 26/11/2026) : plafond encore
+ * atteint après la relecture, le pilote annule ses brouillons simulés en attente les plus anciens, jamais envoyés,
+ * juste assez pour rendre `SIMULATION_ROTATED_PLACES` place, au lieu d'attendre qu'un administrateur en envoie ou en
+ * annule. Le passage garde `simulated_backlog`, sans rotation ni erreur :
+ * - si la relecture est incomplète ou en erreur (les plus anciens ne sont pas connus avec certitude) ;
+ * - si aucun brouillon en attente n'appartient à l'administrateur d'exécution (`cancelMission` n'annule que les
+ *   siens : après un changement d'administrateur, ceux de l'ancien restent à traiter à la main) ;
+ * - si un passage planifié a déjà fait un envoi simulé ce jour de Paris (`dayStart`) : la journée compte déjà.
+ * Chaque lecture ou annulation est une étape au sens de la borne de temps ; chaque annulation laisse un évènement
+ * `skip` `draft_rotated` (vente et mission) : le journal dit que c'est le pilote, pas un administrateur. Une
+ * annulation impossible est une erreur du passage (`cancel_failed`) et arrête la rotation.
+ */
+async function pendingAfterRotation(
+  deps: AutopilotDeps,
+  settings: AutopilotSettings,
+  runId: string,
+  dayStart: Date,
+  review: PendingReview,
+  skip: (code: string) => void,
+  runError: (code: string, error: unknown, saleId: string | null) => void,
+  shouldStop: () => boolean,
+): Promise<number> {
+  let pending = review.pending;
+  const target = AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS - SIMULATION_ROTATED_PLACES;
+  if (!review.complete || pending <= target) return pending;
+  const oldestFirst = review.kept
+    .filter((draft) => draft.ownerId === settings.actingAdminId)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  if (!oldestFirst.length || shouldStop()) return pending;
+  if (await deps.scheduledWouldSendSince(dayStart)) return pending;
+  for (const draft of oldestFirst) {
+    if (pending <= target) break;
+    if (shouldStop()) break;
+    try {
+      await deps.cancelDraft(draft.missionId, settings);
+    } catch (error) {
+      runError("cancel_failed", error, draft.saleId);
+      break;
+    }
+    skip("draft_rotated");
+    pending -= 1;
+    await deps.record("skip", runId, {
+      code: "draft_rotated",
+      saleId: draft.saleId,
+      missionId: draft.missionId,
+    });
   }
   return pending;
 }
@@ -694,9 +780,11 @@ export async function runAutopilotPass(
 
     // 5. Candidats : avocat poursuivant de l'annonce, classe A uniquement. En simulation, les brouillons simulés en
     //    attente sont d'abord relus (ceux que la vente a rendus caducs sont annulés, `draft_stale`), puis plafonnés :
-    //    plafond atteint, aucune recherche, rien n'est préparé tant qu'un administrateur n'en a pas envoyé ou annulé.
-    //    Un passage à la demande n'envoie jamais, quel que soit le mode relu (la garde de tête l'exige déjà) : il
-    //    suit le chemin de la simulation, purge et plafond compris.
+    //    plafond encore atteint, les plus anciens sont annulés pour rendre une place (`draft_rotated`) si aucun
+    //    passage planifié n'a fait d'envoi simulé aujourd'hui ; sinon, aucune recherche (`simulated_backlog`), voir
+    //    `pendingAfterRotation`. Un passage à la demande n'envoie jamais,
+    //    quel que soit le mode relu (la garde de tête l'exige déjà) : il suit le chemin de la simulation, purge,
+    //    rotation et plafond compris.
     const live = !onDemand && settings.mode === "live";
     // Borne de temps du seul passage à la demande ; la tâche planifiée n'en a pas (`Infinity`). Une étape n'est
     // entamée que si elle peut finir avant l'heure, même à sa durée maximale.
@@ -707,13 +795,21 @@ export async function runAutopilotPass(
       }
       return summary.stoppedByTimeBudget;
     };
-    const wanted = live
-      ? LIVE_PER_RUN
-      : Math.min(
-          SIMULATION_PER_RUN,
-          AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS -
-            (await pendingAfterStaleReview(deps, settings, skip, runError, timeUp)),
-        );
+    let wanted = LIVE_PER_RUN;
+    if (!live) {
+      const review = await pendingAfterStaleReview(deps, settings, skip, runError, timeUp);
+      const pending = await pendingAfterRotation(
+        deps,
+        settings,
+        runId,
+        startOfParisDay(now),
+        review,
+        skip,
+        runError,
+        timeUp,
+      );
+      wanted = Math.min(SIMULATION_PER_RUN, AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS - pending);
+    }
     const backlog = wanted <= 0;
     const search: AutopilotCandidateSearch = backlog
       ? { candidates: [], skipped: { simulated_backlog: 1 }, examined: 0 }

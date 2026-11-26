@@ -21,6 +21,15 @@ import { NotFoundError, PublicApiError } from "@/lib/api-errors";
 
 export type MissionRow = Database["public"]["Tables"]["information_agent_missions"]["Row"];
 
+const CANCELLABLE_MISSION_STATUSES: MissionRow["status"][] = ["draft", "failed"];
+
+function alreadySentConflict(): PublicApiError {
+  return new PublicApiError(
+    "Requête invalide : un message déjà envoyé ne peut pas être annulé.",
+    409,
+  );
+}
+
 export async function cancelMission({
   adminId,
   missionId,
@@ -29,16 +38,18 @@ export async function cancelMission({
   missionId: string;
 }) {
   const mission = await loadOwnedMission(adminId, missionId);
-  if (!(["draft", "failed"] as MissionRow["status"][]).includes(mission.status)) {
-    throw new PublicApiError(
-      "Requête invalide : un message déjà envoyé ne peut pas être annulé.",
-      409,
-    );
-  }
-  await updateMissionOrThrow(mission.id, mission.user_id, {
-    status: "cancelled",
-    completed_at: new Date().toISOString(),
-  });
+  if (!CANCELLABLE_MISSION_STATUSES.includes(mission.status)) throw alreadySentConflict();
+  // Écriture conditionnée au statut : une mission prise par un envoi entre la lecture et l'écriture n'est jamais
+  // écrasée ; aucune ligne modifiée, même refus qu'à la lecture.
+  const { data, error } = await supabaseAdmin
+    .from("information_agent_missions")
+    .update({ status: "cancelled", completed_at: new Date().toISOString() })
+    .eq("id", mission.id)
+    .eq("user_id", mission.user_id)
+    .in("status", CANCELLABLE_MISSION_STATUSES)
+    .select("id");
+  if (error) throw error;
+  if (!data?.length) throw alreadySentConflict();
 }
 
 export async function loadOwnedMission(userId: string, missionId: string): Promise<MissionRow> {

@@ -34,6 +34,7 @@ vi.mock("@/lib/information-agent/autopilot-settings", () => ({
   AUTOPILOT_EVENT_TEXT_MAX: 200,
   // Dépendances par défaut du passage, toutes remplacées par celles en mémoire (`pilot()`).
   lastOnDemandAutopilotRunAt: vi.fn(),
+  scheduledWouldSendSince: vi.fn(),
   recordAutopilotEvent: vi.fn(),
   recordAutopilotAutoStop: vi.fn(),
   syncAutopilotWarning: vi.fn(),
@@ -246,7 +247,7 @@ describe("panneau du pilote (serveur)", () => {
     expect(JSON.stringify(view.ready)).not.toContain("@");
   });
 
-  it("plafond des brouillons simulés atteint : l'écran dit quoi faire pour que la simulation reprenne", async () => {
+  it("plafond des brouillons simulés atteint : l'écran annonce la rotation des plus anciens", async () => {
     mocks.pending.mockResolvedValue({ rows: [], total: 12 });
     const view = await getAdminAutopilotView("token", {
       env: {},
@@ -254,7 +255,7 @@ describe("panneau du pilote (serveur)", () => {
     });
     expect(view.ready.label).toBe("Prêtes à valider (12 sur 10 au plus)");
     expect(view.ready.notice).toMatch(
-      /^Plafond atteint : la simulation ne prépare plus de brouillon/,
+      /^Plafond atteint : une fois par jour au plus, .* la simulation annule son brouillon en attente le plus ancien/,
     );
   });
 
