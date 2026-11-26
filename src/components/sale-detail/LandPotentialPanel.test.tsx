@@ -382,7 +382,7 @@ describe("LandPotentialPanel", () => {
     expect(container.textContent).toContain("OAP (orientations d’aménagement");
   });
 
-  it("garde une structure de titres sous le h2 de la section et aucun landmark dans les détails", () => {
+  it("garde une structure de titres sous le h3 de son bloc et aucun landmark dans les détails", () => {
     const withRisk = makeReport();
     withRisk.risks = {
       ...risks,
@@ -409,9 +409,10 @@ describe("LandPotentialPanel", () => {
       ],
     };
     const { container } = renderPanel({ initialReport: withRisk });
-    expect(container.querySelector("h5")).toBeNull();
-    expect(container.querySelector("h3")?.textContent).toBe("Argiles");
-    expect(container.querySelector("h4")?.textContent).toBe("Conséquences à vérifier");
+    expect(container.querySelector("h6")).toBeNull();
+    expect(container.querySelector("h3")).toBeNull();
+    expect(container.querySelector("h4")?.textContent).toBe("Argiles");
+    expect(container.querySelector("h5")?.textContent).toBe("Conséquences à vérifier");
     expect(container.textContent).toContain("année des données : non renseignée");
     expect(container.querySelectorAll("details section")).toHaveLength(0);
   });

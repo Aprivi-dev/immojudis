@@ -151,7 +151,7 @@ export function ListingPreparation({
     >
       <div className={styles.header}>
         <div>
-          <h2 id="listing-preparation-title">Ce que nous savons de ce bien</h2>
+          <h3 id="listing-preparation-title">Ce que nous savons de ce bien</h3>
           <p className={styles.summaryIntro}>
             Les informations de l’annonce et des documents disponibles, avec leur origine.
           </p>
@@ -289,9 +289,9 @@ export function ListingChecks({
     <section id={POINTS_TO_VERIFY_ANCHOR} className={styles.section} aria-labelledby={titleId}>
       <div className={styles.header}>
         <div>
-          <h2 id={titleId} tabIndex={-1}>
+          <h3 id={titleId} tabIndex={-1}>
             L’essentiel à savoir
-          </h2>
+          </h3>
           <p className={styles.summaryIntro}>
             {procedure.venueType === "state"
               ? "Ce qu’il faut vérifier avant de vous positionner."
@@ -406,7 +406,7 @@ export function ListingChecks({
               const evidence = riskEvidence(risk);
               return (
                 <article key={`${risk.risk_type}-${risk.risk_label}`}>
-                  <h3>{risk.risk_label}</h3>
+                  <h4>{risk.risk_label}</h4>
                   <p>{evidence.action}</p>
                   {evidence.proofs.map((proof, index) => (
                     <div key={`${index}-${proof.label}`}>

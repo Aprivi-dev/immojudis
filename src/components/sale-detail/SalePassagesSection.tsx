@@ -93,7 +93,7 @@ export function SalePassagesSection({
         aria-labelledby="sale-passages-title"
         aria-busy={!query.isError}
       >
-        <h2 id="sale-passages-title">Historique de la vente</h2>
+        <h3 id="sale-passages-title">Historique de la vente</h3>
         {query.isError ? (
           <>
             <p role="alert" className={styles.lead}>
@@ -123,7 +123,7 @@ export function SalePassagesSection({
     if (!facts) return null;
     return (
       <section id="historique" className={styles.card} aria-labelledby="sale-passages-title">
-        <h2 id="sale-passages-title">Historique de la vente</h2>
+        <h3 id="sale-passages-title">Historique de la vente</h3>
         <p className={styles.highlight}>{facts}</p>
         <p className={styles.lead}>
           Dates des audiences précédentes, mises à prix successives et reports : le détail est
@@ -144,7 +144,7 @@ export function SalePassagesSection({
   const firstSeen = data.timeline.find((event) => event.kind === "first_seen");
   return (
     <section id="historique" className={styles.card} aria-labelledby="sale-passages-title">
-      <h2 id="sale-passages-title">Historique de la vente</h2>
+      <h3 id="sale-passages-title">Historique de la vente</h3>
       {highlight ? (
         <p className={styles.highlight}>{highlight}</p>
       ) : (

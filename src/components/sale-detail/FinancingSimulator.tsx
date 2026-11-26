@@ -455,9 +455,9 @@ export function FinancingSimulator({
     <section className={styles.section} aria-labelledby={`${componentId}-title`}>
       <div className={styles.header}>
         <div>
-          <h2 id={`${componentId}-title`} className={styles.title}>
+          <h3 id={`${componentId}-title`} className={styles.title}>
             Simulateur de financement
-          </h2>
+          </h3>
           <p className={styles.subtitle}>
             Ajustez le prix, l’apport et les frais pour obtenir une première mensualité.
           </p>
@@ -717,9 +717,9 @@ export function FinancingSimulator({
         </form>
 
         <aside className={styles.resultPanel} aria-labelledby={`${componentId}-results-title`}>
-          <h3 id={`${componentId}-results-title`} className={styles.resultTitle}>
+          <h4 id={`${componentId}-results-title`} className={styles.resultTitle}>
             Votre mensualité
-          </h3>
+          </h4>
           <p className={styles.panelIntro}>
             Prêt amortissable à mensualités constantes, mis à jour dès que vous modifiez un
             paramètre.

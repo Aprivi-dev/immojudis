@@ -56,10 +56,8 @@ export function ListingEnvironmentalRisks({
   if (!enabled) return null;
   const risks = demoProfile ?? query.data;
   return (
-    <section className={styles.section} aria-labelledby="environmental-risks-title">
-      <h2 id="environmental-risks-title" className={styles.heading}>
-        Risques environnementaux
-      </h2>
+    // Sans titre propre : celui du bloc replié qui le contient (« Risques de la commune ») le nomme.
+    <section className={styles.section} aria-label="Risques de la commune">
       {!demoProfile && query.isPending ? (
         <p role="status">Chargement des risques de la commune…</p>
       ) : null}
@@ -123,7 +121,7 @@ export function CommuneRisks({ profile }: { profile: CommuneRiskProfile }) {
       {families.length ? (
         families.map((family) => (
           <div key={family.key}>
-            <h3 className={styles.subheading}>{family.label}</h3>
+            <h4 className={styles.subheading}>{family.label}</h4>
             <ul className={styles.chips}>
               {family.groups.map((group) => (
                 <li key={group.parent.code}>
@@ -142,7 +140,7 @@ export function CommuneRisks({ profile }: { profile: CommuneRiskProfile }) {
 
       {profile.preventionPlans.length ? (
         <div>
-          <h3 className={styles.subheading}>Plans de prévention en vigueur ou prescrits</h3>
+          <h4 className={styles.subheading}>Plans de prévention en vigueur ou prescrits</h4>
           <ul className={styles.list}>
             {profile.preventionPlans.map((plan) => (
               <li key={`${plan.kind}-${plan.label}`}>
@@ -162,7 +160,7 @@ export function CommuneRisks({ profile }: { profile: CommuneRiskProfile }) {
 
       {profile.catnatTotal > 0 ? (
         <div>
-          <h3 className={styles.subheading}>Arrêtés de catastrophe naturelle</h3>
+          <h4 className={styles.subheading}>Arrêtés de catastrophe naturelle</h4>
           <p className={styles.note}>
             {profile.catnatByType
               .slice(0, 4)

@@ -105,13 +105,13 @@ export function LawyerSection({ sale }: { sale: AuctionSale }) {
             fiche, le barreau s'écrivait sur cinq lignes (repasse design n° 1). */}
         <div className="grid gap-7 rounded-lg border border-line bg-background p-6 sm:p-8 @4xl:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.15fr)] @4xl:items-center">
           <div>
-            <h2 className="font-display text-3xl font-medium leading-tight text-brand-navy sm:text-4xl">
+            <h3 className="font-display text-2xl font-medium leading-tight text-brand-navy">
               {saleStatus
                 ? saleStatus
                 : isJudicial
                   ? "Prêt à enchérir ? Mandatez l’avocat compétent."
                   : "Préparez votre participation avec l’organisateur."}
-            </h2>
+            </h3>
             <p className="mt-4 max-w-xl text-sm leading-relaxed text-brand-navy/70 sm:text-base">
               {saleStatus
                 ? "Contactez l’organisateur pour confirmer le résultat ou les suites de la vente avant de préparer une participation."

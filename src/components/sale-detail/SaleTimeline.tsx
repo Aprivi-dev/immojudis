@@ -48,7 +48,7 @@ export function SaleTimeline({
   return (
     <section className={styles.card} aria-labelledby="sale-timeline-title">
       <div className={styles.cardHead}>
-        <h2 id="sale-timeline-title">Le déroulé de la vente</h2>
+        <h3 id="sale-timeline-title">Le déroulé de la vente</h3>
         <a href="#rendez-vous" className={styles.cardLink}>
           Toutes les démarches
         </a>

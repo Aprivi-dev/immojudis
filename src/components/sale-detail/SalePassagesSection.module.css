@@ -7,7 +7,7 @@
   color: var(--ink-strong);
 }
 
-.card h2 {
+.card h3 {
   color: var(--brand-navy);
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);

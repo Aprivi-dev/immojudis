@@ -192,7 +192,7 @@
   gap: 6px 12px;
 }
 
-.cardHead h2 {
+.cardHead h3 {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);

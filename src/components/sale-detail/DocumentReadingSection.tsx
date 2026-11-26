@@ -74,7 +74,7 @@ export function DocumentReadingHighlights({
     if (!data.pointCount) return null;
     return (
       <aside className={styles.highlights} aria-labelledby="reading-highlights-title">
-        <h3 id="reading-highlights-title">Ce que disent les pièces</h3>
+        <h4 id="reading-highlights-title">Ce que disent les pièces</h4>
         <p className={styles.lead}>
           {readingTeaserLine(data)}.{" "}
           <a href="#pieces" className={styles.cta}>
@@ -87,7 +87,7 @@ export function DocumentReadingHighlights({
   if (data.status !== "completed" || !data.points.length) return null;
   return (
     <aside className={styles.highlights} aria-labelledby="reading-highlights-title">
-      <h3 id="reading-highlights-title">Ce que disent les pièces</h3>
+      <h4 id="reading-highlights-title">Ce que disent les pièces</h4>
       <ul className={styles.highlightList}>
         {readingHighlights(data.points).map((point, index) => (
           <li key={index} className={styles.pointHeader}>
@@ -141,7 +141,7 @@ export function DocumentReadingSection({
         aria-labelledby="document-reading-title"
         aria-busy={!query.isError}
       >
-        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        <h3 id="document-reading-title">Lecture des pièces du dossier</h3>
         {query.isError ? (
           <>
             <p role="alert" className={styles.lead}>
@@ -171,7 +171,7 @@ export function DocumentReadingSection({
     const themes = data.themes.map((theme) => DOCUMENT_READING_THEMES[theme].toLowerCase());
     return (
       <section id="lecture-pieces" className={styles.card} aria-labelledby="document-reading-title">
-        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        <h3 id="document-reading-title">Lecture des pièces du dossier</h3>
         <p className={styles.lead}>
           {readingTeaserLine(data)}
           {themes.length ? ` : ${themes.join(", ")}.` : "."} Chaque point cite le passage et la page
@@ -193,7 +193,7 @@ export function DocumentReadingSection({
         className={`${styles.card} ${styles.placeholder}`}
         aria-labelledby="document-reading-title"
       >
-        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        <h3 id="document-reading-title">Lecture des pièces du dossier</h3>
         <p className={styles.lead}>
           Les pièces de ce dossier n’ont pas pu être lues automatiquement (documents numérisés).
           Lisez-les directement :
@@ -207,7 +207,7 @@ export function DocumentReadingSection({
   if (data.status !== "completed") {
     return (
       <section id="lecture-pieces" className={styles.card} aria-labelledby="document-reading-title">
-        <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+        <h3 id="document-reading-title">Lecture des pièces du dossier</h3>
         <p className={styles.lead}>
           La lecture des pièces de cette vente est en préparation. Elle apparaîtra ici dès que les
           documents auront été lus.
@@ -219,7 +219,7 @@ export function DocumentReadingSection({
   const groups = groupReadingPoints(data.points);
   return (
     <section id="lecture-pieces" className={styles.card} aria-labelledby="document-reading-title">
-      <h2 id="document-reading-title">Lecture des pièces du dossier</h2>
+      <h3 id="document-reading-title">Lecture des pièces du dossier</h3>
       <p className={styles.lead}>
         {data.points.length
           ? `${plural(data.points.length, "point")} relevé${data.points.length > 1 ? "s" : ""} dans les pièces. Chaque point cite le passage de la pièce (noms de personnes remplacés par leur rôle) : vérifiez-le dans la pièce et faites-le confirmer par votre avocat.`
@@ -227,7 +227,7 @@ export function DocumentReadingSection({
       </p>
       {groups.map((group) => (
         <div key={group.theme} className={styles.theme}>
-          <h3>{DOCUMENT_READING_THEMES[group.theme]}</h3>
+          <h4>{DOCUMENT_READING_THEMES[group.theme]}</h4>
           {group.points.map((point, index) => {
             const href = documentPageHref(point.document?.url ?? null, point.page);
             const source = `${point.document?.label ?? "Pièce du dossier"}, page ${point.page}`;

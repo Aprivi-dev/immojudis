@@ -40,7 +40,7 @@ export function SaleProcedureSummary({
   const procedure = getSaleProcedure(sale);
   return (
     <section aria-label="Cette vente en clair" className={listingStyles.section}>
-      <h2 className={listingStyles.heading}>Cette vente en clair</h2>
+      <h3 className={listingStyles.heading}>Cette vente en clair</h3>
       <div className={listingStyles.card}>
         {showBadge ? (
           <div className="mb-4">
@@ -98,12 +98,12 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
             </span>
             <div className="min-w-0">
               <p className="text-xs font-semibold text-gold-text">Organisation de la vente</p>
-              <h2
+              <h3
                 id="sale-procedure-title"
                 className="mt-1 text-2xl font-semibold leading-tight text-brand-navy"
               >
                 {saleVenueLabel(procedure.venueType)}
-              </h2>
+              </h3>
               <p className="mt-2 max-w-3xl text-sm leading-relaxed text-brand-navy/75 sm:text-base">
                 {procedure.venueType === "state"
                   ? `Mode de cession : ${stateSaleMethodLabel(procedure)}. Vérifiez les conditions publiées par le service vendeur avant toute démarche.`
@@ -131,9 +131,9 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
 
       <div className="grid gap-0 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
         <div className="@container p-5 sm:p-7 @4xl:border-r @4xl:border-brand-navy/10 lg:p-8">
-          <h3 className="font-display text-2xl font-semibold text-brand-navy">
+          <h4 className="font-display text-2xl font-semibold text-brand-navy">
             Ce que cela change pour vous
-          </h3>
+          </h4>
           <div className="mt-5 grid gap-3 @md:grid-cols-2">
             {procedure.venueType === "state" ? (
               <ProcedureFact
@@ -228,9 +228,9 @@ export function SaleProcedurePanel({ sale }: { sale: AuctionSale }) {
         </div>
 
         <div className="border-t border-brand-navy/10 p-5 sm:p-7 @4xl:border-t-0 lg:p-8">
-          <h3 className="font-display text-2xl font-semibold text-brand-navy">
+          <h4 className="font-display text-2xl font-semibold text-brand-navy">
             Votre parcours de participation
-          </h3>
+          </h4>
           <ol className="mt-5 space-y-4">
             {steps.map((step, index) => (
               <li key={step.title} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-3">

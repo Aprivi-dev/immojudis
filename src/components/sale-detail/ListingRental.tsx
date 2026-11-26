@@ -220,9 +220,9 @@ export function ListingRental({
     <section className={styles.section} aria-labelledby={`${componentId}-title`}>
       <div className={styles.header}>
         <div>
-          <h2 id={`${componentId}-title`} className={styles.title}>
+          <h3 id={`${componentId}-title`} className={styles.title}>
             Tester le scénario de location
-          </h2>
+          </h3>
           <p className={styles.subtitle}>
             Saisissez vos propres hypothèses pour mesurer le rendement du coût complet du projet.
           </p>
@@ -296,9 +296,9 @@ export function ListingRental({
         </form>
 
         <aside className={styles.resultPanel} aria-labelledby={`${componentId}-results-title`}>
-          <h3 id={`${componentId}-results-title`} className={styles.resultTitle}>
+          <h4 id={`${componentId}-results-title`} className={styles.resultTitle}>
             Vos repères locatifs
-          </h3>
+          </h4>
           <p className={styles.panelIntro}>
             Les résultats s&apos;activent quand le loyer, la vacance et le coût complet sont connus.
           </p>

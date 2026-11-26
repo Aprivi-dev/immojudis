@@ -53,7 +53,7 @@ export function WorksScenarioSelector({
 
   return (
     <div className="@container">
-      <h3 className="text-base font-semibold text-foreground">Quels travaux prévoyez-vous ?</h3>
+      <h4 className="text-base font-semibold text-foreground">Quels travaux prévoyez-vous ?</h4>
       <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
         Budget estimé sur les {formatSurface(surface)} du bien (surface × prix moyen au m²). Aucun
         montant n’est retenu tant que vous n’avez pas choisi.

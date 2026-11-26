@@ -309,9 +309,9 @@ function SectionHeading({
   return (
     <header className={styles.sectionHeading}>
       <p className={styles.eyebrow}>{eyebrow}</p>
-      <h3 id={titleId} className={styles.sectionTitle}>
+      <h4 id={titleId} className={styles.sectionTitle}>
         {title}
-      </h3>
+      </h4>
       {description ? <p className={styles.sectionDescription}>{description}</p> : null}
     </header>
   );
@@ -332,7 +332,7 @@ function PriceScopeCard({
       <div className={styles.cardTopline}>
         <div>
           <p className={styles.cardEyebrow}>{local ? "Périmètre local" : "Repère distinct"}</p>
-          <h4 className={styles.cardTitle}>{title}</h4>
+          <h5 className={styles.cardTitle}>{title}</h5>
         </div>
         <span className={styles.sampleBadge}>{formatNumber(scope.sampleSize)} adjudications</span>
       </div>
@@ -425,7 +425,7 @@ function PriceSection({
       {!premium && !publicDemo ? (
         <div className={styles.lockedCard} role="note">
           <p className={styles.cardEyebrow}>Analyse avancée</p>
-          <h4 className={styles.cardTitle}>Prix d’adjudication accessibles avec l’offre Analyse</h4>
+          <h5 className={styles.cardTitle}>Prix d’adjudication accessibles avec l’offre Analyse</h5>
           <p>
             Débloquez les résultats locaux publiés pour comparer les mises à prix et les prix
             d’adjudication du tribunal rattaché à cette vente.
@@ -449,7 +449,7 @@ function PriceSection({
           ) : (
             <div className={styles.noLocalPriceCard} role="note">
               <p className={styles.cardEyebrow}>Périmètre local</p>
-              <h4 className={styles.cardTitle}>Pas d’échantillon local vérifié</h4>
+              <h5 className={styles.cardTitle}>Pas d’échantillon local vérifié</h5>
               <p>
                 Aucun résultat d’adjudication ne correspond exactement au tribunal rattaché à cette
                 vente. Le repère national reste présenté séparément et ne le remplace pas.
@@ -595,9 +595,9 @@ export function ListingStatistics({
         <div className={styles.heroTopline}>
           <div>
             <p className={styles.eyebrow}>Statistiques tribunal</p>
-            <h2 id="listing-statistics-title" className={styles.heroTitle}>
+            <h3 id="listing-statistics-title" className={styles.heroTitle}>
               {titleCourt}
-            </h2>
+            </h3>
             <p className={styles.heroDescription}>
               Les ventes immobilières de ce tribunal, leurs audiences et leurs chiffres clés.
               {publicDemo ? " Données fictives de démonstration." : null}
@@ -664,11 +664,11 @@ export function ListingStatistics({
           <p className={styles.cardEyebrow}>
             {unresolvedCourt ? "Rattachement à confirmer" : "Statistiques indisponibles"}
           </p>
-          <h3 className={styles.cardTitle}>
+          <h4 className={styles.cardTitle}>
             {unresolvedCourt
               ? "Le tribunal exact de cette vente n’est pas encore confirmé"
               : "Les statistiques de ce tribunal n’ont pas pu être chargées"}
-          </h3>
+          </h4>
           <p>
             {unresolvedCourt
               ? "Aucune statistique nationale ou celle d’une autre ville n’est substituée à ce périmètre local."
@@ -840,7 +840,7 @@ export function ListingStatistics({
             <div className={styles.familyGrid}>
               <article className={styles.familyCard}>
                 <div className={styles.cardTopline}>
-                  <h4 className={styles.cardTitle}>Types de biens</h4>
+                  <h5 className={styles.cardTitle}>Types de biens</h5>
                   <span className={styles.sampleBadge}>annonces recensées</span>
                 </div>
                 <p className={styles.inlineEvidence}>
@@ -879,7 +879,7 @@ export function ListingStatistics({
               </article>
               <article className={styles.familyCard}>
                 <div className={styles.cardTopline}>
-                  <h4 className={styles.cardTitle}>Occupation</h4>
+                  <h5 className={styles.cardTitle}>Occupation</h5>
                   <span className={styles.sampleBadge}>annonces recensées</span>
                 </div>
                 {activity.occupation ? (
@@ -921,7 +921,7 @@ export function ListingStatistics({
               </article>
               <article className={styles.familyCard}>
                 <div className={styles.cardTopline}>
-                  <h4 className={styles.cardTitle}>Déroulement</h4>
+                  <h5 className={styles.cardTitle}>Déroulement</h5>
                   <span className={styles.sampleBadge}>annonces recensées</span>
                 </div>
                 <div className={styles.detailMetricList}>
