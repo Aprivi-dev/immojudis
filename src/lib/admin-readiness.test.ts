@@ -103,7 +103,7 @@ describe("admin readiness", () => {
     });
     expect(items.find((item) => item.key === "cron.smart_alerts")).toMatchObject({
       status: "ready",
-      detail: "20 routes cron sont protégées par CRON_SECRET.",
+      detail: "21 routes cron sont protégées par CRON_SECRET.",
     });
     expect(items.find((item) => item.key === "email.alert_delivery")).toMatchObject({
       status: "blocked",

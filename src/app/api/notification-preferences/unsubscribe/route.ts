@@ -7,6 +7,7 @@ import {
   revokeLaunchOfferEndNotice,
   revokeMarketingEmailsConsent,
   revokeOfferOpeningRequest,
+  revokeOnboardingEmail,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
   revokeWeeklyDigestConsent,
@@ -61,6 +62,12 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
       return {
         question:
           "Voulez-vous ne plus recevoir de message sur la fin de l'essai gratuit ? Votre compte n'est pas modifié.",
+        button: "Ne plus recevoir ce message",
+      };
+    case "onboarding-email":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir le message de prise en main de votre compte ? Votre compte n'est pas modifié.",
         button: "Ne plus recevoir ce message",
       };
     default:
@@ -187,6 +194,16 @@ export async function POST(request: Request) {
           { href: "/compte", label: "Voir mon compte" },
         );
       }
+      if (claims.scope.kind === "onboarding-email") {
+        // L'opposition reste possible même quand ONBOARDING_EMAIL_MODE vaut « off ».
+        await revokeOnboardingEmail({ userId: claims.userId });
+        return htmlResponse(
+          "Message désactivé",
+          "Vous ne recevrez plus ce message. Votre compte et vos alertes email ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Voir mon compte" },
+        );
+      }
       await revokeEmailAlertConsent({ userId: claims.userId });
     } else if (isUuid(legacyNotificationId)) {
       await unsubscribeEmailAlertsByNotificationId({ notificationId: legacyNotificationId });
@@ -233,7 +250,8 @@ function expiredLinkResponse(token: string) {
     kind === "weekly-digest" ||
     kind === "sale-results" ||
     kind === "marketing-emails" ||
-    kind === "launch-offer-end"
+    kind === "launch-offer-end" ||
+    kind === "onboarding-email"
   ) {
     return htmlResponse(
       "Lien expiré",

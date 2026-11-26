@@ -103,6 +103,8 @@ export const EMAIL_CATEGORIES = [
   "acceptance",
   "opening",
   "launch_offer_end",
+  // Email unique de prise en main, le lendemain de l'inscription.
+  "onboarding",
   "lawyer",
   "agent",
   "operations",
@@ -419,6 +421,18 @@ export async function revokeOfferOpeningRequest({
 export async function revokeLaunchOfferEndNotice({ userId }: { userId: string }): Promise<void> {
   const { error } = await supabaseAdmin
     .from("launch_offer_end_notice_optouts")
+    .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+/**
+ * Opposition à l'email unique de prise en main (lien du message, portée « onboarding-email ») : le
+ * compte entre dans la liste d'exclusion et n'est plus jamais dans la file d'envoi. Toujours possible,
+ * même quand `ONBOARDING_EMAIL_MODE` vaut `off`. Rien d'autre ne change.
+ */
+export async function revokeOnboardingEmail({ userId }: { userId: string }): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("onboarding_email_optouts")
     .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
   if (error) throw error;
 }

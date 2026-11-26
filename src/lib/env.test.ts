@@ -244,6 +244,14 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).repliesReviewDigest.mode).toBeUndefined();
   });
 
+  it("reads ONBOARDING_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ ONBOARDING_EMAIL_MODE: " internal " }).onboardingEmail.mode).toBe(
+      "internal",
+    );
+    expect(serverEnv({ ONBOARDING_EMAIL_MODE: "  " }).onboardingEmail.mode).toBeUndefined();
+    expect(serverEnv({}).onboardingEmail.mode).toBeUndefined();
+  });
+
   it("reads TRIAL_END_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {
     expect(serverEnv({ TRIAL_END_EMAIL_MODE: " internal " }).trialEndEmail.mode).toBe("internal");
     expect(serverEnv({ TRIAL_END_EMAIL_MODE: "  " }).trialEndEmail.mode).toBeUndefined();

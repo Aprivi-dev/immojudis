@@ -719,6 +719,22 @@ describe("politique de confidentialité", () => {
     );
   });
 
+  it("décrit le message unique de prise en main : intérêt légitime, opposition, durée (2026-11-26.1)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Message unique de prise en main de votre compte, le lendemain de l’inscription",
+    );
+    expect(text).toContain(
+      "Intérêt légitime : vous expliquer une fois l’usage du déblocage compris dans votre compte",
+    );
+    expect(text).toContain(
+      "Vous pouvez vous y opposer en un clic par le lien « Ne plus recevoir ce message », ou en écrivant à",
+    );
+    expect(text).toContain(
+      "Journal d’envoi : 24 mois après l’envoi ; opposition : tant que le compte existe ; suppression avec le compte",
+    );
+  });
+
   it("décrit les ventes passées suivies : instantané, base contractuelle, 6 mois, suppression par la personne", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain("Ventes passées suivies");

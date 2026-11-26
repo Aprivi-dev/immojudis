@@ -78,6 +78,18 @@ export function trialEndEmailMode(env: Env = process.env): EmailFeatureMode {
   return parseMode(serverEnv(env as EnvSource).trialEndEmail.mode);
 }
 
+/**
+ * Mode de l'email unique de prise en main, le lendemain de l'inscription (`ONBOARDING_EMAIL_MODE`),
+ * mêmes valeurs que les autres : `off` (défaut) ne lit ni n'envoie rien ; `internal` envoie un exemple,
+ * objet « [Test interne] », aux seuls administrateurs (aucun compte réel n'est lu ni écrit) ; `on` écrit
+ * aux comptes de la file `get_onboarding_email_queue`. Pas de case de consentement : message de service,
+ * base légale l'intérêt légitime, avec lien d'opposition en un clic (liste d'exclusion
+ * `onboarding_email_optouts`).
+ */
+export function onboardingEmailMode(env: Env = process.env): EmailFeatureMode {
+  return parseMode(serverEnv(env as EnvSource).onboardingEmail.mode);
+}
+
 function offeredTo(mode: EmailFeatureMode, isAdmin: boolean): boolean {
   return mode === "on" || (mode === "internal" && isAdmin);
 }

@@ -48,6 +48,7 @@ reste silencieuse.
 | Alertes de résultat ou de remise en vente                                                                           | Vercel Cron        | 10:15                                                                        | `/api/cron/sale-results`                | oui                                                  | 27 h                          |
 | Récapitulatif hebdomadaire « Ma semaine »                                                                           | Vercel Cron        | 11:30 (chaque jour ; l'envoi suit le jour choisi)                            | `/api/cron/weekly-digest`               | oui                                                  | 8 jours                       |
 | Email de fin d'essai gratuit (J+5)                                                                                  | Vercel Cron        | 12:30, rattrapage 14:30                                                      | `/api/cron/trial-end-email`             | journal d'exécution seulement                        | pas encore                    |
+| Email unique de prise en main (le lendemain de l'inscription)                                                       | Vercel Cron        | 13:30, rattrapage 15:30                                                      | `/api/cron/onboarding-email`            | journal d'exécution seulement                        | pas encore                    |
 | Rétention des données                                                                                               | Vercel Cron        | dimanche 04:15                                                               | `/api/cron/data-retention`              | oui                                                  | 8 jours                       |
 | Complétude des annonces (palier de classement de /sales)                                                            | Supabase `pg_cron` | toutes les heures à :20                                                      | `/api/cron/listing-completeness`        | oui                                                  | 3 h                           |
 | Complétude des annonces (filet quotidien)                                                                           | Vercel Cron        | 05:50, sans effet si `pg_cron` a réussi dans les 2 h                         | `/api/cron/listing-completeness`        | oui (même tâche, même seuil)                         | 3 h                           |
@@ -378,6 +379,23 @@ politique de confidentialité et du registre des traitements.
   (`kind = 'trial_end'`) qui le distingue du préavis global de fin de l'offre (`launch_offer_end`) : les
   deux messages d'un même jour ne se bloquent pas. La désinscription reste commune aux deux.
 
+- **Email unique de prise en main** (`ONBOARDING_EMAIL_MODE`, `/api/cron/onboarding-email`, 13:30) : un seul
+  email par compte, le lendemain de l'inscription, message de service (base légale : intérêt légitime, avec
+  droit d'opposition). Il ne parle que du déblocage compris dans le compte gratuit (ce qu'il ouvre, qu'il est
+  unique, quand il est rendu, où le retrouver), sans aucun élément commercial, et n'a qu'un lien : le
+  catalogue (`/sales`), filtré sur le département de la plus ancienne alerte active du compte quand elle en a
+  un. La file est `get_onboarding_email_queue` : adresse confirmée, compte créé il y a 24 à 72 heures (passé ce
+  délai, plus jamais), sans accès Analyse (abonnement, essai en cours, premium, administrateur), sans aucun
+  déblocage ni achat de vente, non désinscrit, jamais prévenu ; la règle est écrite une fois
+  (`app_private.onboarding_email_eligible`) et relue par la réservation au moment de l'envoi. Le journal est
+  `onboarding_email_notices` (clé : le compte), l'opposition `onboarding_email_optouts` (lien signé en un
+  clic, aussi en `List-Unsubscribe`, toujours possible même interrupteur éteint). Valeurs : `off` (défaut,
+  rien n'est lu ni envoyé), `internal` (un message d'exemple « [Test interne] » par administrateur et par
+  jour, aucun compte réel lu, journal non écrit), `on`. Tant que l'offre de lancement donne l'essai à
+  l'inscription, aucun compte n'entre dans la file (essai en cours). Mêmes règles d'échec, de rattrapage
+  (15:30, le même jour, seulement si le passage de 13:30 a échoué) et de reprise (23 heures, trois essais,
+  puis `needsReview`) que l'email de fin d'essai. Journal purgé à 24 mois par la tâche `data-retention`.
+
 - **Résumé quotidien « N réponses à relire »** (`REPLIES_REVIEW_DIGEST_MODE`, `/api/cron/replies-review-digest`,
   07:05, sans rattrapage) : un email d'exploitation aux adresses de `OPERATIONS_ALERT_EMAIL_TO` (trois au plus,
   même canal Resend que les incidents) qui compte les réponses de l'agent en relecture (traitement à l'état
@@ -388,7 +406,7 @@ politique de confidentialité et du registre des traitements.
   rendu du passage, aucun email), `on`. Ce n'est pas un message de l'agent d'information : il n'écrit jamais à
   l'expéditeur d'un message. Un seul email par jour de Paris (clé d'idempotence de Resend). Le passage échoue
   quand un résumé est dû et que le canal email n'est pas configuré, ou quand un envoi échoue. Non supervisé par
-  `cron.stale` (journal d'exécution seulement), comme `trial-end-email`.
+  `cron.stale` (journal d'exécution seulement), comme `trial-end-email` et `onboarding-email`.
 
 Les journaux des deux emails sont purgés à 180 jours par `run_data_retention` (cron hebdomadaire),
 même quand l'envoi est fermé. Les deux tâches sont dans la liste attendue de `cron.stale`
@@ -397,7 +415,7 @@ même quand l'envoi est fermé. Les deux tâches sont dans la liste attendue de 
 interrupteurs sont à `off`, la supervision ne surveille que le déclenchement). Ordre de mise en production et
 alerte transitoire à l'ouverture : « Ajouter une tâche supervisée » plus bas.
 
-Les quatre tâches Vercel quotidiennes, et l'email de fin d'essai, ont un second passage deux heures plus
+Les quatre tâches Vercel quotidiennes, l'email de fin d'essai et l'email de prise en main ont un second passage deux heures plus
 tard : il ne fait rien si la tâche a déjà réussi dans les 20 dernières heures (`catchUpSchedule` de `runMonitoredCron`).
 Chaque passage réessaie 3 fois (5 s, 20 s, 60 s) sur une erreur réseau ou 5xx.
 

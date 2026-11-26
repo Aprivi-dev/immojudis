@@ -3,6 +3,7 @@ import {
   alertNotificationsMode,
   marketingEmailsMode,
   marketingEmailsOfferedTo,
+  onboardingEmailMode,
   saleResultsMode,
   saleResultsOfferedTo,
   trialEndEmailMode,
@@ -56,6 +57,28 @@ describe("trialEndEmailMode", () => {
     expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: "ON" })).toBe("on");
     for (const value of ["true", "1", "oui", "onn", "internal-only"]) {
       expect(trialEndEmailMode({ TRIAL_END_EMAIL_MODE: value }), value).toBe("off");
+    }
+  });
+});
+
+describe("onboardingEmailMode", () => {
+  it("vaut off par défaut, et ne s'ouvre pas avec la variable d'un autre email", () => {
+    expect(onboardingEmailMode({})).toBe("off");
+    expect(onboardingEmailMode({ ONBOARDING_EMAIL_MODE: "" })).toBe("off");
+    expect(
+      onboardingEmailMode({
+        TRIAL_END_EMAIL_MODE: "on",
+        MARKETING_EMAILS_MODE: "on",
+        WEEKLY_DIGEST_MODE: "on",
+      }),
+    ).toBe("off");
+  });
+
+  it("reconnaît internal et on, et ferme l'envoi sur toute valeur inconnue", () => {
+    expect(onboardingEmailMode({ ONBOARDING_EMAIL_MODE: " Internal " })).toBe("internal");
+    expect(onboardingEmailMode({ ONBOARDING_EMAIL_MODE: "ON" })).toBe("on");
+    for (const value of ["true", "1", "oui", "onn", "internal-only"]) {
+      expect(onboardingEmailMode({ ONBOARDING_EMAIL_MODE: value }), value).toBe("off");
     }
   });
 });

@@ -9,6 +9,7 @@ export const SENT_TEMPLATE_KEYS = [
   "weekly_digest",
   "sale_result",
   "trial_end",
+  "onboarding",
   "offer_opening",
   "payment_failed",
   "payment_action_required",

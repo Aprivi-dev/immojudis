@@ -91,6 +91,9 @@ import { EMAIL_TEMPLATES } from "./registry";
  * l'empreinte de agent_request a de nouveau changé (après la refonte du 24/11), et SEULEMENT celle-là. Seul l'objet diffère : « Immojudis – question
  * sur la vente … », sans « audience » ni date. Avec l'ancien objet, le rendu redonne l'empreinte de la refonte (ae664543…)
  * (vérifié). agent_court_registry n'est pas concerné.
+ *
+ * Ajout du 26/11/2026 (email unique de prise en main, validé par le propriétaire) : empreinte du nouveau
+ * gabarit onboarding, mesurée à sa création. Aucune autre empreinte ne change.
  */
 const BASELINE: Record<string, string> = {
   alert: "e5edf96964d49e74667515e78a52b1853863b288b42023e733b41bc5090c1b0f",
@@ -98,6 +101,7 @@ const BASELINE: Record<string, string> = {
   weekly_digest: "730825c8af442b9fd51d93fd6bbd0800289ba21a917f4f679baf9d7fd63a3eaa",
   sale_result: "25d1c25ad625792e26567276b9fa9ff004aae736edf6061cc401d69bc2679a56",
   trial_end: "f2e540570c97bdfb8abf403c5eaf5eaa583a12c0f99be36ffc4f092556387eab",
+  onboarding: "7ecf33d269aad43a154b711945c530f7d6b042d13a1be1dc77408bbaa3e3a592",
   offer_opening: "cd130735e7b8cc848a6788046f77d40f8a2e9893da17bd6be2654291cf935bee",
   payment_failed: "7f9dd590191bf1347f4370fb659008857810cdad6629d628ba54e3daef6e5e53",
   trial_ending: "29a7398e1ee2ff6e92918ed84a727d676148dc75065a5460797a7ba93046fcd3",

@@ -40,6 +40,7 @@ const NO_REPLY = [
   "sale_result",
   "trial_end",
   "trial_ending",
+  "onboarding",
   "offer_opening",
 ] as const;
 const REPLY_POSSIBLE = [
@@ -207,6 +208,7 @@ describe("chaque émetteur lit l'expéditeur de sa catégorie", () => {
     ["src/lib/sale-reminders.ts", "resolveNoReplyEmailConfig(env)"],
     ["src/lib/sale-results.ts", "resolveNoReplyEmailConfig(env)"],
     ["src/lib/trial-end-notices.ts", "resolveNoReplyEmailConfig()"],
+    ["src/lib/onboarding-email-notices.ts", "resolveNoReplyEmailConfig()"],
     ["src/lib/admin-offer-opening-notifier.ts", "resolveNoReplyEmailConfig(env)"],
     [
       "src/lib/billing-notices.ts",

@@ -125,6 +125,7 @@ const SERVER_KEYS = [
   "TRIAL_END_EMAIL_MODE",
   "SALE_RESULTS_MODE",
   "MARKETING_EMAILS_MODE",
+  "ONBOARDING_EMAIL_MODE",
   "ALERT_NOTIFICATIONS_MODE",
   "REPLIES_REVIEW_DIGEST_MODE",
   "PEPITE_RULE_V2_ENABLED",
@@ -340,6 +341,10 @@ export function serverEnv(source?: EnvSource) {
     marketingEmails: {
       /** Valeur brute de `MARKETING_EMAILS_MODE` ; `marketingEmailsMode()` la ramène à off, internal ou on. */
       mode: env.MARKETING_EMAILS_MODE,
+    },
+    onboardingEmail: {
+      /** Valeur brute de `ONBOARDING_EMAIL_MODE` ; `onboardingEmailMode()` la ramène à off, internal ou on. */
+      mode: env.ONBOARDING_EMAIL_MODE,
     },
     alertNotifications: {
       /** Valeur brute de `ALERT_NOTIFICATIONS_MODE` ; `alertNotificationsMode()` la ramène à off, internal ou on. */

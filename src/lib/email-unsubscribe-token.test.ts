@@ -156,6 +156,7 @@ describe("unsubscribe tokens", () => {
       { kind: "marketing-emails" },
       { kind: "offer-opening" },
       { kind: "launch-offer-end" },
+      { kind: "onboarding-email" },
     ] as const;
     for (const scope of scopes) {
       const token = createUnsubscribeToken({ userId, scope, now, env });

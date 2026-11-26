@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   revokeMarketing: vi.fn(),
   revokeTrialEnd: vi.fn(),
   revokeOpening: vi.fn(),
+  revokeOnboarding: vi.fn(),
   rpc: vi.fn(),
 }));
 
@@ -21,6 +22,7 @@ vi.mock("@/lib/email-alerts", () => ({
   revokeMarketingEmailsConsent: mocks.revokeMarketing,
   revokeLaunchOfferEndNotice: mocks.revokeTrialEnd,
   revokeOfferOpeningRequest: mocks.revokeOpening,
+  revokeOnboardingEmail: mocks.revokeOnboarding,
 }));
 
 import {
@@ -399,6 +401,7 @@ describe("revokeAllEmailConsents", () => {
       mocks.revokeMarketing,
       mocks.revokeTrialEnd,
       mocks.revokeOpening,
+      mocks.revokeOnboarding,
     ]) {
       mock.mockResolvedValue({});
     }
@@ -442,5 +445,12 @@ describe("revokeAllEmailConsents", () => {
     expect(mocks.revokeMarketing).toHaveBeenCalled();
     expect(mocks.revokeTrialEnd).toHaveBeenCalled();
     expect(mocks.revokeOpening).toHaveBeenCalled();
+    expect(mocks.revokeOnboarding).toHaveBeenCalled();
+  });
+
+  it("arrête aussi l'email unique de prise en main, par sa liste d'exclusion", async () => {
+    await revokeAllEmailConsents("user-1", new Date("2026-10-31T10:00:00.000Z"));
+
+    expect(mocks.revokeOnboarding).toHaveBeenCalledWith({ userId: "user-1" });
   });
 });

@@ -5,6 +5,7 @@ import {
   revokeLaunchOfferEndNotice,
   revokeMarketingEmailsConsent,
   revokeOfferOpeningRequest,
+  revokeOnboardingEmail,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
   revokeWeeklyDigestConsent,
@@ -100,7 +101,8 @@ export function accountEmailActionOf(
  * l'avis de fin d'essai (J+5) et le préavis de fin de l'offre de lancement, par leur liste
  * d'exclusion commune, et l'email d'ouverture de l'offre Analyse, par le retrait de la demande (ses
  * réponses facultatives partent avec elle, comme pour un retrait par le lien du message). Les deux
- * files d'envoi excluent déjà ces comptes, en base.
+ * files d'envoi excluent déjà ces comptes, en base. L'email unique de prise en main suit la même règle,
+ * par sa propre liste d'exclusion.
  */
 export async function revokeAllEmailConsents(userId: string, now = new Date()): Promise<void> {
   const results = await Promise.allSettled([
@@ -112,6 +114,7 @@ export async function revokeAllEmailConsents(userId: string, now = new Date()): 
     revokeMarketingEmailsConsent({ userId, now }),
     revokeLaunchOfferEndNotice({ userId }),
     revokeOfferOpeningRequest({ userId, now }),
+    revokeOnboardingEmail({ userId }),
   ]);
   const failed = results.find((result) => result.status === "rejected");
   // Une erreur remonte : le fournisseur rejoue l'évènement, les retraits sont idempotents.

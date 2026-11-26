@@ -143,6 +143,8 @@ describe("retrait des consentements : idempotent quand Resend rejoue l'évèneme
     expect([...(store.tables.get("launch_offer_end_notice_optouts")?.keys() ?? [])]).toEqual([
       "user-1",
     ]);
+    // L'email unique de prise en main non plus, par sa propre liste d'exclusion.
+    expect([...(store.tables.get("onboarding_email_optouts")?.keys() ?? [])]).toEqual(["user-1"]);
     expect(store.tables.get("offer_opening_notifications")?.get("user-1")).toMatchObject({
       notify_enabled: false,
       revoked_at: "2026-11-01T10:00:00.000Z",

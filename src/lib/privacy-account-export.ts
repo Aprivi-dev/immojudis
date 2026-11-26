@@ -77,6 +77,8 @@ export const ACCOUNT_EXPORT_RULES: Readonly<Record<string, ExportRule>> = {
   sale_result_dispatches: {},
   launch_offer_end_notices: {},
   launch_offer_end_notice_optouts: {},
+  onboarding_email_notices: {},
+  onboarding_email_optouts: {},
   user_watched_zones: {},
   user_sale_change_events: {},
   user_sale_unlocks: {},

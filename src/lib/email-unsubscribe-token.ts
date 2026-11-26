@@ -33,7 +33,10 @@ export type UnsubscribeScope =
   // Liste d'attente de l'ouverture de l'offre Analyse : l'email d'ouverture (envoi par l'administrateur).
   | { kind: "offer-opening" }
   // Préavis de fin de l'offre de lancement (envoi administrateur, n° 74).
-  | { kind: "launch-offer-end" };
+  | { kind: "launch-offer-end" }
+  // Email unique de prise en main, le lendemain de l'inscription : opposition dédiée (liste
+  // d'exclusion `onboarding_email_optouts`), aucun autre email n'est touché.
+  | { kind: "onboarding-email" };
 
 export type UnsubscribeClaims = {
   userId: string;
@@ -64,6 +67,7 @@ function scopeToString(scope: UnsubscribeScope): string {
   if (scope.kind === "marketing-emails") return "marketing-emails";
   if (scope.kind === "offer-opening") return "offer-opening";
   if (scope.kind === "launch-offer-end") return "launch-offer-end";
+  if (scope.kind === "onboarding-email") return "onboarding-email";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
 }
 
@@ -75,6 +79,7 @@ function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "marketing-emails") return { kind: "marketing-emails" };
   if (value === "offer-opening") return { kind: "offer-opening" };
   if (value === "launch-offer-end") return { kind: "launch-offer-end" };
+  if (value === "onboarding-email") return { kind: "onboarding-email" };
   const match = /^alert:(.+)$/.exec(value);
   return match && isUuid(match[1]) ? { kind: "alert", alertId: match[1] } : null;
 }

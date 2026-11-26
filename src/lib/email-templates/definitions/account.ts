@@ -16,7 +16,8 @@ import type { EmailTemplateDefinition } from "../types";
 
 /**
  * Emails envoyés aux comptes au nom des alertes : alertes de recherche, rappels d'audience,
- * récapitulatif hebdomadaire, résultats de vente, fin de l'essai, ouverture de l'offre Analyse.
+ * récapitulatif hebdomadaire, résultats de vente, fin de l'essai, prise en main du compte, ouverture de
+ * l'offre Analyse.
  * Expéditeur : `NOREPLY_EMAIL_FROM` (« ne pas répondre », aucun Reply-To ; repli sur `ALERT_EMAIL_FROM`).
  */
 
@@ -277,6 +278,25 @@ const trialEnd: EmailTemplateDefinition = {
   },
 };
 
+const onboarding: EmailTemplateDefinition = {
+  key: "onboarding",
+  label: "Prise en main du compte",
+  description:
+    "Un seul message par compte, le lendemain de l’inscription : le déblocage compris dans le compte gratuit.",
+  category: "onboarding",
+  sender: "NOREPLY_EMAIL_FROM",
+  level: "editable",
+  async sample() {
+    const { buildOnboardingMessage } = await import("@/lib/onboarding-email");
+    const withAlert = buildOnboardingMessage({ ...common, department: "33" });
+    const withoutAlert = buildOnboardingMessage({ ...common, department: null, internal: true });
+    return [
+      variantFromMessage("with-alert", "Envoi réel, compte avec une alerte", withAlert),
+      variantFromMessage("internal", "Mode essai interne, compte sans alerte", withoutAlert),
+    ];
+  },
+};
+
 const offerOpening: EmailTemplateDefinition = {
   key: "offer_opening",
   label: "Ouverture de l’offre Analyse",
@@ -309,5 +329,6 @@ export const ACCOUNT_EMAIL_TEMPLATES: readonly EmailTemplateDefinition[] = [
   weeklyDigest,
   saleResult,
   trialEnd,
+  onboarding,
   offerOpening,
 ];

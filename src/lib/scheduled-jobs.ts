@@ -37,6 +37,8 @@ export const CRON_JOBS = {
     pgCron: true,
     catchUp: { schedule: "50 5 * * *", successWindowHours: 2 },
   },
+  // Rattrapage le même jour, dans les 23 heures de reprise de la file.
+  "onboarding-email": { vercel: ["30 13 * * *"], catchUp: { schedule: "30 15 * * *" } },
   "operational-health": { pgCron: true },
   "precompute-valuations": { pgCron: true },
   "replies-review-digest": { vercel: ["5 7 * * *"] },
