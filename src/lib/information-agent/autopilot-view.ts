@@ -52,7 +52,7 @@ export type AutopilotView = {
   };
   /**
    * Brouillons simulés en attente (`count` : tous, `items` : les plus récents, au plus le plafond), avec leur
-   * plafond (`label`) et, une fois atteint, ce qu'il faut faire pour que la simulation reprenne (`notice`).
+   * plafond (`label`) et, une fois atteint, la rotation des plus anciens par le pilote (`notice`).
    */
   ready: { count: number; label: string; notice: string | null; items: AutopilotPreparedDraft[] };
   events: Array<{ at: string; label: string; detail: string }>;
@@ -158,6 +158,8 @@ const AUTOPILOT_CODE_LABELS: Record<string, string> = {
   draft_recipient_mismatch: "brouillon adressé à un autre destinataire",
   template_not_approved: "modèle de message non approuvé pour l’envoi automatique",
   draft_stale: "brouillon caduc (vente changée), annulé",
+  draft_rotated:
+    "brouillon simulé le plus ancien annulé par le pilote (rotation automatique, plafond atteint)",
   policy_rejected: "rejet de politique à l’aperçu",
   content_rejected: "rejet de contenu à l’aperçu",
   send_refused: "refusé au dernier contrôle avant l’envoi",
@@ -401,7 +403,7 @@ export function buildAutopilotView({
       label: `Prêtes à valider (${prepared.total} sur ${AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS} au plus)`,
       notice:
         prepared.total >= AUTOPILOT_MAX_PENDING_SIMULATED_DRAFTS
-          ? "Plafond atteint : la simulation ne prépare plus de brouillon. Envoyez ou annulez ceux que vous ne retenez pas pour qu’elle reprenne."
+          ? "Plafond atteint : à chaque passage, la simulation annule son brouillon en attente le plus ancien pour en préparer un nouveau. Envoyez ceux que vous retenez avant qu’ils ne soient annulés."
           : null,
       items: prepared.items,
     },

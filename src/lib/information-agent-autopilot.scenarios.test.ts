@@ -1352,33 +1352,48 @@ describe("passage de simulation lancé à la main (demande du 14/11/2026)", () =
   });
 
   describe("lot B : purge des caducs, plafond et marque « simulé » s'appliquent aussi", () => {
-    /** `n` brouillons simulés en attente, sur les ventes `s-0`, `s-1`… */
+    /**
+     * `n` brouillons simulés en attente, sur les ventes `s-0`, `s-1`…, dans l'ordre de la base : du plus récent
+     * (`pending-0`) au plus ancien.
+     */
     const pending = (n: number) => async () => ({
       total: n,
       drafts: Array.from({ length: n }, (_, index) => ({
         missionId: `pending-${index}`,
         saleId: `s-${index}`,
         saleSnapshot: {},
+        createdAt: new Date(Date.UTC(2026, 10, 13, 12) - index * 60_000).toISOString(),
       })),
     });
 
-    it("plafond atteint : aucune recherche ni brouillon, code simulated_backlog, journalisé « à la main »", async () => {
-      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+    it("plafond atteint : le plus ancien est annulé (draft_rotated), puis un brouillon préparé, journalisé « à la main »", async () => {
+      const findCandidates = vi.fn(async () => ({
+        candidates: [candidate()],
+        skipped: {},
+        examined: 1,
+      }));
       const { deps, calls } = harness(
         { ...simulation, listPendingSimulatedDrafts: pending(10), findCandidates },
         SATURDAY,
       );
       const summary = await runAutopilotPass(deps, request);
+      expect(calls.cancels).toEqual(["pending-9"]);
+      expect(findCandidates).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        1,
+        expect.any(Function),
+      );
       expect(summary).toMatchObject({
         status: "ran",
-        code: "simulated_backlog",
-        skipped: { simulated_backlog: 1 },
+        code: null,
+        wouldSend: 1,
+        skipped: { draft_rotated: 1 },
       });
-      expect(findCandidates).not.toHaveBeenCalled();
-      expect(calls.prepares).toBe(0);
+      expect(calls.sends).toBe(0);
       expect(runRecords(calls).at(-1)?.details).toMatchObject({
         manual: true,
-        skip_simulated_backlog: 1,
+        skip_draft_rotated: 1,
       });
     });
 
@@ -1443,6 +1458,42 @@ describe("passage de simulation lancé à la main (demande du 14/11/2026)", () =
         4,
         expect.any(Function),
       );
+      expect(clock.at()).toBeLessThanOrEqual(request.finishBy.getTime());
+      expect(calls.released).toBe(1);
+    });
+
+    it("borne de temps : aucune annulation de rotation entamée une fois l'heure passée, les autres restent comptés", async () => {
+      const clock = slowClock(SATURDAY);
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { deps, calls } = harness(
+        {
+          ...simulation,
+          now: clock.now,
+          // 12 en attente : 3 à annuler pour rendre une place. Relecture : 1 s chacun, tous gardés (12 s).
+          listPendingSimulatedDrafts: pending(12),
+          draftIsStale: async () => {
+            clock.advance(1_000);
+            return false;
+          },
+          // Chaque annulation prend 4 s : à 20 s, la troisième finirait après l'heure.
+          cancelDraft: async (missionId) => {
+            calls.cancels.push(missionId);
+            clock.advance(4_000);
+          },
+          findCandidates,
+        },
+        SATURDAY,
+      );
+      const summary = await runAutopilotPass(deps, request);
+      expect(calls.cancels).toEqual(["pending-11", "pending-10"]);
+      expect(summary).toMatchObject({
+        stoppedByTimeBudget: true,
+        code: "simulated_backlog",
+        skipped: { draft_rotated: 2, simulated_backlog: 1 },
+        errors: {},
+      });
+      // 10 encore comptés : aucune place, aucune recherche.
+      expect(findCandidates).not.toHaveBeenCalled();
       expect(clock.at()).toBeLessThanOrEqual(request.finishBy.getTime());
       expect(calls.released).toBe(1);
     });
@@ -1811,17 +1862,23 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
     expect(calls.cancels).toEqual([]);
   });
 
-  /** `n` brouillons simulés en attente, sur les ventes `s-0`, `s-1`… */
-  const pending = (n: number) => async () => ({
-    total: n,
-    drafts: Array.from({ length: n }, (_, index) => ({
-      missionId: `pending-${index}`,
-      saleId: `s-${index}`,
-      saleSnapshot: {},
-    })),
-  });
+  /**
+   * `n` brouillons simulés en attente (`total` : `n`), sur les ventes `s-0`, `s-1`…, dans l'ordre de la base : du
+   * plus récent (`pending-0`) au plus ancien.
+   */
+  const pending =
+    (n: number, total = n) =>
+    async () => ({
+      total,
+      drafts: Array.from({ length: n }, (_, index) => ({
+        missionId: `pending-${index}`,
+        saleId: `s-${index}`,
+        saleSnapshot: {},
+        createdAt: new Date(Date.UTC(2026, 10, 13, 12) - index * 60_000).toISOString(),
+      })),
+    });
 
-  it("plafond des brouillons simulés en attente : plus aucune recherche ni brouillon, code simulated_backlog", async () => {
+  it("plafond des brouillons simulés en attente : le plus ancien est annulé (draft_rotated), une place rendue", async () => {
     const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
     const full = harness({
       loadSettings: async () => settings({ mode: "simulation" }),
@@ -1831,12 +1888,18 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
     const summary = await runInformationAgentAutopilot(full.deps);
     expect(summary).toMatchObject({
       status: "ran",
-      code: "simulated_backlog",
-      skipped: { simulated_backlog: 1 },
+      code: null,
+      skipped: { draft_rotated: 1 },
     });
-    expect(findCandidates).not.toHaveBeenCalled();
-    expect(full.calls.records.map((record) => record.kind)).toEqual(["run"]);
-    expect(full.calls.records[0].details).toMatchObject({ skip_simulated_backlog: 1 });
+    expect(full.calls.cancels).toEqual(["pending-9"]);
+    expect(findCandidates).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.anything(),
+      1,
+      expect.any(Function),
+    );
+    expect(full.calls.records.map((record) => record.kind)).toEqual(["skip", "run"]);
+    expect(full.calls.records[1].details).toMatchObject({ skip_draft_rotated: 1 });
 
     // 8 en attente : 2 brouillons au plus ce passage-ci, et pas de code de plafond.
     const almost = harness({
@@ -1914,6 +1977,136 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
     logged.mockRestore();
   });
 
+  describe("rotation des brouillons simulés au plafond (décision du propriétaire du 26/11/2026)", () => {
+    it("les plus anciens d'abord, par date de préparation, juste assez pour une place, puis un envoi simulé sans anomalie", async () => {
+      const findCandidates = vi.fn(async () => ({
+        candidates: [candidate({ saleId: "nouvelle" })],
+        skipped: {},
+        examined: 1,
+      }));
+      const markSimulated = vi.fn(async (_missionId: string) => undefined);
+      const warnings: Array<[string, boolean]> = [];
+      // 12 en attente (antérieurs au plafond), liste dans le désordre : l'ordre de la base n'est pas supposé.
+      const { drafts } = await pending(12)();
+      const shuffled = [5, 11, 0, 9, 3, 10, 1, 7, 2, 8, 4, 6].map((index) => drafts[index]);
+      const { deps, calls } = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: async () => ({ total: 12, drafts: shuffled }),
+        findCandidates,
+        prepareDraft: async (item) => draft({ missionId: `mission-${item.saleId}` }),
+        markSimulated,
+        warning: async (code, active) => {
+          warnings.push([code, active]);
+        },
+      });
+      const summary = await runInformationAgentAutopilot(deps);
+
+      // 12 - 3 = 9 : une place, jamais plus.
+      expect(calls.cancels).toEqual(["pending-11", "pending-10", "pending-9"]);
+      expect(findCandidates).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        1,
+        expect.any(Function),
+      );
+      expect(summary).toMatchObject({
+        status: "ran",
+        code: null,
+        prepared: 1,
+        wouldSend: 1,
+        sent: 0,
+        skipped: { draft_rotated: 3 },
+        errors: {},
+      });
+      expect(markSimulated).toHaveBeenCalledExactlyOnceWith("mission-nouvelle");
+      // Le journal dit que c'est le pilote : un évènement par brouillon annulé, avec sa vente et sa mission.
+      expect(calls.records.filter((record) => record.kind === "skip")).toEqual(
+        ["11", "10", "9"].map((index) => ({
+          kind: "skip",
+          details: { code: "draft_rotated", saleId: `s-${index}`, missionId: `pending-${index}` },
+        })),
+      );
+      expect(calls.records.map((record) => record.kind)).toEqual([
+        "skip",
+        "skip",
+        "skip",
+        "would_send",
+        "run",
+      ]);
+      // Ni anomalie (arrêt automatique, erreur d'envoi) ni passage en erreur : la journée compte.
+      const run = calls.records.at(-1)?.details ?? {};
+      expect(Object.keys(run).filter((key) => key.startsWith("error_"))).toEqual([]);
+      expect(run).toMatchObject({ would_send: 1, skip_draft_rotated: 3 });
+      expect(calls.autoStops).toEqual([]);
+      expect(warnings).toContainEqual(["run_errors", false]);
+      expect(calls.sends).toBe(0);
+    });
+
+    it("mode réel : aucune relecture, aucune rotation, aucune annulation", async () => {
+      const listPendingSimulatedDrafts = vi.fn(pending(10));
+      const findCandidates = vi.fn(async () => ({
+        candidates: [candidate()],
+        skipped: {},
+        examined: 1,
+      }));
+      const { deps, calls } = harness({ listPendingSimulatedDrafts, findCandidates });
+      const summary = await runInformationAgentAutopilot(deps);
+      expect(listPendingSimulatedDrafts).not.toHaveBeenCalled();
+      expect(calls.cancels).toEqual([]);
+      expect(summary.skipped).not.toHaveProperty("draft_rotated");
+      expect(summary).toMatchObject({ mode: "live", status: "ran", code: null, sent: 1 });
+      expect(findCandidates).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        3,
+        expect.any(Function),
+      );
+      expect(calls.records.map((record) => record.kind)).toEqual(["sent", "run"]);
+    });
+
+    it("annulation de rotation impossible : erreur du passage, une seule tentative, aucune recherche", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const cancelDraft = vi.fn(async () => {
+        throw new AutopilotDraftCancelError(new Error("base"));
+      });
+      const { deps, calls } = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        listPendingSimulatedDrafts: pending(12),
+        cancelDraft,
+        findCandidates,
+      });
+      const summary = await runInformationAgentAutopilot(deps);
+      expect(cancelDraft).toHaveBeenCalledOnce();
+      expect(cancelDraft).toHaveBeenCalledWith("pending-11", expect.anything());
+      expect(summary.errors).toEqual({ cancel_failed: 1 });
+      expect(summary).toMatchObject({ code: "run_errors", skipped: { simulated_backlog: 1 } });
+      expect(summary.skipped).not.toHaveProperty("draft_rotated");
+      expect(findCandidates).not.toHaveBeenCalled();
+      expect(calls.records.map((record) => record.kind)).toEqual(["run"]);
+      expect(calls.records[0].details).toMatchObject({ error_cancel_failed: 1 });
+      logged.mockRestore();
+    });
+
+    it("liste des brouillons en attente tronquée : les plus anciens sont inconnus, aucune rotation", async () => {
+      const findCandidates = vi.fn(async () => ({ candidates: [], skipped: {}, examined: 0 }));
+      const { deps, calls } = harness({
+        loadSettings: async () => settings({ mode: "simulation" }),
+        // 21 en attente, 20 relus au plus.
+        listPendingSimulatedDrafts: pending(20, 21),
+        findCandidates,
+      });
+      const summary = await runInformationAgentAutopilot(deps);
+      expect(calls.cancels).toEqual([]);
+      expect(summary).toMatchObject({
+        code: "simulated_backlog",
+        skipped: { simulated_backlog: 1 },
+        errors: {},
+      });
+      expect(findCandidates).not.toHaveBeenCalled();
+    });
+  });
+
   it("brouillon en attente relu comme à l'aperçu : vente changée, caduc ; vente inchangée, gardé", async () => {
     const deps = defaultAutopilotDeps({}, { VERCEL_ENV: "production" });
     const snapshot = { sale_date: "2026-12-01T10:00:00Z", starting_price_eur: 120000 };
@@ -1923,11 +2116,21 @@ describe("T1 et lot B du 14/11/2026 : la simulation ne s'arrête plus d'elle-mê
       starting_price_eur: 120000,
     };
     expect(
-      await deps.draftIsStale({ missionId: "m", saleId: "sale-1", saleSnapshot: snapshot }),
+      await deps.draftIsStale({
+        missionId: "m",
+        saleId: "sale-1",
+        saleSnapshot: snapshot,
+        createdAt: "2026-11-13T12:00:00Z",
+      }),
     ).toBe(true);
     mocks.db.sale = { status: "upcoming", ...snapshot };
     expect(
-      await deps.draftIsStale({ missionId: "m", saleId: "sale-1", saleSnapshot: snapshot }),
+      await deps.draftIsStale({
+        missionId: "m",
+        saleId: "sale-1",
+        saleSnapshot: snapshot,
+        createdAt: "2026-11-13T12:00:00Z",
+      }),
     ).toBe(false);
   });
 
