@@ -294,6 +294,38 @@ describe("AccountPage unlocks", () => {
     });
   });
 
+  it("propose les nouveautés et offres après « Ma semaine », décochées, seulement quand la case est ouverte", async () => {
+    mocks.plan.mockResolvedValue({
+      plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },
+    });
+    mocks.overview.mockResolvedValue({ status: status(), sales: [] });
+    mocks.preferences.mockResolvedValue({
+      preferences: {
+        alertEmailEnabled: false,
+        weeklyDigestEnabled: false,
+        weeklyDigestWeekday: 2,
+        marketingEmailsEnabled: false,
+      },
+      weeklyDigestAvailable: true,
+      marketingEmailsAvailable: true,
+    });
+    mocks.updatePreferences.mockResolvedValue({});
+    renderPage();
+
+    const notifications = within(await screen.findByRole("region", { name: "Notifications" }));
+    await waitFor(() => expect(notifications.getAllByRole("checkbox")).toHaveLength(3));
+    const boxes = notifications.getAllByRole("checkbox") as HTMLInputElement[];
+    expect(boxes.every((box) => !box.checked)).toBe(true);
+    const marketing = notifications.getByLabelText(/Nouveautés et offres/);
+    expect(boxes.at(-1)).toBe(marketing);
+    fireEvent.click(marketing);
+    await waitFor(() => expect(mocks.updatePreferences).toHaveBeenCalled());
+    expect(mocks.updatePreferences.mock.calls[0][0]).toEqual({
+      marketingEmailsEnabled: true,
+      consentSource: "settings",
+    });
+  });
+
   it("ne montre que la case des alertes tant que les rappels d'audience ne sont pas ouverts", async () => {
     mocks.plan.mockResolvedValue({
       plan: { plan: "decouverte", label: "Découverte", hasAnalysisAccess: false },

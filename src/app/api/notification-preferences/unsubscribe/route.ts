@@ -5,6 +5,7 @@ import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
   revokeLaunchOfferEndNotice,
+  revokeMarketingEmailsConsent,
   revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
@@ -43,6 +44,12 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
         question:
           "Voulez-vous ne plus recevoir les alertes de résultat ou de remise en vente de vos ventes suivies ?",
         button: "Me désinscrire des alertes de résultat",
+      };
+    case "marketing-emails":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les nouveautés et les offres d'Immojudis par email ?",
+        button: "Me désinscrire des nouveautés et offres",
       };
     case "offer-opening":
       return {
@@ -152,6 +159,16 @@ export async function POST(request: Request) {
           { href: "/compte", label: "Gérer mes notifications" },
         );
       }
+      if (claims.scope.kind === "marketing-emails") {
+        // Le retrait reste possible même quand MARKETING_EMAILS_MODE vaut « off ».
+        await revokeMarketingEmailsConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Nouveautés et offres désactivées",
+          "Vous ne recevrez plus les nouveautés ni les offres d'Immojudis par email. Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
       if (claims.scope.kind === "offer-opening") {
         await revokeOfferOpeningRequest({ userId: claims.userId });
         return htmlResponse(
@@ -212,7 +229,12 @@ function expiredLinkResponse(token: string) {
       { href: "/compte", label: "Gérer mes notifications" },
     );
   }
-  if (kind === "weekly-digest" || kind === "sale-results" || kind === "launch-offer-end") {
+  if (
+    kind === "weekly-digest" ||
+    kind === "sale-results" ||
+    kind === "marketing-emails" ||
+    kind === "launch-offer-end"
+  ) {
     return htmlResponse(
       "Lien expiré",
       "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos notifications.",

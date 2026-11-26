@@ -11,6 +11,7 @@ import {
   PRIVACY_COMPLETION_EFFECTIVE_DATE,
   PRIVACY_COURT_REGISTRY_EFFECTIVE_DATE,
   PRIVACY_EMAIL_LOG_EFFECTIVE_DATE,
+  PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
   PRIVACY_PROFESSIONALS_EFFECTIVE_DATE,
   PRIVACY_UNROUTED_MESSAGES_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
@@ -82,13 +83,20 @@ export const PREVIOUS_LEGAL_DOCUMENTS = {
     ],
   },
   privacy: {
-    version: "2026-11-23.1",
-    sha256: "c27e63b257ad746b40533f55db0c65b3a14161fe234f8115399b379eede3f131",
-    effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
-    applicableUntil: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
-    archive: "docs/legal-archives/privacy-2026-11-23.1.tsx.txt",
+    version: "2026-11-23.2",
+    sha256: "b7570e1834afb265cb63a45b045a64ea43b4360c311c8be898c257d7036624fb",
+    effectiveDate: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+    applicableUntil: PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
+    archive: "docs/legal-archives/privacy-2026-11-23.2.tsx.txt",
     /** Versions plus anciennes, archivées elles aussi. */
     earlier: [
+      {
+        version: "2026-11-23.1",
+        sha256: "c27e63b257ad746b40533f55db0c65b3a14161fe234f8115399b379eede3f131",
+        effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+        applicableUntil: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+        archive: "docs/legal-archives/privacy-2026-11-23.1.tsx.txt",
+      },
       {
         version: "2026-11-22.1",
         sha256: "c0888b3bb2dd66578c853b9bf634101906393c804eb1785e55d63755d3c08f15",

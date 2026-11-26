@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   revokeReminder: vi.fn(),
   revokeDigest: vi.fn(),
   revokeResults: vi.fn(),
+  revokeMarketing: vi.fn(),
   revokeTrialEnd: vi.fn(),
   revokeOpening: vi.fn(),
   rpc: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("@/lib/email-alerts", () => ({
   revokeSaleReminderConsent: mocks.revokeReminder,
   revokeWeeklyDigestConsent: mocks.revokeDigest,
   revokeSaleResultsConsent: mocks.revokeResults,
+  revokeMarketingEmailsConsent: mocks.revokeMarketing,
   revokeLaunchOfferEndNotice: mocks.revokeTrialEnd,
   revokeOfferOpeningRequest: mocks.revokeOpening,
 }));
@@ -373,6 +375,7 @@ describe("processAccountEmailDeliveryWebhook", () => {
     mocks.revokeReminder.mockResolvedValue({});
     mocks.revokeDigest.mockResolvedValue({});
     mocks.revokeResults.mockResolvedValue({});
+    mocks.revokeMarketing.mockResolvedValue({});
 
     const result = await processAccountEmailDeliveryWebhook({
       request: signedRequest(complaint()),
@@ -393,6 +396,7 @@ describe("revokeAllEmailConsents", () => {
       mocks.revokeReminder,
       mocks.revokeDigest,
       mocks.revokeResults,
+      mocks.revokeMarketing,
       mocks.revokeTrialEnd,
       mocks.revokeOpening,
     ]) {
@@ -400,7 +404,7 @@ describe("revokeAllEmailConsents", () => {
     }
   });
 
-  it("retire les quatre consentements email, l'alerte annulant aussi les envois en file", async () => {
+  it("retire les cinq consentements email, l'alerte annulant aussi les envois en file", async () => {
     await revokeAllEmailConsents("user-1", new Date("2026-10-31T10:00:00.000Z"));
 
     for (const mock of [
@@ -408,6 +412,7 @@ describe("revokeAllEmailConsents", () => {
       mocks.revokeReminder,
       mocks.revokeDigest,
       mocks.revokeResults,
+      mocks.revokeMarketing,
     ]) {
       expect(mock).toHaveBeenCalledWith({
         userId: "user-1",
@@ -434,6 +439,7 @@ describe("revokeAllEmailConsents", () => {
     expect(mocks.revokeAlert).toHaveBeenCalled();
     expect(mocks.revokeDigest).toHaveBeenCalled();
     expect(mocks.revokeResults).toHaveBeenCalled();
+    expect(mocks.revokeMarketing).toHaveBeenCalled();
     expect(mocks.revokeTrialEnd).toHaveBeenCalled();
     expect(mocks.revokeOpening).toHaveBeenCalled();
   });

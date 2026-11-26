@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MARKETING_EMAILS_CONSENT_TEXT } from "@/lib/marketing-emails-consent";
 import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
 import { PREVIEW_SEARCH_API_PATH } from "@/lib/search/preview-search-request";
 import { InvestorOnboarding, ONBOARDING_PREVIEW_PATH } from "./InvestorOnboarding";
@@ -16,6 +17,20 @@ const alerts = vi.hoisted(() => ({
   search: vi.fn(),
 }));
 
+// Préférences de notification lues par la case « nouveautés et offres » (`undefined` : pas encore lues).
+const marketing = vi.hoisted(() => ({
+  preferences: undefined as Record<string, unknown> | undefined,
+  update: vi.fn(),
+  invalidate: vi.fn(),
+}));
+vi.mock("@/hooks/use-notification-preferences", () => ({
+  useNotificationPreferencesQuery: () => ({ data: marketing.preferences }),
+}));
+vi.mock("@/lib/client-api", () => ({ updateNotificationPreferences: marketing.update }));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: marketing.invalidate }),
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
@@ -28,6 +43,8 @@ vi.mock("@/hooks/use-create-alert", () => ({
   useCreateAlert: () => ({ createAlertFromSearch: alerts.create, saving: alerts.saving }),
 }));
 beforeEach(() => {
+  marketing.preferences = undefined;
+  marketing.update.mockResolvedValue({});
   alerts.analysis = false;
   alerts.plan = { plan: "decouverte", hasAnalysisAccess: false };
   alerts.saving = false;
@@ -516,6 +533,94 @@ describe("investor welcome flow", () => {
       expect(
         (screen.getByRole("checkbox", { name: ALERT_LABEL }) as HTMLInputElement).disabled,
       ).toBe(false);
+    });
+  });
+  describe("nouveautés et offres à la dernière étape", () => {
+    function offered(enabled = false) {
+      marketing.preferences = {
+        preferences: { marketingEmailsEnabled: enabled },
+        marketingEmailsAvailable: true,
+      };
+    }
+
+    it("ne propose rien tant que la case n'est pas ouverte (interrupteur éteint ou préférences non lues)", () => {
+      for (const preferences of [
+        undefined,
+        { preferences: { marketingEmailsEnabled: false }, marketingEmailsAvailable: false },
+      ]) {
+        marketing.preferences = preferences;
+        render(<InvestorOnboarding />);
+        goToLastStep("33");
+        expect(screen.queryByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT })).toBeNull();
+        expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+        cleanup();
+      }
+    });
+
+    it("propose la case sous celle de la première alerte, jamais pré-cochée, avec le texte exact", () => {
+      offered();
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      const boxes = screen.getAllByRole("checkbox") as HTMLInputElement[];
+      expect(boxes.map((box) => box.checked)).toEqual([false, false]);
+      expect(boxes[1]).toBe(screen.getByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT }));
+      expect(MARKETING_EMAILS_CONSENT_TEXT).toBe(
+        "Recevoir par email les nouveautés et les offres d’Immojudis (au plus deux messages par mois). Vous pouvez vous désinscrire à tout moment depuis votre compte ou par le lien de chaque email.",
+      );
+    });
+
+    it("ne la propose pas à qui a déjà consenti", () => {
+      offered(true);
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      expect(screen.queryByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT })).toBeNull();
+    });
+
+    it("n'écrit rien tant que la case reste décochée", async () => {
+      offered();
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sales?department=33"));
+      expect(marketing.update).not.toHaveBeenCalled();
+    });
+
+    it("enregistre le consentement à la validation de l'étape, sans toucher à l'alerte", async () => {
+      offered();
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      fireEvent.click(screen.getByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT }));
+      expect(marketing.update).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sales?department=33"));
+      expect(marketing.update).toHaveBeenCalledTimes(1);
+      expect(marketing.update).toHaveBeenCalledWith({ marketingEmailsEnabled: true });
+      expect(alerts.create).not.toHaveBeenCalled();
+      expect(marketing.invalidate).toHaveBeenCalled();
+    });
+
+    it("enregistre aussi après la création de l'alerte quand les deux cases sont cochées", async () => {
+      offered();
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+      fireEvent.click(screen.getByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT }));
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalled());
+      expect(alerts.create).toHaveBeenCalledTimes(1);
+      expect(marketing.update).toHaveBeenCalledWith({ marketingEmailsEnabled: true });
+    });
+
+    it("termine l'accueil même si l'enregistrement échoue", async () => {
+      offered();
+      marketing.update.mockRejectedValue(new Error("réseau"));
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      fireEvent.click(screen.getByRole("checkbox", { name: MARKETING_EMAILS_CONSENT_TEXT }));
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sales?department=33"));
+      expect(marketing.update).toHaveBeenCalledTimes(1);
+      expect(marketing.invalidate).not.toHaveBeenCalled();
     });
   });
 });

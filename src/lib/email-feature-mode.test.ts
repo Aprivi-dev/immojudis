@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   alertNotificationsMode,
+  marketingEmailsMode,
+  marketingEmailsOfferedTo,
   saleResultsMode,
   saleResultsOfferedTo,
   trialEndEmailMode,
@@ -82,6 +84,38 @@ describe("weeklyDigestOfferedTo et saleResultsOfferedTo", () => {
   it("la proposent à tout le monde en mode on", () => {
     expect(weeklyDigestOfferedTo({ isAdmin: false, env: { WEEKLY_DIGEST_MODE: "on" } })).toBe(true);
     expect(saleResultsOfferedTo({ isAdmin: false, env: { SALE_RESULTS_MODE: "on" } })).toBe(true);
+  });
+});
+
+describe("marketingEmailsMode et marketingEmailsOfferedTo", () => {
+  it("vaut off par défaut, et ne s'ouvre pas avec la variable d'un autre email", () => {
+    expect(marketingEmailsMode({})).toBe("off");
+    expect(marketingEmailsMode({ MARKETING_EMAILS_MODE: "" })).toBe("off");
+    expect(
+      marketingEmailsMode({
+        WEEKLY_DIGEST_MODE: "on",
+        SALE_RESULTS_MODE: "on",
+        SALE_REMINDERS_MODE: "on",
+        ALERT_NOTIFICATIONS_MODE: "on",
+      }),
+    ).toBe("off");
+  });
+
+  it("reconnaît internal et on, et ferme sur toute valeur inconnue", () => {
+    expect(marketingEmailsMode({ MARKETING_EMAILS_MODE: " Internal " })).toBe("internal");
+    expect(marketingEmailsMode({ MARKETING_EMAILS_MODE: "ON" })).toBe("on");
+    for (const value of ["true", "1", "oui", "onn", "internal-only"]) {
+      expect(marketingEmailsMode({ MARKETING_EMAILS_MODE: value }), value).toBe("off");
+    }
+  });
+
+  it("ne propose la case à personne en off, aux administrateurs en internal, à tous en on", () => {
+    expect(marketingEmailsOfferedTo({ isAdmin: true, env: {} })).toBe(false);
+    const internal = { MARKETING_EMAILS_MODE: "internal" };
+    expect(marketingEmailsOfferedTo({ isAdmin: true, env: internal })).toBe(true);
+    expect(marketingEmailsOfferedTo({ isAdmin: false, env: internal })).toBe(false);
+    const on = { MARKETING_EMAILS_MODE: "on" };
+    expect(marketingEmailsOfferedTo({ isAdmin: false, env: on })).toBe(true);
   });
 });
 

@@ -6,6 +6,7 @@ import { AccountLaunchOfferEnd } from "@/components/AccountLaunchOfferEnd";
 import { AlertEmailRecapToggle } from "@/components/AlertEmailRecapToggle";
 import { BillingActions } from "@/components/BillingActions";
 import { InvestorProfileForm } from "@/components/InvestorProfileForm";
+import { MarketingEmailsToggle } from "@/components/MarketingEmailsToggle";
 import { SaleRemindersToggle } from "@/components/SaleRemindersToggle";
 import { SaleResultsToggle } from "@/components/SaleResultsToggle";
 import { WeeklyDigestToggle } from "@/components/WeeklyDigestToggle";
@@ -118,6 +119,7 @@ export function AccountPage() {
             <SaleRemindersToggle userId={user.id} className={TOGGLE_CLASS} />
             <SaleResultsToggle userId={user.id} className={TOGGLE_CLASS} />
             <WeeklyDigestToggle userId={user.id} className={TOGGLE_CLASS} />
+            <MarketingEmailsToggle userId={user.id} className={TOGGLE_CLASS} />
           </>
         ) : null}
       </Card>

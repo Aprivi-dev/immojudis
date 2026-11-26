@@ -3,7 +3,8 @@ import { serverEnv, type EnvSource } from "@/lib/env";
 /**
  * Interrupteurs d'envoi des emails à consentement : les rappels d'audience et avertissements graves
  * (`SALE_REMINDERS_MODE`), le récapitulatif hebdomadaire « Ma semaine » (`WEEKLY_DIGEST_MODE`) et
- * l'alerte de résultat ou de remise en vente (`SALE_RESULTS_MODE`). Une seule règle :
+ * l'alerte de résultat ou de remise en vente (`SALE_RESULTS_MODE`) et les emails de nouveautés et
+ * d'offres (`MARKETING_EMAILS_MODE`). Une seule règle :
  *
  * - `off` (défaut, et toute valeur inconnue) : rien n'est envoyé, la case de consentement n'est
  *   pas proposée ;
@@ -38,6 +39,15 @@ export function weeklyDigestMode(env: Env = process.env): EmailFeatureMode {
 /** Mode de l'alerte de résultat ou de remise en vente (`SALE_RESULTS_MODE`). */
 export function saleResultsMode(env: Env = process.env): EmailFeatureMode {
   return parseMode(serverEnv(env as EnvSource).saleResults.mode);
+}
+
+/**
+ * Mode des emails de nouveautés et d'offres d'Immojudis (`MARKETING_EMAILS_MODE`). Aucun de ces
+ * emails n'existe encore : l'interrupteur ne commande que le recueil du consentement (case proposée
+ * ou non, consentement accepté ou refusé par le serveur).
+ */
+export function marketingEmailsMode(env: Env = process.env): EmailFeatureMode {
+  return parseMode(serverEnv(env as EnvSource).marketingEmails.mode);
 }
 
 /**
@@ -103,4 +113,15 @@ export function saleResultsOfferedTo({
   env?: Env;
 }): boolean {
   return offeredTo(saleResultsMode(env), isAdmin);
+}
+
+/** La case « nouveautés et offres » est-elle proposée à cette personne ? */
+export function marketingEmailsOfferedTo({
+  isAdmin,
+  env = process.env,
+}: {
+  isAdmin: boolean;
+  env?: Env;
+}): boolean {
+  return offeredTo(marketingEmailsMode(env), isAdmin);
 }

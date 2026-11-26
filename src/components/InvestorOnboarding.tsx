@@ -3,20 +3,25 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Eyebrow, PageTitle } from "@/components/ui/primitives";
 import { useAuth } from "@/hooks/use-auth";
 import { useAccessPlan } from "@/hooks/use-access-plan";
 import { useCreateAlert } from "@/hooks/use-create-alert";
 import { useHasAnalysisAccess } from "@/hooks/use-has-analysis-access";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
+import { useNotificationPreferencesQuery } from "@/hooks/use-notification-preferences";
 import { ANALYSIS_TRIAL_DAYS } from "@/lib/analysis-offer";
+import { updateNotificationPreferences } from "@/lib/client-api";
 import {
   LAUNCH_OFFER_ACCOUNT_TEXT,
   SIGNUP_TRIAL_DENIED_TEXT,
   signupTrialDateLabel,
 } from "@/lib/launch-offer";
+import { MARKETING_EMAILS_CONSENT_TEXT } from "@/lib/marketing-emails-consent";
 import { pathWithSearch, saleDetailPath } from "@/lib/navigation";
 import { firstSearchToUrl, SALE_CEILING_ANCHOR, type FirstSearch } from "@/lib/onboarding";
+import * as queryKeys from "@/lib/query-keys";
 import { HOME_TYPE_OPTIONS, countActiveSearchFilters } from "@/lib/search/search-filters";
 import { validateSalesSearch } from "@/lib/search/search-url-state";
 import { formatDate, formatPrice, formatStartingPrice } from "@/lib/format";
@@ -122,8 +127,16 @@ export function InvestorOnboarding({
   });
   // Jamais pré-cochée : la première alerte et son email récapitulatif sont un choix explicite.
   const [wantsAlert, setWantsAlert] = useState(false);
+  // Jamais pré-cochée non plus : les nouveautés et offres ont leur propre consentement (prospection
+  // commerciale), proposé seulement quand `MARKETING_EMAILS_MODE` l'ouvre à cette personne.
+  const [wantsMarketing, setWantsMarketing] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const preferences = useNotificationPreferencesQuery(user?.id).data;
+  const marketingOffered =
+    preferences?.marketingEmailsAvailable === true &&
+    !preferences.preferences.marketingEmailsEnabled;
   const hasAnalysisAccess = useHasAnalysisAccess(user?.id);
   const plan = useAccessPlan(user?.id);
   // L'heure de l'ouverture de la page suffit pour juger si l'essai est en cours.
@@ -179,6 +192,17 @@ export function InvestorOnboarding({
         nameSearch: alertSearch.query ? { ...alertSearch, city: alertSearch.query } : alertSearch,
       });
       if (result.status !== "created") return;
+    }
+    if (user && marketingOffered && wantsMarketing) {
+      // Case facultative, retrouvée dans « Mon compte » : un échec d'enregistrement ne bloque pas la
+      // fin de l'accueil.
+      await updateNotificationPreferences({ marketingEmailsEnabled: true }).then(
+        () =>
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.notificationPreferences(user.id),
+          }),
+        () => undefined,
+      );
     }
     // Inscription lancée depuis une fiche : retour à la vente, sur son plafond. Sinon la vente
     // proposée, sur son plafond aussi, ou le catalogue.
@@ -375,6 +399,18 @@ export function InvestorOnboarding({
                       ? "Pendant votre essai, le récapitulatif part chaque jour, puis chaque lundi après l’essai, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond."
                       : "Le récapitulatif part le lundi, s’il y a de nouvelles ventes qui correspondent à vos critères. En attendant, ouvrez une fiche pour voir son plafond."}
                   </p>
+                ) : null}
+                {marketingOffered ? (
+                  <label className="mt-4 flex min-h-11 cursor-pointer items-start gap-3 text-sm font-medium text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={wantsMarketing}
+                      disabled={saving}
+                      onChange={(event) => setWantsMarketing(event.target.checked)}
+                      className="mt-0.5 size-5 shrink-0 accent-[var(--gold)]"
+                    />
+                    <span>{MARKETING_EMAILS_CONSENT_TEXT}</span>
+                  </label>
                 ) : null}
               </div>
               {suggestedSale ? (

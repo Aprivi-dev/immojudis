@@ -97,6 +97,36 @@ describe("unsubscribe tokens", () => {
     expect(unsubscribeTokenScopeKind(results, { env })).toBe("sale-results");
   });
 
+  it("porte une portée « nouveautés et offres » dédiée, que la signature protège", () => {
+    const marketing = createUnsubscribeToken({
+      userId,
+      scope: { kind: "marketing-emails" },
+      now,
+      env,
+    });
+    const weekly = createUnsubscribeToken({ userId, scope: { kind: "weekly-digest" }, now, env });
+    expect(verifyUnsubscribeToken(marketing, { now, env })).toMatchObject({
+      userId,
+      scope: { kind: "marketing-emails" },
+    });
+    expect(unsubscribeTokenScopeKind(marketing, { env })).toBe("marketing-emails");
+    expect(marketing).not.toBe(weekly);
+    // Un jeton d'une autre portée ne devient pas un jeton de nouveautés et offres, ni l'inverse.
+    for (const [token, forgedScope] of [
+      [weekly, "marketing-emails"],
+      [marketing, "weekly-digest"],
+    ] as const) {
+      const [payload, signature] = token.split(".");
+      const forged = Buffer.from(
+        JSON.stringify({
+          ...JSON.parse(Buffer.from(payload, "base64url").toString()),
+          s: forgedScope,
+        }),
+      ).toString("base64url");
+      expect(verifyUnsubscribeToken(`${forged}.${signature}`, { now, env })).toBeNull();
+    }
+  });
+
   it("garde les liens du récapitulatif et de l'alerte de résultat valables un an", () => {
     const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
     for (const kind of ["weekly-digest", "sale-results"] as const) {
@@ -115,7 +145,7 @@ describe("unsubscribe tokens", () => {
     expect(verifyUnsubscribeToken(token, { now: day(366), env })).toBeNull();
   });
 
-  it("garde chaque portée valable un an : alertes, alerte unique, rappels, récapitulatif, résultat, ouverture", () => {
+  it("garde chaque portée valable un an : alertes, alerte unique, rappels, récapitulatif, résultat, nouveautés et offres, ouverture", () => {
     const day = (count: number) => new Date(now.getTime() + count * 86_400_000);
     const scopes = [
       { kind: "alerts" },
@@ -123,6 +153,7 @@ describe("unsubscribe tokens", () => {
       { kind: "reminders" },
       { kind: "weekly-digest" },
       { kind: "sale-results" },
+      { kind: "marketing-emails" },
       { kind: "offer-opening" },
       { kind: "launch-offer-end" },
     ] as const;

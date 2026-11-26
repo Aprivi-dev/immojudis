@@ -12,6 +12,7 @@ import {
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
   PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
   PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+  PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
   SALE_PURCHASE_TERMS_EFFECTIVE_DATE,
 } from "@/lib/legal-documents";
 import { PREVIOUS_LEGAL_DOCUMENTS } from "@/lib/legal-documents-previous";
@@ -228,31 +229,39 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-23.2 (adresses Licitor ouvertes à l'envoi automatique) ; les 2026-11-23.1, 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.2");
+  it("la politique de confidentialité est en version 2026-11-26.1 (nouveautés et offres par email) ; les 2026-11-23.2, 2026-11-23.1, 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-26.1");
     // La version garde la date de rédaction ; l'effet est porté à la mise en ligne.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.1");
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTOPILOT_EFFECTIVE_DATE);
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.2");
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(
+      PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+    );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0]).toMatchObject({
+      version: "2026-11-23.1",
+      effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
+      applicableUntil: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+    });
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
       version: "2026-11-22.1",
       effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[2]).toMatchObject({
       version: "2026-11-21.1",
       effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[2]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[3]).toMatchObject({
       version: "2026-11-15.1",
       effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     });
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-23.1",
       "2026-11-22.1",
       "2026-11-21.1",
       "2026-11-15.1",
@@ -695,6 +704,19 @@ describe("politique de confidentialité", () => {
     // Durée réelle des migrations : 180 jours, purge hebdomadaire (au plus 187 jours).
     expect(text).toContain("180 jours après sa création");
     expect(text).toContain("au plus 187 jours environ");
+  });
+
+  it("décrit les nouveautés et offres par email : consentement distinct, retrait en un clic, durée (2026-11-26.1)", () => {
+    const text = pageText(<PrivacyPage />);
+    expect(text).toContain(
+      "Nouveautés et offres d’Immojudis par email (au plus deux messages par mois)",
+    );
+    expect(text).toContain(
+      "Consentement (case non pré-cochée, distincte de celles des alertes et des autres emails), retirable à tout moment en un clic, dans les réglages du compte ou par le lien de désinscription de chaque email",
+    );
+    expect(text).toContain(
+      "Consentement et date de retrait : tant que le compte existe ; suppression avec le compte",
+    );
   });
 
   it("décrit les ventes passées suivies : instantané, base contractuelle, 6 mois, suppression par la personne", () => {

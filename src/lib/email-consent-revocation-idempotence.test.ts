@@ -100,6 +100,7 @@ describe("retrait des consentements : idempotent quand Resend rejoue l'évèneme
             sale_reminders_enabled: true,
             weekly_digest_enabled: true,
             sale_results_enabled: true,
+            marketing_emails_enabled: true,
           },
         ],
       ]),
@@ -136,6 +137,7 @@ describe("retrait des consentements : idempotent quand Resend rejoue l'évèneme
       sale_reminders_enabled: false,
       weekly_digest_enabled: false,
       sale_results_enabled: false,
+      marketing_emails_enabled: false,
     });
     // C8 : l'avis de fin d'essai (J+5) et l'email d'ouverture ne partent plus vers cette adresse.
     expect([...(store.tables.get("launch_offer_end_notice_optouts")?.keys() ?? [])]).toEqual([

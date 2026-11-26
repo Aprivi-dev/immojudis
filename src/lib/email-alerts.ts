@@ -366,6 +366,32 @@ export async function revokeSaleResultsConsent({
 }
 
 /**
+ * Retire le consentement aux emails de nouveautés et d'offres (désinscription par le lien signé de
+ * chaque email, portée « marketing-emails »). Toujours possible, même quand `MARKETING_EMAILS_MODE`
+ * vaut `off`. Les autres consentements ne sont pas touchés ; la date du retrait est posée par la base
+ * (déclencheur de la migration 20261210100100).
+ */
+export async function revokeMarketingEmailsConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      marketing_emails_enabled: false,
+      marketing_emails_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
  * Retire la demande d'être prévenu de l'ouverture de l'offre Analyse (désinscription par le lien
  * signé de l'email d'ouverture, portée « offer-opening »). Même écriture que le bouton de /offres :
  * la demande est retirée avec ses réponses facultatives, la preuve du consentement reste.

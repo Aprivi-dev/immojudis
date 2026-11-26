@@ -83,6 +83,14 @@ const processingRows = [
       "Consentement et date de retrait : tant que le compte existe ; journal d’envoi : 180 jours après sa création, puis suppression à la purge hebdomadaire (au plus 187 jours environ), selon la matrice de conservation",
   },
   {
+    purpose: "Nouveautés et offres d’Immojudis par email (au plus deux messages par mois)",
+    data: "Consentement daté et versionné (date, version du texte, date de retrait). L’email du compte sert à l’envoi, par Resend",
+    basis:
+      "Consentement (case non pré-cochée, distincte de celles des alertes et des autres emails), retirable à tout moment en un clic, dans les réglages du compte ou par le lien de désinscription de chaque email",
+    retention:
+      "Consentement et date de retrait : tant que le compte existe ; suppression avec le compte",
+  },
+  {
     purpose: "Journal des emails envoyés par Immojudis",
     data: "Pour chaque email envoyé par Immojudis (alertes, rappels, messages liés au compte, au paiement, à une demande de droits ou à une mise en relation, échanges avec des professionnels) : date d’envoi, adresse du destinataire, objet, type de message, lien avec votre compte le cas échéant et état de la remise indiqué par notre prestataire d’envoi (envoyé, remis, différé, rebond, plainte, échec). Le contenu du message n’est pas conservé dans ce journal.",
     basis:

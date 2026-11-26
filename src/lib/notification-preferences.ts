@@ -5,10 +5,12 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Database } from "@/integrations/supabase/types";
 import { PublicApiError } from "@/lib/api-errors";
 import {
+  marketingEmailsOfferedTo,
   saleRemindersOfferedTo,
   saleResultsOfferedTo,
   weeklyDigestOfferedTo,
 } from "@/lib/email-feature-mode";
+import { MARKETING_EMAILS_CONSENT_TEXT_VERSION } from "@/lib/marketing-emails-consent";
 
 type NotificationPreferenceRow =
   Database["public"]["Tables"]["user_notification_preferences"]["Row"];
@@ -40,6 +42,9 @@ export const WEEKLY_DIGEST_NOT_OFFERED_MESSAGE =
 export const SALE_RESULTS_NOT_OFFERED_MESSAGE =
   "Les alertes de résultat ne sont pas encore proposées : votre consentement ne peut pas être enregistré pour le moment.";
 
+export const MARKETING_EMAILS_NOT_OFFERED_MESSAGE =
+  "Les emails de nouveautés et d’offres ne sont pas encore proposés : votre consentement ne peut pas être enregistré pour le moment.";
+
 export const SALE_REMINDERS_NOT_OFFERED_MESSAGE =
   "Les rappels d’audience ne sont pas encore proposés : votre consentement ne peut pas être enregistré pour le moment.";
 
@@ -54,6 +59,8 @@ export const notificationPreferenceUpdateSchema = z
     weeklyDigestWeekday: z.number().int().min(1).max(7).optional(),
     /** Consentement distinct à l'alerte de résultat ou de remise en vente d'une vente suivie. */
     saleResultsEnabled: z.boolean().optional(),
+    /** Consentement distinct aux emails de nouveautés et d'offres d'Immojudis. */
+    marketingEmailsEnabled: z.boolean().optional(),
     consentSource: z.enum(["settings", "alert_creation", "import", "admin"]).default("settings"),
   })
   .refine(
@@ -62,7 +69,8 @@ export const notificationPreferenceUpdateSchema = z
       value.saleRemindersEnabled !== undefined ||
       value.weeklyDigestEnabled !== undefined ||
       value.weeklyDigestWeekday !== undefined ||
-      value.saleResultsEnabled !== undefined,
+      value.saleResultsEnabled !== undefined ||
+      value.marketingEmailsEnabled !== undefined,
     { message: "Au moins une préférence est requise." },
   );
 
@@ -88,6 +96,9 @@ export type NotificationPreferences = {
   saleResultsEnabled: boolean;
   saleResultsConsentedAt: string | null;
   saleResultsRevokedAt: string | null;
+  marketingEmailsEnabled: boolean;
+  marketingEmailsConsentedAt: string | null;
+  marketingEmailsRevokedAt: string | null;
   updatedAt: string | null;
 };
 
@@ -103,6 +114,8 @@ export type NotificationPreferencesResponse = {
   weeklyDigestAvailable: boolean;
   /** Même règle pour l'alerte de résultat (`SALE_RESULTS_MODE`). */
   saleResultsAvailable: boolean;
+  /** Même règle pour les emails de nouveautés et d'offres (`MARKETING_EMAILS_MODE`). */
+  marketingEmailsAvailable: boolean;
 };
 
 function availability(auth: Pick<SupabaseAuthContext, "isAdmin">) {
@@ -110,6 +123,7 @@ function availability(auth: Pick<SupabaseAuthContext, "isAdmin">) {
     saleRemindersAvailable: saleRemindersOfferedTo({ isAdmin: auth.isAdmin }),
     weeklyDigestAvailable: weeklyDigestOfferedTo({ isAdmin: auth.isAdmin }),
     saleResultsAvailable: saleResultsOfferedTo({ isAdmin: auth.isAdmin }),
+    marketingEmailsAvailable: marketingEmailsOfferedTo({ isAdmin: auth.isAdmin }),
   };
 }
 
@@ -150,6 +164,12 @@ export async function updateNotificationPreferences({
   }
   if (input.saleResultsEnabled === true && !saleResultsOfferedTo({ isAdmin: auth.isAdmin })) {
     throw new PublicApiError(SALE_RESULTS_NOT_OFFERED_MESSAGE, 409);
+  }
+  if (
+    input.marketingEmailsEnabled === true &&
+    !marketingEmailsOfferedTo({ isAdmin: auth.isAdmin })
+  ) {
+    throw new PublicApiError(MARKETING_EMAILS_NOT_OFFERED_MESSAGE, 409);
   }
   const existing = await getNotificationPreferences({ auth });
   const timestamp = now.toISOString();
@@ -197,11 +217,19 @@ export async function updateNotificationPreferences({
     ...(input.saleResultsEnabled === true
       ? { sale_results_consent_text_version: SALE_RESULTS_CONSENT_TEXT_VERSION }
       : {}),
+    // Emails de nouveautés et d'offres : même règle (déclencheur de la migration 20261210100100).
+    ...(input.marketingEmailsEnabled !== undefined
+      ? { marketing_emails_enabled: input.marketingEmailsEnabled }
+      : {}),
+    ...(input.marketingEmailsEnabled === true
+      ? { marketing_emails_consent_text_version: MARKETING_EMAILS_CONSENT_TEXT_VERSION }
+      : {}),
   };
 
   // L'écriture se fait avec le rôle de service, après l'authentification de la personne (`user_id` est
   // celui du jeton) : le rôle `authenticated` n'a plus le droit d'écrire les colonnes des consentements
-  // aux rappels, à « Ma semaine » et à l'alerte de résultat (migration 20261031100400), et la base
+  // aux rappels, à « Ma semaine », à l'alerte de résultat (migration 20261031100400) et aux emails de
+  // nouveautés et d'offres (migration 20261210100100), et la base
   // n'accepte la version du texte consenti que d'un écrivain `service_role`. Ainsi un compte ne peut pas
   // activer un consentement en appelant PostgREST directement, ni choisir la version du texte. La
   // lecture reste faite avec le rôle de la personne (politique de sa propre ligne).
@@ -313,6 +341,9 @@ function rowToPreferences(
     saleResultsEnabled: row?.sale_results_enabled ?? false,
     saleResultsConsentedAt: row?.sale_results_consented_at ?? null,
     saleResultsRevokedAt: row?.sale_results_revoked_at ?? null,
+    marketingEmailsEnabled: row?.marketing_emails_enabled ?? false,
+    marketingEmailsConsentedAt: row?.marketing_emails_consented_at ?? null,
+    marketingEmailsRevokedAt: row?.marketing_emails_revoked_at ?? null,
     updatedAt: row?.updated_at ?? null,
   };
 }

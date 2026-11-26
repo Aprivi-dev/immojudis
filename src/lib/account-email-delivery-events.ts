@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   revokeEmailAlertConsent,
   revokeLaunchOfferEndNotice,
+  revokeMarketingEmailsConsent,
   revokeOfferOpeningRequest,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
@@ -108,6 +109,7 @@ export async function revokeAllEmailConsents(userId: string, now = new Date()): 
     revokeSaleReminderConsent({ userId, now }),
     revokeWeeklyDigestConsent({ userId, now }),
     revokeSaleResultsConsent({ userId, now }),
+    revokeMarketingEmailsConsent({ userId, now }),
     revokeLaunchOfferEndNotice({ userId }),
     revokeOfferOpeningRequest({ userId, now }),
   ]);

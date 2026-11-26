@@ -27,6 +27,9 @@ export type UnsubscribeScope =
   | { kind: "weekly-digest" }
   // Alerte de résultat ou de remise en vente d'une vente suivie : idem.
   | { kind: "sale-results" }
+  // Emails de nouveautés et d'offres d'Immojudis : un consentement distinct (prospection commerciale),
+  // une portée dédiée. Aucun email de ce type n'existe encore : la portée est prête pour le premier.
+  | { kind: "marketing-emails" }
   // Liste d'attente de l'ouverture de l'offre Analyse : l'email d'ouverture (envoi par l'administrateur).
   | { kind: "offer-opening" }
   // Préavis de fin de l'offre de lancement (envoi administrateur, n° 74).
@@ -58,6 +61,7 @@ function scopeToString(scope: UnsubscribeScope): string {
   if (scope.kind === "reminders") return "reminders";
   if (scope.kind === "weekly-digest") return "weekly-digest";
   if (scope.kind === "sale-results") return "sale-results";
+  if (scope.kind === "marketing-emails") return "marketing-emails";
   if (scope.kind === "offer-opening") return "offer-opening";
   if (scope.kind === "launch-offer-end") return "launch-offer-end";
   return scope.kind === "alert" ? `alert:${scope.alertId}` : "alerts";
@@ -68,6 +72,7 @@ function scopeFromString(value: string): UnsubscribeScope | null {
   if (value === "reminders") return { kind: "reminders" };
   if (value === "weekly-digest") return { kind: "weekly-digest" };
   if (value === "sale-results") return { kind: "sale-results" };
+  if (value === "marketing-emails") return { kind: "marketing-emails" };
   if (value === "offer-opening") return { kind: "offer-opening" };
   if (value === "launch-offer-end") return { kind: "launch-offer-end" };
   const match = /^alert:(.+)$/.exec(value);
