@@ -126,6 +126,17 @@ describe("scheduled jobs inventory", () => {
     expect(CRON_JOBS["trial-end-email"].catchUp.schedule).toBe("30 14 * * *");
   });
 
+  it("donne à l'email de prise en main un rattrapage le même jour, dans les 23 heures de reprise de la file", () => {
+    const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
+      crons: Array<{ path: string; schedule: string }>;
+    };
+    const schedules = vercel.crons
+      .filter((cron) => cron.path === "/api/cron/onboarding-email")
+      .map((cron) => cron.schedule);
+    expect(schedules).toEqual(["30 13 * * *", "30 15 * * *"]);
+    expect(CRON_JOBS["onboarding-email"].catchUp.schedule).toBe("30 15 * * *");
+  });
+
   it("lance les rappels d'audience après le suivi des changements dont ils lisent les événements", () => {
     const vercel = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8")) as {
       crons: Array<{ path: string; schedule: string }>;

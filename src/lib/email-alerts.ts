@@ -103,6 +103,8 @@ export const EMAIL_CATEGORIES = [
   "acceptance",
   "opening",
   "launch_offer_end",
+  // Email unique de prise en main, le lendemain de l'inscription.
+  "onboarding",
   "lawyer",
   "agent",
   "operations",
@@ -366,6 +368,32 @@ export async function revokeSaleResultsConsent({
 }
 
 /**
+ * Retire le consentement aux emails de nouveautés et d'offres (désinscription par le lien signé de
+ * chaque email, portée « marketing-emails »). Toujours possible, même quand `MARKETING_EMAILS_MODE`
+ * vaut `off`. Les autres consentements ne sont pas touchés ; la date du retrait est posée par la base
+ * (déclencheur de la migration 20261210100100).
+ */
+export async function revokeMarketingEmailsConsent({
+  userId,
+  now = new Date(),
+}: {
+  userId: string;
+  now?: Date;
+}): Promise<{ userId: string; revokedAt: string }> {
+  const revokedAt = now.toISOString();
+  const { error } = await supabaseAdmin.from("user_notification_preferences").upsert(
+    {
+      user_id: userId,
+      marketing_emails_enabled: false,
+      marketing_emails_revoked_at: revokedAt,
+    },
+    { onConflict: "user_id" },
+  );
+  if (error) throw error;
+  return { userId, revokedAt };
+}
+
+/**
  * Retire la demande d'être prévenu de l'ouverture de l'offre Analyse (désinscription par le lien
  * signé de l'email d'ouverture, portée « offer-opening »). Même écriture que le bouton de /offres :
  * la demande est retirée avec ses réponses facultatives, la preuve du consentement reste.
@@ -393,6 +421,18 @@ export async function revokeOfferOpeningRequest({
 export async function revokeLaunchOfferEndNotice({ userId }: { userId: string }): Promise<void> {
   const { error } = await supabaseAdmin
     .from("launch_offer_end_notice_optouts")
+    .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+/**
+ * Opposition à l'email unique de prise en main (lien du message, portée « onboarding-email ») : le
+ * compte entre dans la liste d'exclusion et n'est plus jamais dans la file d'envoi. Toujours possible,
+ * même quand `ONBOARDING_EMAIL_MODE` vaut `off`. Rien d'autre ne change.
+ */
+export async function revokeOnboardingEmail({ userId }: { userId: string }): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("onboarding_email_optouts")
     .upsert({ user_id: userId }, { onConflict: "user_id", ignoreDuplicates: true });
   if (error) throw error;
 }

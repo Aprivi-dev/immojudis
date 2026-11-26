@@ -198,6 +198,8 @@ describe("ERASURE_TABLES face au schéma", () => {
     expect(ERASURE_TABLES).toContainEqual(["sale_result_dispatches", "user_id"]);
     expect(ERASURE_TABLES).toContainEqual(["launch_offer_end_notices", "user_id"]);
     expect(ERASURE_TABLES).toContainEqual(["launch_offer_end_notice_optouts", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["onboarding_email_notices", "user_id"]);
+    expect(ERASURE_TABLES).toContainEqual(["onboarding_email_optouts", "user_id"]);
   });
 
   it("efface les données financières personnelles du compte : profil d'investisseur et bilan après adjudication", () => {

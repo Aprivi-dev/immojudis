@@ -10,17 +10,19 @@ import {
   FREE_UNLOCK_LABEL,
   FREE_UNLOCK_TEXT,
   UNLOCK_CALL_TO_ACTION_LABEL,
-  UNLOCK_CHOICE_TEXT,
-  UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_HIGHLIGHTS_INLINE_TEXT,
   UNLOCK_HIGHLIGHTS_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockHighlightsInlineText,
   unlockHighlightsText,
   unlockedItemsText,
-  unlockQuotaReachedText,
   unlockUsageLine,
 } from "@/lib/sale-unlocks";
+import {
+  UNLOCK_CHOICE_TEXT,
+  UNLOCK_CONFIRMATION_TEXT,
+  unlockQuotaReachedText,
+} from "@/lib/sale-unlock-panel-texts";
 import { unlockNextSaleText } from "@/lib/sale-unlock-purchase-texts";
 import { SALE_UNLOCK_QUOTA_MESSAGE } from "@/lib/sale-unlock-quota-message";
 

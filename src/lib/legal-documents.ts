@@ -363,6 +363,34 @@ export const PRIVACY_AUTOPILOT_EFFECTIVE_DATE = "23 novembre 2026";
  */
 export const PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE = "23 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-26.1 : consentement distinct aux emails de nouveautés et d'offres
+ * d'Immojudis (décision du propriétaire du 26/11/2026, après avis juridique : la prospection par email exige
+ * un consentement explicite, distinct de celui des alertes). À publier AVANT d'ouvrir la case
+ * (`MARKETING_EMAILS_MODE` autre que `off`).
+ *
+ * - Tableau des traitements : ligne « Nouveautés et offres d’Immojudis par email » (au plus deux messages par
+ *   mois) ; données : consentement daté et versionné, date de retrait, email du compte pour l'envoi par
+ *   Resend ; base : consentement (case non pré-cochée, distincte), retrait en un clic dans les réglages ou par
+ *   le lien de chaque email ; durée : tant que le compte existe, suppression avec le compte. Rédigée sur le
+ *   modèle de la ligne « Rappels d’audience ».
+ * - Aucun email de ce type n'existe encore : la ligne ne décrit que le recueil, la preuve et le retrait. Le
+ *   journal des emails envoyés (ligne « Journal des emails envoyés par Immojudis ») couvrira leurs envois.
+ * - Ajout dans la même version, avant sa mise en ligne (décision du propriétaire du 26/11/2026, après avis
+ *   juridique) : ligne « Message unique de prise en main de votre compte » ; données : email du compte,
+ *   département de la première alerte, état de l'envoi, date d'opposition ; base : intérêt légitime, avec
+ *   opposition en un clic ou par écrit ; durée : journal 24 mois, opposition tant que le compte existe. À
+ *   publier AVANT d'ouvrir `ONBOARDING_EMAIL_MODE`. L'empreinte de la version a été recalculée ; la version,
+ *   sa date et l'archive de la 2026-11-23.2 ne changent pas.
+ * - Rien d'autre ne change.
+ *
+ * La version 2026-11-23.2 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée
+ * avec l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de
+ * rédaction ; à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte
+ * du texte). Relecture `juridique-rgpd` et d'un avocat à faire, avec le texte provisoire de la case.
+ */
+export const PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE = "26 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -377,9 +405,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-23.2",
-    sha256: "b7570e1834afb265cb63a45b045a64ea43b4360c311c8be898c257d7036624fb",
-    effectiveDate: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+    version: "2026-11-26.1",
+    sha256: "7942138ad871fb1bc03c0f367ad11beb0088e33c8b2150caa038d49e0278de53",
+    effectiveDate: PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

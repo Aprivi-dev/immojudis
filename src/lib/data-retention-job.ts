@@ -22,6 +22,11 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
   if (noticePurge.error) {
     throw new Error(`Data retention: purge failed: purge_launch_offer_end_notices.`);
   }
+  // Journal de l'email de prise en main : même règle que le précédent (migration 20261210100200).
+  const onboardingPurge = await supabaseAdmin.rpc("purge_onboarding_email_notices");
+  if (onboardingPurge.error) {
+    throw new Error(`Data retention: purge failed: purge_onboarding_email_notices.`);
+  }
   // Journal du pilote automatique de l'agent (5 ans), identités exclues (24 mois), attestations (5 ans) :
   // purge dédiée (migration 20261110230000), run_data_retention n'est pas redéfinie.
   const autopilotPurge = await supabaseAdmin.rpc("purge_information_agent_autopilot");
@@ -32,6 +37,7 @@ export async function runDataRetention(now = new Date()): Promise<Record<string,
     deleted: {
       ...(data && typeof data === "object" && !Array.isArray(data) ? data : {}),
       launch_offer_end_notices: noticePurge.data ?? 0,
+      onboarding_email_notices: onboardingPurge.data ?? 0,
       ...(autopilotPurge.data && typeof autopilotPurge.data === "object"
         ? (autopilotPurge.data as Record<string, number>)
         : {}),

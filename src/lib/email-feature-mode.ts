@@ -3,7 +3,8 @@ import { serverEnv, type EnvSource } from "@/lib/env";
 /**
  * Interrupteurs d'envoi des emails à consentement : les rappels d'audience et avertissements graves
  * (`SALE_REMINDERS_MODE`), le récapitulatif hebdomadaire « Ma semaine » (`WEEKLY_DIGEST_MODE`) et
- * l'alerte de résultat ou de remise en vente (`SALE_RESULTS_MODE`). Une seule règle :
+ * l'alerte de résultat ou de remise en vente (`SALE_RESULTS_MODE`) et les emails de nouveautés et
+ * d'offres (`MARKETING_EMAILS_MODE`). Une seule règle :
  *
  * - `off` (défaut, et toute valeur inconnue) : rien n'est envoyé, la case de consentement n'est
  *   pas proposée ;
@@ -41,6 +42,15 @@ export function saleResultsMode(env: Env = process.env): EmailFeatureMode {
 }
 
 /**
+ * Mode des emails de nouveautés et d'offres d'Immojudis (`MARKETING_EMAILS_MODE`). Aucun de ces
+ * emails n'existe encore : l'interrupteur ne commande que le recueil du consentement (case proposée
+ * ou non, consentement accepté ou refusé par le serveur).
+ */
+export function marketingEmailsMode(env: Env = process.env): EmailFeatureMode {
+  return parseMode(serverEnv(env as EnvSource).marketingEmails.mode);
+}
+
+/**
  * Interrupteur d'envoi des alertes par email (`ALERT_NOTIFICATIONS_MODE`), ajouté à une fonction
  * déjà en service : contrairement aux autres modes, la variable ABSENTE (ou vide) vaut `on`, pour
  * ne rien changer à l'existant. Une valeur présente mais inconnue (faute de frappe) vaut `off` :
@@ -66,6 +76,18 @@ export function alertNotificationsMode(env: Env = process.env): EmailFeatureMode
  */
 export function trialEndEmailMode(env: Env = process.env): EmailFeatureMode {
   return parseMode(serverEnv(env as EnvSource).trialEndEmail.mode);
+}
+
+/**
+ * Mode de l'email unique de prise en main, le lendemain de l'inscription (`ONBOARDING_EMAIL_MODE`),
+ * mêmes valeurs que les autres : `off` (défaut) ne lit ni n'envoie rien ; `internal` envoie un exemple,
+ * objet « [Test interne] », aux seuls administrateurs (aucun compte réel n'est lu ni écrit) ; `on` écrit
+ * aux comptes de la file `get_onboarding_email_queue`. Pas de case de consentement : message de service,
+ * base légale l'intérêt légitime, avec lien d'opposition en un clic (liste d'exclusion
+ * `onboarding_email_optouts`).
+ */
+export function onboardingEmailMode(env: Env = process.env): EmailFeatureMode {
+  return parseMode(serverEnv(env as EnvSource).onboardingEmail.mode);
 }
 
 function offeredTo(mode: EmailFeatureMode, isAdmin: boolean): boolean {
@@ -103,4 +125,15 @@ export function saleResultsOfferedTo({
   env?: Env;
 }): boolean {
   return offeredTo(saleResultsMode(env), isAdmin);
+}
+
+/** La case « nouveautés et offres » est-elle proposée à cette personne ? */
+export function marketingEmailsOfferedTo({
+  isAdmin,
+  env = process.env,
+}: {
+  isAdmin: boolean;
+  env?: Env;
+}): boolean {
+  return offeredTo(marketingEmailsMode(env), isAdmin);
 }

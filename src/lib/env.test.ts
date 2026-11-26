@@ -226,6 +226,14 @@ describe("serverEnv pipeline, alerts and email", () => {
     expect(serverEnv({}).saleResults.mode).toBeUndefined();
   });
 
+  it("reads MARKETING_EMAILS_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ MARKETING_EMAILS_MODE: " internal " }).marketingEmails.mode).toBe(
+      "internal",
+    );
+    expect(serverEnv({ MARKETING_EMAILS_MODE: "  " }).marketingEmails.mode).toBeUndefined();
+    expect(serverEnv({}).marketingEmails.mode).toBeUndefined();
+  });
+
   it("reads REPLIES_REVIEW_DIGEST_MODE through the shared configuration, trimmed and blank as unset", () => {
     expect(serverEnv({ REPLIES_REVIEW_DIGEST_MODE: " preview " }).repliesReviewDigest.mode).toBe(
       "preview",
@@ -234,6 +242,14 @@ describe("serverEnv pipeline, alerts and email", () => {
       serverEnv({ REPLIES_REVIEW_DIGEST_MODE: "  " }).repliesReviewDigest.mode,
     ).toBeUndefined();
     expect(serverEnv({}).repliesReviewDigest.mode).toBeUndefined();
+  });
+
+  it("reads ONBOARDING_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {
+    expect(serverEnv({ ONBOARDING_EMAIL_MODE: " internal " }).onboardingEmail.mode).toBe(
+      "internal",
+    );
+    expect(serverEnv({ ONBOARDING_EMAIL_MODE: "  " }).onboardingEmail.mode).toBeUndefined();
+    expect(serverEnv({}).onboardingEmail.mode).toBeUndefined();
   });
 
   it("reads TRIAL_END_EMAIL_MODE through the shared configuration, trimmed and blank as unset", () => {

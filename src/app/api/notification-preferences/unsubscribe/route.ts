@@ -5,7 +5,9 @@ import {
   deactivateAlertForUser,
   revokeEmailAlertConsent,
   revokeLaunchOfferEndNotice,
+  revokeMarketingEmailsConsent,
   revokeOfferOpeningRequest,
+  revokeOnboardingEmail,
   revokeSaleReminderConsent,
   revokeSaleResultsConsent,
   revokeWeeklyDigestConsent,
@@ -44,6 +46,12 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
           "Voulez-vous ne plus recevoir les alertes de résultat ou de remise en vente de vos ventes suivies ?",
         button: "Me désinscrire des alertes de résultat",
       };
+    case "marketing-emails":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir les nouveautés et les offres d'Immojudis par email ?",
+        button: "Me désinscrire des nouveautés et offres",
+      };
     case "offer-opening":
       return {
         question:
@@ -54,6 +62,12 @@ function confirmationCopy(kind: UnsubscribeScope["kind"]): { question: string; b
       return {
         question:
           "Voulez-vous ne plus recevoir de message sur la fin de l'essai gratuit ? Votre compte n'est pas modifié.",
+        button: "Ne plus recevoir ce message",
+      };
+    case "onboarding-email":
+      return {
+        question:
+          "Voulez-vous ne plus recevoir le message de prise en main de votre compte ? Votre compte n'est pas modifié.",
         button: "Ne plus recevoir ce message",
       };
     default:
@@ -152,6 +166,16 @@ export async function POST(request: Request) {
           { href: "/compte", label: "Gérer mes notifications" },
         );
       }
+      if (claims.scope.kind === "marketing-emails") {
+        // Le retrait reste possible même quand MARKETING_EMAILS_MODE vaut « off ».
+        await revokeMarketingEmailsConsent({ userId: claims.userId });
+        return htmlResponse(
+          "Nouveautés et offres désactivées",
+          "Vous ne recevrez plus les nouveautés ni les offres d'Immojudis par email. Vos alertes email et vos autres emails ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Gérer mes notifications" },
+        );
+      }
       if (claims.scope.kind === "offer-opening") {
         await revokeOfferOpeningRequest({ userId: claims.userId });
         return htmlResponse(
@@ -163,6 +187,16 @@ export async function POST(request: Request) {
       }
       if (claims.scope.kind === "launch-offer-end") {
         await revokeLaunchOfferEndNotice({ userId: claims.userId });
+        return htmlResponse(
+          "Message désactivé",
+          "Vous ne recevrez plus ce message. Votre compte et vos alertes email ne sont pas modifiés.",
+          200,
+          { href: "/compte", label: "Voir mon compte" },
+        );
+      }
+      if (claims.scope.kind === "onboarding-email") {
+        // L'opposition reste possible même quand ONBOARDING_EMAIL_MODE vaut « off ».
+        await revokeOnboardingEmail({ userId: claims.userId });
         return htmlResponse(
           "Message désactivé",
           "Vous ne recevrez plus ce message. Votre compte et vos alertes email ne sont pas modifiés.",
@@ -212,7 +246,13 @@ function expiredLinkResponse(token: string) {
       { href: "/compte", label: "Gérer mes notifications" },
     );
   }
-  if (kind === "weekly-digest" || kind === "sale-results" || kind === "launch-offer-end") {
+  if (
+    kind === "weekly-digest" ||
+    kind === "sale-results" ||
+    kind === "marketing-emails" ||
+    kind === "launch-offer-end" ||
+    kind === "onboarding-email"
+  ) {
     return htmlResponse(
       "Lien expiré",
       "Ce lien de désinscription n'est plus valide. Ouvrez votre compte pour gérer vos notifications.",

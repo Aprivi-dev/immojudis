@@ -17,6 +17,10 @@ const mocks = vi.hoisted(() => ({
     userId,
     revokedAt: "2026-10-21T10:00:00.000Z",
   })),
+  revokeMarketingEmailsConsent: vi.fn(async ({ userId }: { userId: string }) => ({
+    userId,
+    revokedAt: "2026-11-26T10:00:00.000Z",
+  })),
   revokeOfferOpeningRequest: vi.fn(),
   deactivateAlertForUser: vi.fn(),
   unsubscribeEmailAlertsByNotificationId: vi.fn(),
@@ -40,7 +44,7 @@ function post(token: string) {
   );
 }
 
-describe("désinscription du récapitulatif hebdomadaire et de l'alerte de résultat", () => {
+describe("désinscription du récapitulatif hebdomadaire, de l'alerte de résultat et des nouveautés et offres", () => {
   beforeEach(() => {
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "service-role-test-key");
     for (const mock of Object.values(mocks)) mock.mockClear();
@@ -49,6 +53,7 @@ describe("désinscription du récapitulatif hebdomadaire et de l'alerte de résu
   it.each([
     ["weekly-digest", "récapitulatif hebdomadaire", "Me désinscrire du récapitulatif"],
     ["sale-results", "alertes de résultat", "Me désinscrire des alertes de résultat"],
+    ["marketing-emails", "nouveautés et les offres", "Me désinscrire des nouveautés et offres"],
   ] as const)(
     "n'écrit rien sur un GET d'un jeton « %s » et demande confirmation",
     async (kind, wording, button) => {
@@ -86,6 +91,22 @@ describe("désinscription du récapitulatif hebdomadaire et de l'alerte de résu
     expect(mocks.revokeEmailAlertConsent).not.toHaveBeenCalled();
   });
 
+  it("retire les seuls nouveautés et offres sur le POST d'un jeton « marketing-emails », interrupteur éteint", async () => {
+    // Le retrait reste possible quand MARKETING_EMAILS_MODE vaut « off » (défaut).
+    vi.stubEnv("MARKETING_EMAILS_MODE", "off");
+    const token = createUnsubscribeToken({ userId, scope: { kind: "marketing-emails" } });
+    const response = await post(token);
+    const html = await response.text();
+    expect(response.status).toBe(200);
+    expect(mocks.revokeMarketingEmailsConsent).toHaveBeenCalledWith({ userId });
+    expect(mocks.revokeWeeklyDigestConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeSaleResultsConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeSaleReminderConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeEmailAlertConsent).not.toHaveBeenCalled();
+    expect(html).toContain("Nouveautés et offres désactivées");
+    expect(html).toContain("Vos alertes email et vos autres emails ne sont pas modifiés");
+  });
+
   it("désinscrit aussi sur le POST one-click envoyé par le client mail", async () => {
     const token = createUnsubscribeToken({ userId, scope: { kind: "weekly-digest" } });
     const response = await POST(
@@ -105,11 +126,21 @@ describe("désinscription du récapitulatif hebdomadaire et de l'alerte de résu
     expect(mocks.revokeSaleReminderConsent).toHaveBeenCalledTimes(1);
     expect(mocks.revokeWeeklyDigestConsent).not.toHaveBeenCalled();
     expect(mocks.revokeSaleResultsConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeMarketingEmailsConsent).not.toHaveBeenCalled();
+  });
+
+  it("garde les portées étanches : un lien de nouveautés et offres ne retire que ce consentement", async () => {
+    await post(createUnsubscribeToken({ userId, scope: { kind: "marketing-emails" } }));
+    expect(mocks.revokeMarketingEmailsConsent).toHaveBeenCalledTimes(1);
+    expect(mocks.revokeSaleReminderConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeWeeklyDigestConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeSaleResultsConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeEmailAlertConsent).not.toHaveBeenCalled();
   });
 
   it("renvoie vers le compte quand le lien est expiré, sans rien retirer", async () => {
     const longAgo = new Date("2024-01-01T00:00:00Z");
-    for (const kind of ["weekly-digest", "sale-results"] as const) {
+    for (const kind of ["weekly-digest", "sale-results", "marketing-emails"] as const) {
       const token = createUnsubscribeToken({ userId, scope: { kind }, now: longAgo });
       const response = await post(token);
       const html = await response.text();
@@ -118,5 +149,6 @@ describe("désinscription du récapitulatif hebdomadaire et de l'alerte de résu
     }
     expect(mocks.revokeWeeklyDigestConsent).not.toHaveBeenCalled();
     expect(mocks.revokeSaleResultsConsent).not.toHaveBeenCalled();
+    expect(mocks.revokeMarketingEmailsConsent).not.toHaveBeenCalled();
   });
 });

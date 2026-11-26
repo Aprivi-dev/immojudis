@@ -187,18 +187,24 @@ describe("operational cron errors", () => {
     );
   });
 
-  /** `run_data_retention` répond `retention` ; la purge du journal du préavis répond `noticePurge`. */
+  /**
+   * `run_data_retention` répond `retention` ; la purge du journal du préavis répond `noticePurge`, celle
+   * du journal de l'email de prise en main `onboardingPurge`.
+   */
   function retentionRpc(
     retention: unknown,
     noticePurge: unknown = { data: 0, error: null },
     autopilotPurge: unknown = { data: {}, error: null },
+    onboardingPurge: unknown = { data: 0, error: null },
   ) {
     mocks.rpc.mockImplementation(async (name: string) =>
       name === "purge_launch_offer_end_notices"
         ? noticePurge
         : name === "purge_information_agent_autopilot"
           ? autopilotPurge
-          : { data: retention, error: null },
+          : name === "purge_onboarding_email_notices"
+            ? onboardingPurge
+            : { data: retention, error: null },
     );
   }
 
@@ -206,7 +212,7 @@ describe("operational cron errors", () => {
     retentionRpc({ user_sale_unlocks: 2 }, { data: 4, error: null });
 
     await expect(runDataRetention(new Date("2026-10-15T10:00:00.000Z"))).resolves.toEqual({
-      deleted: { user_sale_unlocks: 2, launch_offer_end_notices: 4 },
+      deleted: { user_sale_unlocks: 2, launch_offer_end_notices: 4, onboarding_email_notices: 0 },
     });
     expect(mocks.rpc).toHaveBeenCalledWith("run_data_retention", {
       p_now: "2026-10-15T10:00:00.000Z",
@@ -228,6 +234,7 @@ describe("operational cron errors", () => {
       deleted: {
         user_sale_unlocks: 2,
         launch_offer_end_notices: 0,
+        onboarding_email_notices: 0,
         information_agent_autopilot_events: 3,
         information_agent_autopilot_exclusions: 1,
       },
@@ -254,7 +261,7 @@ describe("operational cron errors", () => {
     retentionRpc({ purge_errors: {} });
 
     await expect(runDataRetention()).resolves.toEqual({
-      deleted: { purge_errors: {}, launch_offer_end_notices: 0 },
+      deleted: { purge_errors: {}, launch_offer_end_notices: 0, onboarding_email_notices: 0 },
     });
   });
 
@@ -264,6 +271,22 @@ describe("operational cron errors", () => {
       { data: null, error: { code: "PGRST202", message: "Could not find the function" } },
     );
     await expect(runDataRetention()).rejects.toThrow("purge_launch_offer_end_notices");
+  });
+
+  it("purges the onboarding email journal through its dedicated function, and fails when it fails", async () => {
+    retentionRpc({}, { data: 0, error: null }, { data: {}, error: null }, { data: 2, error: null });
+    await expect(runDataRetention()).resolves.toEqual({
+      deleted: { launch_offer_end_notices: 0, onboarding_email_notices: 2 },
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("purge_onboarding_email_notices");
+
+    retentionRpc(
+      {},
+      { data: 0, error: null },
+      { data: {}, error: null },
+      { data: null, error: { code: "PGRST202", message: "Could not find the function" } },
+    );
+    await expect(runDataRetention()).rejects.toThrow("purge_onboarding_email_notices");
   });
 
   it("rejects unauthorized calls with a safe request id and a structured log", async () => {

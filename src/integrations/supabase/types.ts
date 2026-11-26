@@ -9636,6 +9636,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      onboarding_email_notices: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          error: string | null;
+          message_id: string | null;
+          sent_at: string | null;
+          status: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          message_id?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          message_id?: string | null;
+          sent_at?: string | null;
+          status?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      onboarding_email_optouts: {
+        Row: {
+          unsubscribed_at: string;
+          user_id: string;
+        };
+        Insert: {
+          unsubscribed_at?: string;
+          user_id: string;
+        };
+        Update: {
+          unsubscribed_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       operational_alerts: {
         Row: {
           alert_key: string;
@@ -13014,6 +13062,10 @@ export type Database = {
           alert_email_revoked_at: string | null;
           consent_source: string;
           created_at: string;
+          marketing_emails_consent_text_version: string | null;
+          marketing_emails_consented_at: string | null;
+          marketing_emails_enabled: boolean;
+          marketing_emails_revoked_at: string | null;
           sale_reminders_consent_text_version: string | null;
           sale_reminders_consented_at: string | null;
           sale_reminders_enabled: boolean;
@@ -13036,6 +13088,10 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          marketing_emails_consent_text_version?: string | null;
+          marketing_emails_consented_at?: string | null;
+          marketing_emails_enabled?: boolean;
+          marketing_emails_revoked_at?: string | null;
           sale_reminders_consent_text_version?: string | null;
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
@@ -13058,6 +13114,10 @@ export type Database = {
           alert_email_revoked_at?: string | null;
           consent_source?: string;
           created_at?: string;
+          marketing_emails_consent_text_version?: string | null;
+          marketing_emails_consented_at?: string | null;
+          marketing_emails_enabled?: boolean;
+          marketing_emails_revoked_at?: string | null;
           sale_reminders_consent_text_version?: string | null;
           sale_reminders_consented_at?: string | null;
           sale_reminders_enabled?: boolean;
@@ -16044,6 +16104,10 @@ export type Database = {
         Args: { p_ends_on: string; p_now?: string; p_user_id: string };
         Returns: boolean;
       };
+      claim_onboarding_email: {
+        Args: { p_now?: string; p_user_id: string };
+        Returns: boolean;
+      };
       claim_operational_alert_notifications: {
         Args: { p_limit?: number; p_now?: string };
         Returns: {
@@ -16463,6 +16527,10 @@ export type Database = {
         Args: { p_limit?: number; p_now?: string };
         Returns: Json;
       };
+      get_onboarding_email_queue: {
+        Args: { p_limit?: number; p_now?: string };
+        Returns: Json;
+      };
       get_public_catalogue_verified_at: { Args: never; Returns: string };
       get_public_sale_calendar_event: {
         Args: { p_sale_id: string };
@@ -16826,6 +16894,10 @@ export type Database = {
         Returns: Json;
       };
       purge_launch_offer_end_notices: {
+        Args: { p_older_than?: string };
+        Returns: number;
+      };
+      purge_onboarding_email_notices: {
         Args: { p_older_than?: string };
         Returns: number;
       };

@@ -26,6 +26,8 @@ const allowedVercelCronPaths = new Set([
   "/api/cron/weekly-digest",
   // Email unique de fin d'essai (TRIAL_END_EMAIL_MODE=off par défaut) : lit les comptes, ne collecte aucune donnée.
   "/api/cron/trial-end-email",
+  // Email unique de prise en main (ONBOARDING_EMAIL_MODE=off par défaut) : lit les comptes, ne collecte aucune donnée.
+  "/api/cron/onboarding-email",
   "/api/cron/data-retention",
   // Calcul dérivé (palier de complétude des annonces déjà en base) : ne collecte aucune donnée.
   "/api/cron/listing-completeness",

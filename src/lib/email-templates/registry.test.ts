@@ -20,6 +20,7 @@ const EDITABLE_LATER = [
   "weekly_digest",
   "sale_result",
   "trial_end",
+  "onboarding",
   "offer_opening",
   "payment_failed",
   "payment_action_required",
@@ -154,6 +155,7 @@ describe("aperçus du registre (vrais constructeurs, données fictives)", () => 
     expect(await variantsOf("alert")).toEqual(["one-sale", "many-sales"]);
     expect(await variantsOf("sale_reminder")).toEqual(["one-sale", "many-sales-internal"]);
     expect(await variantsOf("trial_end")).toEqual(["normal", "internal"]);
+    expect(await variantsOf("onboarding")).toEqual(["with-alert", "internal"]);
   });
 
   it("garde le formulaire de contact en texte seul", async () => {
