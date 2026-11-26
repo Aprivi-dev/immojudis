@@ -31,6 +31,8 @@ export const PRODUCT_EVENT_NAMES = [
   "pepite_block_viewed",
   "pepite_filter_used",
   "sale_unlock_confirmed",
+  "prices_viewed",
+  "buy_clicked",
   "home_cta_clicked",
   "ceiling_viewed",
   "shared_report_viewed",
@@ -60,6 +62,10 @@ export type AlertSurface = (typeof ALERT_SURFACES)[number];
 export const HOME_CTA_TARGETS = ["signup", "browse", "example"] as const;
 export type HomeCtaTarget = (typeof HOME_CTA_TARGETS)[number];
 
+/** L'achat choisi : une vente à l'unité, ou l'abonnement Analyse. */
+export const PURCHASE_PRODUCTS = ["unit", "subscription"] as const;
+export type PurchaseProduct = (typeof PURCHASE_PRODUCTS)[number];
+
 /** État de la page d'un rapport partagé quand son destinataire l'ouvre. */
 export const SHARED_REPORT_STATES = ["open", "unavailable"] as const;
 export type SharedReportState = (typeof SHARED_REPORT_STATES)[number];
@@ -71,7 +77,8 @@ export type ProductEventProperties = {
   favorite_added: undefined;
   sample_report_viewed: undefined;
   offers_viewed: undefined;
-  checkout_started: undefined;
+  /** La page de paiement Stripe est demandée, pour l'abonnement ou pour une vente à l'unité. */
+  checkout_started: { product: PurchaseProduct };
   checkout_returned: { status: "success" | "cancelled" };
   opening_notification_requested: undefined;
   fees_simulator_used: undefined;
@@ -81,6 +88,14 @@ export type ProductEventProperties = {
   pepite_filter_used: undefined;
   /** Le déblocage d'une vente est confirmé (second clic du panneau), avant la réponse du serveur. */
   sale_unlock_confirmed: undefined;
+  /**
+   * Les prix sont affichés sur la carte de déblocage d'une fiche (une fois par affichage) : déblocage
+   * gratuit encore disponible (`spent: false`, prix de la suite) ou dépensé (`spent: true`, les deux
+   * achats). Un booléen : ce module est dans le premier JavaScript de toutes les pages.
+   */
+  prices_viewed: { spent: boolean };
+  /** Clic sur l'un des deux achats de la fiche, avant tout consentement et tout paiement. */
+  buy_clicked: { product: PurchaseProduct };
   home_cta_clicked: { target: HomeCtaTarget };
   /** L'enchère plafond d'une vente est calculée et affichée (pas seulement l'estimation servie). */
   ceiling_viewed: undefined;
@@ -95,6 +110,9 @@ type PropertySpec = "boolean" | readonly string[];
  * Propriétés admises par événement, avec leur domaine de valeurs. Un événement sans propriété n'y
  * figure pas (le code client reste léger) : `sanitizeProductEventProperties` n'en transmet aucune.
  */
+/** `product` de `buy_clicked` et de `checkout_started` : le même domaine. */
+const PURCHASE_PRODUCT_SPEC = { product: PURCHASE_PRODUCTS };
+
 const PROPERTY_SPECS: { [N in ProductEventName]?: Record<string, PropertySpec> } = {
   signup_submitted: { entry: SIGNUP_ENTRIES },
   alert_created: {
@@ -102,7 +120,10 @@ const PROPERTY_SPECS: { [N in ProductEventName]?: Record<string, PropertySpec> }
     pepite_only: "boolean",
     surface: ALERT_SURFACES,
   },
+  checkout_started: PURCHASE_PRODUCT_SPEC,
   checkout_returned: { status: ["success", "cancelled"] },
+  prices_viewed: { spent: "boolean" },
+  buy_clicked: PURCHASE_PRODUCT_SPEC,
   pepite_block_viewed: { access: ["locked", "detail"] },
   home_cta_clicked: { target: HOME_CTA_TARGETS },
   shared_report_viewed: { state: SHARED_REPORT_STATES },

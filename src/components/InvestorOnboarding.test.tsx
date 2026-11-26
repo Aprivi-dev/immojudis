@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { unlockHighlightsInlineText } from "@/lib/sale-unlocks";
-import { InvestorOnboarding } from "./InvestorOnboarding";
+import { PREVIEW_SEARCH_API_PATH } from "@/lib/search/preview-search-request";
+import { InvestorOnboarding, ONBOARDING_PREVIEW_PATH } from "./InvestorOnboarding";
 
 const navigate = vi.hoisted(() => vi.fn());
 const alerts = vi.hoisted(() => ({
@@ -11,7 +12,10 @@ const alerts = vi.hoisted(() => ({
   analysis: false as boolean | undefined,
   // Les droits du compte, tels que /api/feature-entitlements les rend (`undefined` : pas encore lus).
   plan: undefined as Record<string, unknown> | undefined,
+  // Lecture de la route d'aperçu : reçoit l'adresse, rend les ventes (vide : l'accueil mène au catalogue).
+  search: vi.fn(),
 }));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: navigate, replace: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
 }));
@@ -28,9 +32,18 @@ beforeEach(() => {
   alerts.plan = { plan: "decouverte", hasAnalysisAccess: false };
   alerts.saving = false;
   alerts.create.mockResolvedValue({ status: "created", emailConsent: true });
+  alerts.search.mockResolvedValue([]);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      const items = await alerts.search(url);
+      return { ok: true, json: async () => ({ items, count: items.length, mirrors: [] }) };
+    }),
+  );
 });
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -217,6 +230,82 @@ describe("investor welcome flow", () => {
     expect(screen.getByTestId("onboarding-next-action").textContent).toBe(
       "Pour finir : ouvrez une vente de votre département et voyez le plafond (contenu selon la vente).",
     );
+  });
+
+  describe("vente proposée à la dernière étape", () => {
+    const sale = {
+      id: "0c2f6f0e-7d0b-4f4e-9a55-1f2f3a4b5c6d",
+      title: "Appartement de 3 pièces",
+      property_type: "apartment",
+      city: "Bordeaux",
+      starting_price_eur: 85000,
+      sale_date: "2027-01-14T13:00:00.000Z",
+    };
+
+    it("propose la première vente de la recherche et y mène, sur son plafond", async () => {
+      alerts.search.mockResolvedValue([sale, { ...sale, id: "autre" }]);
+      render(<InvestorOnboarding />);
+      goToLastStep("33", { maxPrice: "150000" });
+
+      const block = await screen.findByTestId("onboarding-suggested-sale");
+      // Même recherche que le catalogue d'un visiteur, avec les critères saisis.
+      expect(alerts.search).toHaveBeenCalledTimes(1);
+      expect(alerts.search).toHaveBeenCalledWith(
+        "/api/catalogue/preview?department=33&maxPrice=150000",
+      );
+      expect(ONBOARDING_PREVIEW_PATH).toBe(PREVIEW_SEARCH_API_PATH);
+      const text = (block.textContent ?? "").replace(/[\u00a0\u202f]/g, " ");
+      expect(text).toContain("Pour finir : ouvrez cette vente et voyez son plafond");
+      expect(text).toContain("Appartement de 3 pièces");
+      expect(text).toContain("Bordeaux · Mise à prix : 85 000 € · Vente : 14 janvier 2027");
+      expect(screen.queryByTestId("onboarding-next-action")).toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Ouvrir cette vente" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/sales/${sale.id}#calculation`));
+      expect(alerts.create).not.toHaveBeenCalled();
+    });
+
+    it("ne dit jamais « 0 € » pour une mise à prix absente ou nulle", async () => {
+      alerts.search.mockResolvedValue([{ ...sale, starting_price_eur: 0 }]);
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      const block = await screen.findByTestId("onboarding-suggested-sale");
+      expect(block.textContent).toContain("Mise à prix : Prix non communiqué");
+      expect(block.textContent).not.toMatch(/0\s€/);
+    });
+
+    it("garde le catalogue filtré à un clic, et crée l'alerte demandée sur les deux chemins", async () => {
+      alerts.search.mockResolvedValue([sale]);
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      await screen.findByTestId("onboarding-suggested-sale");
+      fireEvent.click(screen.getByRole("checkbox", { name: ALERT_LABEL }));
+      fireEvent.click(screen.getByRole("button", { name: "Voir toutes les ventes" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sales?department=33"));
+      expect(alerts.create).toHaveBeenCalledTimes(1);
+    });
+
+    it("mène au catalogue, comme avant, sans résultat ou si la recherche échoue", async () => {
+      alerts.search.mockRejectedValue(new Error("catalogue indisponible"));
+      render(<InvestorOnboarding />);
+      goToLastStep("33");
+      await waitFor(() => expect(alerts.search).toHaveBeenCalled());
+      expect(screen.queryByTestId("onboarding-suggested-sale")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Voir toutes les ventes" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Voir les biens" }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith("/sales?department=33"));
+    });
+
+    it("ne cherche aucune vente avant la dernière étape, ni quand l'inscription vient d'une fiche", () => {
+      const first = render(<InvestorOnboarding />);
+      expect(alerts.search).not.toHaveBeenCalled();
+      first.unmount();
+      render(<InvestorOnboarding returnTo={`/sales/${sale.id}`} initialArea="33" />);
+      fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+      fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+      expect(alerts.search).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: "Revenir à cette vente" })).toBeTruthy();
+    });
   });
 
   it("announces what the server read of the fee regime switch", () => {

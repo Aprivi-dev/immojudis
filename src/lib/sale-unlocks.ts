@@ -189,14 +189,6 @@ export const UNLOCK_CHOICE_TEXT =
 export const UNLOCK_CONFIRMATION_TEXT =
   "Vous utilisez le déblocage compris dans votre compte gratuit. Il vous est rendu si la vente est retirée avant d’avoir lieu (conditions générales, article 2).";
 
-/**
- * Sous la confirmation, quand l'achat à l'unité est ouvert : ce déblocage n'est pas la dernière vente
- * que le compte pourra ouvrir. `priceLabel` : le prix lu dans l'offre (« 19 € »), jamais écrit ici.
- */
-export function unlockNextSaleText(priceLabel: string): string {
-  return `Ensuite, chaque autre vente s’ouvre à l’unité pour ${priceLabel}, ou toutes avec l’offre Analyse.`;
-}
-
 /** Le titre de la fiche quand le déblocage du compte a servi pour une autre vente. */
 export const UNLOCK_QUOTA_REACHED_TITLE = "Votre compte gratuit a déjà débloqué une vente";
 

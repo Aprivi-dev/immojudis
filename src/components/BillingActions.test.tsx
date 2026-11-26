@@ -313,7 +313,9 @@ describe("BillingActions", () => {
     for (const consent of screen.getAllByRole("checkbox")) fireEvent.click(consent);
     fireEvent.click(screen.getByRole("button", { name: "Commander avec obligation de paiement" }));
 
-    await waitFor(() => expect(mocks.track).toHaveBeenCalledWith("checkout_started"));
+    await waitFor(() =>
+      expect(mocks.track).toHaveBeenCalledWith("checkout_started", { product: "subscription" }),
+    );
     expect(mocks.track).toHaveBeenCalledTimes(1);
   });
 

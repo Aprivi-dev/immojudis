@@ -127,6 +127,10 @@ test("inscription → recherche → rapport → paiement → partage", async ({ 
     });
   });
 
+  // Aucune vente proposée à la fin de l'accueil : ce parcours passe par le catalogue filtré.
+  await page.route("**/api/catalogue/preview*", (route) =>
+    route.fulfill({ json: { items: [], count: 0, mirrors: [] } }),
+  );
   await page.goto("/login");
   await expect(async () => {
     await page.getByRole("button", { name: "Créer un compte", exact: true }).click();

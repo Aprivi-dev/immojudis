@@ -518,6 +518,32 @@ test("achat à l'unité fermé : déblocage utilisé, aucun bouton ni lien d'ach
   await expect(page.getByText(/à l’unité/)).toHaveCount(0);
 });
 
+test("achat à l'unité ouvert, déblocage disponible : la carte dit les prix avant le déblocage", async ({
+  page,
+}) => {
+  await setup(page, {
+    initial: status(0),
+    saleUnlock: { open: true, label: "19 €", amountCents: 1900 },
+  });
+  await page.goto(`/sales/${SALE_ID}`);
+
+  const card = page.locator("#debloquer");
+  await expect(card.getByRole("heading", { name: "Débloquer cette vente" })).toBeVisible({
+    timeout: 15_000,
+  });
+  // Avant tout clic : le déblocage gratuit reste l'action, les prix de la suite sont dits.
+  await expect(card.getByTestId("unlock-next-sale")).toHaveText(
+    /^Ensuite, chaque autre vente s’ouvre à l’unité pour 19\s€, ou toutes avec l’offre Analyse \(59\s€\s\/\smois, sans engagement\)\. Voir les tarifs$/,
+  );
+  await expect(card.getByRole("link", { name: "Voir les tarifs" })).toHaveAttribute(
+    "href",
+    "/offres#tarifs",
+  );
+  // Rien ne s'achète tant que le déblocage gratuit est disponible.
+  await expect(card.getByRole("button", { name: /Acheter/ })).toHaveCount(0);
+  await expect(unlockButton(page)).toBeVisible();
+});
+
 test("achat à l'unité ouvert : les deux choix, le consentement, puis le paiement simulé", async ({
   page,
 }) => {
@@ -539,12 +565,12 @@ test("achat à l'unité ouvert : les deux choix, le consentement, puis le paieme
   await expect(card.getByRole("heading", { name: QUOTA_REACHED_TITLE })).toBeVisible({
     timeout: 15_000,
   });
-  // L'abonnement d'abord, mis en avant ; puis cette vente.
+  // Cette vente d'abord, avec le bouton principal ; puis l'abonnement (décision du 25/11/2026).
   const choices = card.getByRole("heading", { level: 3 });
   await expect(choices).toHaveCount(2);
-  await expect(choices.nth(0)).toHaveText(/^Toutes les ventes pendant un mois : 59\s€$/);
-  await expect(choices.nth(1)).toHaveText("Cette vente : 19 €");
-  await expect(card.getByText("Recommandée")).toBeVisible();
+  await expect(choices.nth(0)).toHaveText("Cette vente : 19 €");
+  await expect(choices.nth(1)).toHaveText(/^Toutes les ventes pendant un mois : 59\s€$/);
+  await expect(card.getByText("Recommandée")).toHaveCount(0);
   // 3 × 19 € = 57 € ne dépasse pas 59 € ; 4 × 19 € = 76 € le dépasse.
   await expect(
     card.getByText(

@@ -61,8 +61,22 @@ const mocks = vi.hoisted(() => ({
   pepite: vi.fn(),
   authUser: null as { id: string } | null,
   checkoutOpen: null as boolean | null,
+  unitPurchase: null as { label: string; amountCents: number } | null,
 }));
 
+vi.mock("@/hooks/use-sale-unlock-purchase-offer", () => ({
+  useSaleUnlockPurchaseOffer: () =>
+    mocks.checkoutOpen === null
+      ? { status: "loading" }
+      : {
+          status: "ready",
+          analysisOpen: mocks.checkoutOpen,
+          analysisLabel: "59 € TTC / mois",
+          analysisCents: 5900,
+          purchase: mocks.unitPurchase,
+          firstMonthDeductionCents: 0,
+        },
+}));
 vi.mock("@/hooks/use-analysis-checkout-open", () => ({
   useAnalysisCheckoutOpen: () => mocks.checkoutOpen,
 }));
@@ -248,6 +262,7 @@ afterEach(() => {
   vi.resetAllMocks();
   mocks.authUser = null;
   mocks.checkoutOpen = null;
+  mocks.unitPurchase = null;
   window.history.replaceState(null, "", "/");
 });
 
@@ -368,8 +383,31 @@ describe("plafond verrouillé d'un visiteur (garde d'ouverture du paiement)", ()
         "Créez un compte gratuit, puis débloquez la vente",
       );
       expect(lockedText(closed.container)).not.toContain("choisissez l’offre Analyse");
+      expect(closed.queryByTestId("visitor-next-sale")).toBeNull();
       closed.unmount();
     }
+  });
+
+  it("dit les prix de la suite dès la première visite, seulement quand l’achat à l’unité est ouvert", () => {
+    mocks.checkoutOpen = true;
+    const withoutPurchase = renderDetail("discovery");
+    expect(withoutPurchase.queryByTestId("visitor-next-sale")).toBeNull();
+    withoutPurchase.unmount();
+
+    mocks.unitPurchase = { label: "19 €", amountCents: 1900 };
+    const open = renderDetail("discovery");
+    expect(lockedText(open.getByTestId("visitor-next-sale"))).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse (59 € TTC / mois, sans engagement).",
+    );
+    open.unmount();
+
+    // Abonnement fermé : le prix de la vente seul, jamais celui d'un abonnement qui ne se souscrit pas.
+    mocks.checkoutOpen = false;
+    const unitOnly = renderDetail("discovery");
+    expect(lockedText(unitOnly.getByTestId("visitor-next-sale"))).toBe(
+      "Ensuite, chaque autre vente s’ouvre à l’unité pour 19 €, ou toutes avec l’offre Analyse.",
+    );
+    expect(lockedText(unitOnly.container)).not.toContain("choisissez l’offre Analyse");
   });
 });
 

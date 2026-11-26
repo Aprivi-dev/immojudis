@@ -25,7 +25,6 @@ import {
   UNLOCK_CONFIRMATION_TEXT,
   UNLOCK_QUOTA_REACHED_TITLE,
   unlockedItemsText,
-  unlockNextSaleText,
   unlockQuotaReachedText,
   type SaleUnlockResult,
   type SaleUnlockStatus,
@@ -38,6 +37,7 @@ import {
   UNLOCK_CREDIT_CONFIRMATION_TEXT,
   UNLOCK_CREDIT_TEXT,
   UNLOCK_CREDIT_TITLE,
+  unlockNextSaleText,
 } from "@/lib/sale-unlock-purchase-texts";
 import { userMessage } from "@/lib/user-messages";
 
@@ -413,6 +413,7 @@ export function SaleUnlockPanel({
               bancaire.
             </p>
             <p className="mt-2 text-sm font-medium text-brand-navy">{UNLOCK_CHOICE_TEXT}</p>
+            <NextSaleHint />
           </>
         )}
         {step === "idle" ? (
@@ -435,7 +436,6 @@ export function SaleUnlockPanel({
             <p className="text-sm leading-relaxed text-brand-navy">
               {withCredit ? UNLOCK_CREDIT_CONFIRMATION_TEXT : UNLOCK_CONFIRMATION_TEXT}
             </p>
-            {withCredit ? null : <NextSaleHint />}
             {gap ? (
               <p
                 data-testid="unlock-ceiling-gap"
@@ -489,15 +489,31 @@ export function SaleUnlockPanel({
 }
 
 /**
- * Under the confirmation of the free unlock: it is not the last sale the account can open. Shown
- * only once the purchase of a single sale is really open (price read from the offer).
+ * On the card of the free unlock, before and during the confirmation: the prices of what comes
+ * next, with the way to the offers. It is not the last sale the account can open, and no account
+ * should have to spend its unlock to learn what the next sale costs. Shown only once the purchase
+ * of a single sale is really open (price read from the offer); the subscription price is added
+ * only when the subscription can really be bought.
  */
 function NextSaleHint() {
   const offer = useSaleUnlockPurchaseOffer();
-  if (offer.status !== "ready" || !offer.purchase) return null;
+  const purchase = offer.status === "ready" ? offer.purchase : null;
+  const shown = purchase !== null;
+  useEffect(() => {
+    if (shown) trackProductEvent("prices_viewed", { spent: false });
+  }, [shown]);
+  if (offer.status !== "ready" || !purchase) return null;
   return (
-    <p data-testid="unlock-next-sale" className="mt-2 text-sm leading-relaxed text-brand-navy">
-      {unlockNextSaleText(offer.purchase.label)}
+    <p data-testid="unlock-next-sale" className="mt-2 text-sm leading-relaxed text-ink-soft">
+      {nonBreakingUnits(
+        unlockNextSaleText(purchase.label, offer.analysisOpen ? offer.analysisLabel : null),
+      )}{" "}
+      <Link
+        href="/offres#tarifs"
+        className="font-semibold text-gold-text underline underline-offset-4"
+      >
+        Voir les tarifs
+      </Link>
     </p>
   );
 }

@@ -45,7 +45,6 @@ describe("product events", () => {
       trackProductEvent("favorite_added");
       trackProductEvent("sample_report_viewed");
       trackProductEvent("offers_viewed");
-      trackProductEvent("checkout_started");
       trackProductEvent("opening_notification_requested");
       trackProductEvent("fees_simulator_used");
       trackProductEvent("home_example_used");
@@ -55,7 +54,6 @@ describe("product events", () => {
         ["favorite_added"],
         ["sample_report_viewed"],
         ["offers_viewed"],
-        ["checkout_started"],
         ["opening_notification_requested"],
         ["fees_simulator_used"],
         ["home_example_used"],
@@ -242,6 +240,8 @@ describe("product events", () => {
       "pepite_block_viewed",
       "pepite_filter_used",
       "sale_unlock_confirmed",
+      "prices_viewed",
+      "buy_clicked",
       "home_cta_clicked",
       "ceiling_viewed",
       "shared_report_viewed",

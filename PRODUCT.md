@@ -68,12 +68,13 @@ C'est la combinaison qui distingue Immojudis, pas une brique isolée :
   proposé. Achat d'une vente à l'unité (décision du 15/11/2026) : une fois le déblocage gratuit
   utilisé, une autre vente s'achète 19 € TTC, paiement unique ; les achats des 30 derniers jours sont
   déduits du premier mois d'abonnement ; une vente achetée puis retirée avant d'avoir lieu donne un
-  crédit pour une autre vente, pas un remboursement. La fiche met l'abonnement en avant sans forcer
-  (ni compte à rebours ni fausse rareté), et rien ne propose l'achat tant qu'il n'est pas ouvert
-  (CGU, article 2 bis, à faire valider par un avocat avant l'ouverture). **Au 13/11/2026,
-  le paiement n'est pas encore ouvert** : tant que les conditions de lancement ne sont pas réunies
-  (`docs/roadmaps/conditions-de-lancement-2026-10-10.md`), rien ne doit laisser croire qu'un
-  abonnement se souscrit déjà.
+  crédit pour une autre vente, pas un remboursement. La fiche dit les prix dès qu'elle est
+  verrouillée, avant que le déblocage gratuit soit utilisé, et propose l'achat à l'unité avant
+  l'abonnement (décision du 25/11/2026), sans forcer (ni compte à rebours ni fausse rareté) ; rien
+  ne propose l'achat tant qu'il n'est pas ouvert
+  (CGU, article 2 bis, à faire valider par un avocat avant l'ouverture). **Le paiement
+  est ouvert en production depuis le 16/11/2026** (abonnement et achat à l'unité). Chacun a son
+  interrupteur : là où il est fermé, rien ne doit laisser croire qu'il se souscrit.
 - **Ni conseil juridique ni conseil financier.** Les informations sont indicatives ; seuls les
   documents officiels de chaque vente font foi. Aucune promesse de gain, aucune incitation à
   enchérir.
