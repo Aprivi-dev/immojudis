@@ -51,47 +51,74 @@
     background: var(--background);
     color: var(--foreground);
     pointer-events: none;
+    --intro-window-w: min(190px, 34vw);
+    --intro-window-h: min(140px, 25vw);
     animation: intro-out 400ms linear 2300ms forwards;
   }
 
   .introRow {
-    display: flex;
+    display: grid;
+    /* Deux colonnes égales autour de la fenêtre : elle reste au centre de l'écran. */
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
+    width: max-content;
+    /* Plus large que l'écran quand la fenêtre s'élargit : les marges négatives la gardent centrée. */
+    margin-inline: -100vw;
     font-family: var(--home-display);
     font-size: clamp(28px, 3vw, 40px);
     font-weight: 600;
     letter-spacing: -0.03em;
     white-space: nowrap;
-    animation: intro-in 400ms linear both;
+    animation:
+      intro-in 400ms linear both,
+      intro-hide 300ms linear 1700ms forwards;
+  }
+
+  .introRow > :first-child {
+    justify-self: end;
   }
 
   .introWindow {
     position: relative;
-    flex: none;
     width: 0;
     height: 0;
     overflow: hidden;
     animation:
       intro-open 500ms var(--home-ease) 500ms forwards,
-      intro-grow 700ms var(--home-ease) 1600ms forwards;
+      intro-part 700ms var(--home-ease) 1600ms forwards;
   }
 
+  /* Les deux premières vues ; elles s'effacent dès que la dernière les recouvre. */
   .introWindow span {
     position: absolute;
     inset: 0;
     background-position: 60% 70%;
     background-size: cover;
+    animation: intro-hide 1ms linear 1350ms forwards;
   }
 
   .introWindow span + span {
     opacity: 0;
-    animation: intro-show 1ms linear 1000ms forwards;
+    animation:
+      intro-show 1ms linear 1000ms forwards,
+      intro-hide 1ms linear 1350ms forwards;
   }
 
-  /* La dernière vue est la peinture du premier écran, cadrée comme lui. */
-  .introWindow span:last-child {
-    background-position: right bottom;
-    animation-delay: 1300ms;
+  /* La dernière vue est la peinture du premier écran. Posée sur la fenêtre, elle va ensuite se
+     ranger exactement sur la vraie peinture, dont `HomeIntro` mesure la place (`--intro-landing-*`) :
+     quand le voile s'efface, rien ne bouge. Sans script, elle remplit l'écran. */
+  .introLanding {
+    position: absolute;
+    top: calc(50% - var(--intro-window-h) / 2);
+    left: calc(50% - var(--intro-window-w) / 2);
+    width: var(--intro-window-w);
+    height: var(--intro-window-h);
+    background-position: var(--intro-landing-position, right bottom);
+    background-size: cover;
+    opacity: 0;
+    animation:
+      intro-show 1ms linear 1300ms forwards,
+      intro-land 700ms var(--home-ease) 1600ms forwards;
   }
 
   /* Le texte du premier écran monte quand le voile se lève. Sans opacité : le navigateur doit
@@ -126,29 +153,47 @@
 
 @keyframes intro-open {
   to {
-    width: min(190px, 34vw);
-    height: min(140px, 25vw);
+    width: var(--intro-window-w);
+    height: var(--intro-window-h);
     margin-inline: 22px;
   }
 }
 
-@keyframes intro-grow {
-  from {
-    width: min(190px, 34vw);
-    height: min(140px, 25vw);
+/* La fenêtre, vidée, s'élargit : elle écarte « immo » et « judis », qui s'effacent. */
+@keyframes intro-part {
+  from,
+  to {
+    height: var(--intro-window-h);
     margin-inline: 22px;
+  }
+
+  from {
+    width: var(--intro-window-w);
   }
 
   to {
     width: 100vw;
-    height: 100vh;
-    margin-inline: 22px;
+  }
+}
+
+@keyframes intro-land {
+  to {
+    top: var(--intro-landing-y, 0px);
+    left: var(--intro-landing-x, 0px);
+    width: var(--intro-landing-w, 100%);
+    height: var(--intro-landing-h, 100%);
   }
 }
 
 @keyframes intro-show {
   to {
     opacity: 1;
+  }
+}
+
+@keyframes intro-hide {
+  to {
+    opacity: 0;
   }
 }
 
