@@ -46,7 +46,6 @@ export type UrbanismeCadastrePanelProps = {
   /** « Actualiser les sources » du dossier PLU et risques : nouvelle consultation forcée. */
   officialLandRefresh?: boolean;
   className?: string;
-  heading?: string;
 };
 
 type Coordinates = CadastralNeighborhoodPoint;
@@ -80,7 +79,6 @@ export function UrbanismeCadastrePanel({
   officialLandEnabled = false,
   officialLandRefresh = true,
   className,
-  heading = "Urbanisme & cadastre",
 }: UrbanismeCadastrePanelProps) {
   const cadastral = useMemo(
     () => buildCadastralAnalysis(sale, cadastralParcels),
@@ -113,21 +111,8 @@ export function UrbanismeCadastrePanel({
   const primaryAction = firstNextAction(cadastral, urbanPlanning);
 
   return (
-    <section className={rootClassName} aria-labelledby="urbanisme-cadastre-heading">
-      <header className={styles.header}>
-        <div className={styles.headingGroup}>
-          <h2 id="urbanisme-cadastre-heading" className={styles.title}>
-            {heading}
-          </h2>
-          <p className={styles.intro}>
-            Parcelle, zonage, règles du PLU et risques liés au terrain.
-          </p>
-        </div>
-        <div className={styles.headerMark} aria-hidden="true">
-          <LandPlot size={24} strokeWidth={1.8} />
-        </div>
-      </header>
-
+    // Sans titre propre : celui du bloc replié qui le contient (« Urbanisme et cadastre ») le nomme.
+    <section className={rootClassName} aria-label="Urbanisme et cadastre">
       {/* Once the official report is read, its summary says where the parcel comes from. */}
       {landReport ? null : (
         <div className={styles.compactSummary}>
@@ -237,7 +222,7 @@ export function UrbanismeCadastrePanel({
                 )}
                 {cadastral.structuredParcels.length > 0 ? (
                   <div className={styles.subsection}>
-                    <h4 className={styles.subheading}>Résultats API Carto</h4>
+                    <h5 className={styles.subheading}>Résultats API Carto</h5>
                     <ul className={styles.referenceList} aria-label="Parcelles API Carto">
                       {cadastral.structuredParcels.map((parcel, index) => (
                         <li
@@ -387,9 +372,9 @@ function SectionHeading({
     <div className={styles.sectionHeader}>
       <div className={styles.sectionHeadingLine}>
         {icon}
-        <h3 id={id} className={styles.sectionHeading}>
+        <h4 id={id} className={styles.sectionHeading}>
           {title}
-        </h3>
+        </h4>
         {badge}
       </div>
       <p className={styles.sectionIntro}>{intro}</p>
@@ -503,10 +488,10 @@ function RiskCard({ risk }: { risk: SaleRisk }) {
 function LocationNote({ coordinates }: { coordinates: Coordinates | null }) {
   return (
     <div className={styles.locationCard}>
-      <h4 className={styles.locationTitle}>
+      <h5 className={styles.locationTitle}>
         <MapPin size={17} aria-hidden="true" />
         Point de localisation
-      </h4>
+      </h5>
       {coordinates ? (
         <>
           <p className={styles.locationText}>
@@ -530,10 +515,10 @@ function LocationNote({ coordinates }: { coordinates: Coordinates | null }) {
 function DocumentsBlock({ documents }: { documents: CadastralAnalysis["documents"] }) {
   return (
     <div className={styles.subsection}>
-      <h4 className={styles.subheading}>
+      <h5 className={styles.subheading}>
         <FileText size={17} aria-hidden="true" />
         Pièces cadastrales
-      </h4>
+      </h5>
       {documents.length > 0 ? (
         <ul className={styles.documentList}>
           {documents.map((document) => {
@@ -572,10 +557,10 @@ function ActionList({ heading, actions }: { heading: string; actions: string[] }
   if (uniqueActions.length === 0) return null;
   return (
     <div className={styles.actionBlock}>
-      <h4 className={styles.subheading}>
+      <h5 className={styles.subheading}>
         <SearchCheck size={17} aria-hidden="true" />
         {heading}
-      </h4>
+      </h5>
       <ul className={styles.actionList}>
         {uniqueActions.map((action) => (
           <li key={action} className={styles.actionItem}>

@@ -13,52 +13,12 @@
   color: var(--uc-ink);
 }
 
-.header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 16px;
-}
-
-.headingGroup {
-  min-width: 0;
-}
-
 .eyebrow {
   margin: 0 0 7px;
   color: var(--uc-accent);
   font-size: 12px;
   font-weight: 750;
   line-height: 1.2;
-}
-
-.title {
-  margin: 0;
-  color: var(--uc-ink);
-  font-size: var(--block-title-size, clamp(23px, 3vw, 29px));
-  font-weight: 750;
-  line-height: 1.15;
-}
-
-.intro {
-  max-width: 650px;
-  margin: 6px 0 0;
-  color: var(--uc-muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.headerMark {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--gold-light);
-  border-radius: var(--radius);
-  background: var(--uc-accent-soft);
-  color: var(--uc-accent);
 }
 
 .locationSummary {

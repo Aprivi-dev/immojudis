@@ -50,7 +50,7 @@ function Fold({
   return (
     <details id={id} className={panelStyles.disclosure}>
       <summary>
-        {title}
+        <h3 className={layoutStyles.foldTitle}>{title}</h3>
         <span className={layoutStyles.foldSummary}>{summary}</span>
       </summary>
       {children}

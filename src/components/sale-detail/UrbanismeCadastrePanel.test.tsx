@@ -109,7 +109,7 @@ describe("UrbanismeCadastrePanel", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Urbanisme & cadastre" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Urbanisme et cadastre" })).toBeTruthy();
     expect(screen.getByText(/parcelle à rattacher/i)).toBeTruthy();
     expect(screen.getByText(/L’adresse est un point de départ/)).toBeTruthy();
     expect(screen.getByText("Plan cadastral du quartier")).toBeTruthy();

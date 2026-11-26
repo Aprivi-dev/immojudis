@@ -7,7 +7,7 @@
   color: var(--ink-strong);
 }
 
-.card h2 {
+.card h3 {
   color: var(--brand-navy);
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);
@@ -25,7 +25,7 @@
   margin-top: 22px;
 }
 
-.theme h3 {
+.theme h4 {
   color: var(--brand-navy);
   font-size: 15px;
   font-weight: 750;
@@ -153,7 +153,7 @@
   background: var(--surface);
 }
 
-.highlights h3 {
+.highlights h4 {
   color: var(--brand-navy);
   font-size: 15px;
   font-weight: 750;

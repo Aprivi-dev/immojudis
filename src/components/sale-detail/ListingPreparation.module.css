@@ -16,7 +16,7 @@
   gap: 24px;
 }
 
-.header h2 {
+.header h3 {
   margin: 0;
   font-family: var(--font-display), Georgia, serif;
   font-size-adjust: var(--font-display-adjust);
@@ -201,7 +201,7 @@
   padding: 12px 0;
   border-top: 1px solid var(--line-soft);
 }
-.checksEvidence h3 {
+.checksEvidence h4 {
   margin: 0;
   font-size: 15px;
   font-weight: 600;

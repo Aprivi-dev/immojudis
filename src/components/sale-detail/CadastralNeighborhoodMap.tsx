@@ -228,9 +228,9 @@ export function CadastralNeighborhoodMap({
       <div className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Plan du quartier</p>
-          <h3 id={headingId} className={styles.title}>
+          <h4 id={headingId} className={styles.title}>
             Parcelles cadastrales autour de l’adresse
-          </h3>
+          </h4>
           <p className={styles.address}>{addressLabel}</p>
         </div>
         <span className={styles.sourcePill}>IGN · PCI</span>

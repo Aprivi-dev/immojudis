@@ -86,9 +86,9 @@ export function WorksBreakdownPanel({
           className="mt-3 grid gap-4 rounded-lg border border-border bg-muted/30 p-3 sm:p-5"
         >
           <div>
-            <h3 id={titleId} className="text-lg font-semibold text-brand-navy">
+            <h4 id={titleId} className="text-lg font-semibold text-brand-navy">
               Détail de vos travaux
-            </h3>
+            </h4>
             <p className="mt-1 text-sm text-muted-foreground">
               Montants saisis par vous, sans valeur de devis. Immojudis ne propose aucun prix :
               chaque quantité et chaque coût viennent de vous. Le total est reporté dans votre

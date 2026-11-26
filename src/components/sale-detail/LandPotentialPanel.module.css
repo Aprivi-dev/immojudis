@@ -18,7 +18,7 @@
   justify-content: space-between;
   gap: 16px;
 }
-.header h3 {
+.header h4 {
   font-size: 1.2rem;
   font-weight: 600;
   margin: 4px 0 8px;
@@ -110,7 +110,7 @@
   margin-top: 22px;
   padding-top: 22px;
 }
-.section h4 {
+.section h5 {
   font-size: 0.99rem;
   font-weight: 600;
   margin: 0 0 9px;
@@ -268,8 +268,8 @@
   font-size: 0.79rem;
   line-height: 1.65;
 }
-.checkGrid h5,
-.consequences h4 {
+.checkGrid h6,
+.consequences h5 {
   font-size: 0.77rem;
   font-weight: 600;
   margin: 0 0 5px;
@@ -371,7 +371,7 @@
   display: grid;
   gap: 22px;
 }
-.riskGroups h3 {
+.riskGroups h4 {
   margin: 0 0 10px;
   font-size: 0.9rem;
   color: var(--success);
