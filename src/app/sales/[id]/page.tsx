@@ -38,19 +38,30 @@ const THIN_PAGE = { index: false, follow: true } as const;
  */
 const RENT_REFERENCE_TIMEOUT_MS = 1_500;
 
-async function rentReferenceWithinDeadline(
-  sale: Parameters<typeof loadSaleRentReference>[0],
-): Promise<Awaited<ReturnType<typeof loadSaleRentReference>>> {
+/** `load`, ou `null` passé le délai : la génération de la fiche n'attend jamais une lecture annexe. */
+async function withinDeadline<T>(load: Promise<T>, timeoutMs: number): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), RENT_REFERENCE_TIMEOUT_MS);
+    timer = setTimeout(() => resolve(null), timeoutMs);
   });
   try {
-    return await Promise.race([loadSaleRentReference(sale), deadline]);
+    return await Promise.race([load, deadline]);
   } finally {
     clearTimeout(timer);
   }
 }
+
+function rentReferenceWithinDeadline(
+  sale: Parameters<typeof loadSaleRentReference>[0],
+): Promise<Awaited<ReturnType<typeof loadSaleRentReference>>> {
+  return withinDeadline(loadSaleRentReference(sale), RENT_REFERENCE_TIMEOUT_MS);
+}
+
+/**
+ * Délai maximal de la lecture des audiences (bandeau des ventes de la même audience). Elle est en
+ * cache 15 minutes ; cache expiré et base lente, la fiche part sans bandeau plutôt que d'attendre.
+ */
+const HEARINGS_TIMEOUT_MS = 1_500;
 
 function salePath(saleId: string): string {
   return `/sales/${saleId.toLowerCase()}`;
@@ -133,7 +144,7 @@ export default async function Page({ params }: PageProps) {
     ? await Promise.all([
         rentReferenceWithinDeadline(sale),
         loadSaleHousingTension(sale),
-        tryLoadUpcomingHearings(),
+        withinDeadline(tryLoadUpcomingHearings(), HEARINGS_TIMEOUT_MS),
       ])
     : [null, null, null];
   const hearing =

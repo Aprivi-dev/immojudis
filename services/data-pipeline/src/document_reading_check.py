@@ -14,14 +14,14 @@ from src import document_reading as reading
 # What a « check » never says: whether to buy or bid, and anything that reads as advice on the decision.
 _CHECK_ADVICE = re.compile(
     r"\b(?:(?:sur)?ench[ée]rir|acheter|acqu[ée]rir|renoncer|[ée]viter|n[ée]gocier|"
-    r"d[ée]conseill\w*|conseill\w*|recommand\w*)\b",
+    r"d[ée]conseill\w*|conseill\w*|recommand(?:er|ons|ez|ation\w*)|(?:il\s+est|est)\s+recommand[ée]e?s?)\b",
     re.I,
 )
 
 
-# A « check » starts with a verb in the infinitive (« Regarder », « Lire », « Faire préciser ») and says what to
+# A « check » starts with a verb in the infinitive (« Regarder », « Lire », « S'assurer », « Se renseigner ») and says what to
 # look at: « Vérifier ce point » fits every dossier and says nothing.
-_CHECK_INFINITIVE = re.compile(r"^[^\W\d_]+(?:er|ir|re)\b", re.I)
+_CHECK_INFINITIVE = re.compile(r"^(?:s['’]|se\s+)?[^\W\d_]+(?:er|ir|re)\b", re.I)
 _CHECK_GENERIC = re.compile(
     r"^(?:v[ée]rifier|contr[ôo]ler|confirmer|faire\s+(?:v[ée]rifier|confirmer))\s+"
     r"(?:ce|cet|cette|ces|le|la|les)\s+(?:points?|[ée]l[ée]ments?|informations?|sujets?)\W*$",

@@ -396,7 +396,9 @@ export function ListingOverview({
               <span className={styles.heroFactNote}>
                 {procedure.guaranteeAmountFromSale
                   ? "montant indiqué pour cette vente"
-                  : "10 % de la mise à prix, 3 000 € minimum : à confirmer dans le cahier"}
+                  : procedure.guaranteeRatePct === 10 && procedure.guaranteeMinimumEur === 3000
+                    ? "10 % de la mise à prix, 3 000 € minimum : à confirmer dans le cahier"
+                    : "montant calculé : à confirmer dans le cahier"}
                 , chèque de banque remis à votre avocat
               </span>
             </dd>

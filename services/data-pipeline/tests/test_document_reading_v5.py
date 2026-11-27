@@ -99,6 +99,16 @@ def test_a_figure_written_by_the_page_may_be_named() -> None:
     assert checked_check("Demander le bail qui fonde le loyer de 700 euros déclaré", PAGE, QUOTE) is None
 
 
+def test_pronominal_infinitives_and_a_registered_letter_are_not_refused() -> None:
+    for check in (
+        "S'assurer de l'accès aux combles lors de la visite",
+        "Se renseigner en mairie sur l'origine de l'infiltration",
+        "Demander la lettre recommandée adressée à l'occupant",
+    ):
+        assert checked_check(check, PAGE, QUOTE) == check, check
+    assert checked_check("Il est recommandé de visiter les combles avant la vente", PAGE, QUOTE) is None
+
+
 def test_an_empty_check_is_not_a_rejection() -> None:
     rejections: dict[str, int] = {}
     points = validate_reading_points([_point(""), ], _documents(), check_rule=checked_check, rejections=rejections)

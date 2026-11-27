@@ -33,7 +33,7 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
     number: "02",
     label: "Prix et plafond",
     shortLabel: "Plafond",
-    question: "Jusqu’où enchérir ?",
+    question: "Quel prix ne pas dépasser ?",
   },
   {
     id: "pieces",

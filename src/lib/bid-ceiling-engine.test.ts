@@ -280,13 +280,29 @@ describe("summarizeCashPlan", () => {
     expect(summary.total).toBe(54_500);
   });
 
-  it("totals the same sums as the detailed plan", () => {
+  it("counts the consignation once: it is deducted from the balance of the price", () => {
     const h = hypotheses({ startingPrice: 20_000 });
     const plan = computeCeilingPlan(h);
     const steps = buildCashPlan(h, plan, 50_000);
+    const amount = (label: string) => steps.find((step) => step.label === label)?.amount ?? 0;
+    const { deadlines, total } = summarizeCashPlan(steps);
 
-    expect(summarizeCashPlan(steps).total).toBe(
-      steps.reduce((sum, step) => sum + (step.amount ?? 0), 0),
+    // 3 000 € de consignation avant l'audience, puis 47 000 € de prix restant dans le solde.
+    expect(amount("Consignation")).toBe(3_000);
+    expect(deadlines[0]).toEqual({
+      when: "Avant l’audience",
+      amount: 3_000 + amount("Honoraires de votre avocat"),
+    });
+    const beyondPrice = total - 50_000;
+    expect(beyondPrice).toBeGreaterThan(0);
+    // Tout ce qui dépasse le prix est fait de frais, de travaux et de libération : jamais du prix compté deux fois.
+    expect(beyondPrice).toBeLessThan(50_000);
+    expect(total).toBe(
+      3_000 +
+        (amount("Solde du prix et droits") + amount("Frais préalables")) +
+        amount("Honoraires de votre avocat") +
+        amount("Libération du bien") +
+        amount("Travaux et imprévus"),
     );
   });
 });
