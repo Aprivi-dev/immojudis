@@ -1,10 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { pageStatus } from "./support/toast";
 
 const email = "nouveau.compte.e2e@example.test";
 const password = "un-mot-de-passe-solide";
 
-test("mot de passe oublié : message neutre, sans dire si le compte existe", async ({ page }) => {
+/** Demandes de récupération reçues par le faux Supabase, dans l'ordre. */
+async function recordRecoveries(page: Page): Promise<string[]> {
   const recoveries: string[] = [];
   await page.route("https://ci.supabase.co/**", async (route) => {
     const url = new URL(route.request().url());
@@ -15,11 +16,50 @@ test("mot de passe oublié : message neutre, sans dire si le compte existe", asy
     }
     await route.fulfill({ status: 200, json: [] });
   });
+  return recoveries;
+}
+
+/**
+ * Attend que React ait pris la main sur la page. Un clic antérieur partirait en envoi natif du
+ * formulaire (rechargement, aucune demande). L'annonceur de route de Next.js n'est ajouté au
+ * document qu'après le premier rendu client validé, donc après l'hydratation de la page.
+ */
+async function waitForHydration(page: Page) {
+  await expect(page.locator("next-route-announcer")).toBeAttached();
+}
+
+test("mot de passe oublié : message neutre, sans dire si le compte existe", async ({ page }) => {
+  const recoveries = await recordRecoveries(page);
 
   await page.goto("/mot-de-passe-oublie");
+  // Saisie possiblement antérieure à l'hydratation : l'adresse doit tout de même partir.
   await page.getByLabel("Adresse email du compte").fill("quelquun@example.test");
+  await waitForHydration(page);
   await page.getByRole("button", { name: "Recevoir le lien de réinitialisation" }).click();
 
+  await expect(pageStatus(page)).toContainText("Si un compte correspond");
+  expect(recoveries).toHaveLength(1);
+  expect(recoveries[0]).toContain("quelquun@example.test");
+});
+
+test("mot de passe oublié : un champ vide n'envoie aucune demande", async ({ page }) => {
+  const recoveries = await recordRecoveries(page);
+
+  await page.goto("/mot-de-passe-oublie");
+  await waitForHydration(page);
+  const field = page.getByLabel("Adresse email du compte");
+  const send = page.getByRole("button", { name: "Recevoir le lien de réinitialisation" });
+  await send.click();
+
+  // Le navigateur refuse l'envoi (`required`) et signale le champ : le message neutre n'apparaît
+  // pas. L'erreur affichée par la page, elle, n'est atteignable qu'en contournant cette validation
+  // (couverte par le test unitaire du composant).
+  expect(await field.evaluate((input: HTMLInputElement) => input.validity.valueMissing)).toBe(true);
+  await expect(pageStatus(page)).toHaveCount(0);
+
+  // La demande suivante est la première et la seule reçue : le clic à vide n'a rien envoyé.
+  await field.fill("quelquun@example.test");
+  await send.click();
   await expect(pageStatus(page)).toContainText("Si un compte correspond");
   expect(recoveries).toHaveLength(1);
   expect(recoveries[0]).toContain("quelquun@example.test");

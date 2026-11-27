@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { Button, Card, PageTitle } from "@/components/ui/primitives";
 import { isSupabaseConfigured, supabase } from "@/integrations/supabase/client";
 
 export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
-  const [email, setEmail] = useState("");
+  const emailField = useRef<HTMLInputElement>(null);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,6 +65,14 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
       setError("Les deux mots de passe doivent être identiques.");
       return;
     }
+    // L'adresse se lit dans le champ, pas dans un état React : une saisie faite avant l'hydratation
+    // (ou un autoremplissage Safari) ne déclenche aucun onChange, l'état resterait vide alors que
+    // le champ est rempli et que la validation native `required` laisse passer.
+    const email = emailField.current?.value.trim() ?? "";
+    if (!reset && !email) {
+      setError("Saisissez l’adresse email du compte.");
+      return;
+    }
     setBusy(true);
     try {
       if (reset) {
@@ -89,7 +97,7 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
         // The password has already changed even if signing out encounters a network error.
         await supabase.auth.signOut().catch(() => undefined);
       } else {
-        const { error: sendError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        const { error: sendError } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/reinitialiser-mot-de-passe`,
         });
         if (sendError) throw sendError;
@@ -163,12 +171,12 @@ export function PasswordRecovery({ reset = false }: { reset?: boolean }) {
             ) : (
               <label className="grid gap-2 text-sm">
                 Adresse email du compte
+                {/* Sans `name` : un envoi natif avant l'hydratation mettrait l'adresse dans l'URL. */}
                 <input
+                  ref={emailField}
                   autoComplete="email"
                   type="email"
                   required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
                   className="form-input"
                 />
               </label>

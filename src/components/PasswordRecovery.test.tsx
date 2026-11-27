@@ -79,6 +79,33 @@ describe("password recovery", () => {
     expect((await screen.findByRole("status")).textContent).toContain("Si un compte correspond");
   });
 
+  it("envoie l'adresse présente dans le champ même si aucun onChange ne l'a signalée", async () => {
+    render(<PasswordRecovery />);
+    // Saisie avant l'hydratation ou autoremplissage Safari : le champ est rempli, sans événement.
+    const field = screen.getByLabelText<HTMLInputElement>("Adresse email du compte");
+    field.value = "  avant.hydratation@example.test ";
+    fireEvent.click(screen.getByRole("button", { name: "Recevoir le lien de réinitialisation" }));
+    await waitFor(() =>
+      expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("avant.hydratation@example.test", {
+        redirectTo: `${window.location.origin}/reinitialiser-mot-de-passe`,
+      }),
+    );
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("n'envoie aucune demande et le dit quand le champ est vide", async () => {
+    render(<PasswordRecovery />);
+    // `submit` direct : dans un navigateur, la validation native `required` bloque déjà ce cas.
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Recevoir le lien de réinitialisation" }).closest("form")!,
+    );
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Saisissez l’adresse email du compte.",
+    );
+    expect(auth.resetPasswordForEmail).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("does not accept an expired link even if another session is present", async () => {
     window.history.replaceState(null, "", "/reinitialiser-mot-de-passe#error=access_denied");
     auth.getSession.mockResolvedValue({ data: { session: { user: { id: "existing" } } } });
