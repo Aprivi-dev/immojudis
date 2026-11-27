@@ -87,9 +87,9 @@ import {
   getMarketValuationSurfaces,
   getSaleSurface,
 } from "@/lib/surface";
-import { PriceScale } from "@/components/sale-detail/PriceScale";
+import { CourtPriceScale } from "@/components/sale-detail/CourtPriceScale";
 import { SaleHearingSlot } from "@/components/sale-detail/SaleHearingSlot";
-import { useUsualAuctionRange } from "@/components/sale-detail/use-usual-auction-range";
+import { SaleVerdict } from "@/components/sale-detail/SaleVerdict";
 import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
@@ -497,13 +497,6 @@ function SaleDetailWorkspace({
   // Les statistiques des tribunaux restent fermées tant que le drapeau l'est : ni l'onglet, ni
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
-  // Mêmes conditions que « Mon plafond face au tribunal » : un compte, hors exemple public.
-  const usualRange = useUsualAuctionRange({
-    saleId: sale.id,
-    access,
-    userKey: user?.id,
-    enabled: statisticsAvailable && fullData && ceilingOpen && Boolean(user) && !publicDemo,
-  });
   const budgetTarget =
     fullData && ceilingOpen && !valuationConflict ? "calculation" : fullData ? "budget" : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
@@ -928,6 +921,18 @@ function SaleDetailWorkspace({
             pepiteFloodExposed={pepite?.flood?.verdict === "exposed"}
             showAddress
           />
+          {fullData &&
+          heroCeiling != null &&
+          !valuationConflict &&
+          !criticalAnalysisInputsBlocked ? (
+            <SaleVerdict
+              sale={displaySale}
+              startingPrice={startingPrice}
+              plan={ceilingPlan}
+              hypotheses={ceilingHypotheses}
+              labels={feeRegime?.labels}
+            />
+          ) : null}
           <div className={layoutStyles.split}>
             <div className={layoutStyles.gallery}>
               <PropertyIdentity
@@ -1249,13 +1254,16 @@ function SaleDetailWorkspace({
                     </div>
                   ) : fullData && ceilingOpen ? (
                     <>
-                      <PriceScale
+                      <CourtPriceScale
+                        saleId={sale.id}
+                        access={access}
+                        userKey={user?.id}
+                        courtEnabled={statisticsAvailable && Boolean(user) && !publicDemo}
                         startingPrice={startingPrice}
                         startLabel={startLabelText}
                         ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
                         value={comparedValue}
                         range={occupancyGapWithheld ? null : marketRange}
-                        usual={usualRange}
                       />
                       {surfaceEnteredByUser ? (
                         <p className={panelStyles.surfaceCaution}>

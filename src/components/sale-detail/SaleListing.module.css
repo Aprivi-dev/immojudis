@@ -578,6 +578,24 @@
   gap: 10px;
   margin: 4px 0 22px;
 }
+/* « La vente en une phrase », sous le titre de la fiche. */
+.verdict {
+  margin: -8px 0 22px;
+  padding: 12px 16px;
+  border-left: 3px solid var(--gold);
+  background: var(--sand);
+  color: var(--ink-strong);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.verdict span {
+  display: block;
+  color: var(--gold-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .headingBadges {
   display: flex;
   flex-wrap: wrap;

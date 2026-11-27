@@ -121,6 +121,8 @@ export type SaleProcedurePresentation = {
   lawyerRequired: boolean | null;
   lawyerNote: string;
   guaranteeAmountEur: number | null;
+  /** Le montant vient des règles lues pour cette vente ; faux : il est calculé par la règle du tribunal. */
+  guaranteeAmountFromSale: boolean;
   guaranteeRatePct: number | null;
   guaranteeMinimumEur: number | null;
   guaranteeNote: string;
@@ -194,6 +196,7 @@ export function getSaleProcedure(sale: AuctionSale): SaleProcedurePresentation {
       (venueType === "tribunal" && venueIsConfirmed
         ? judicialGuarantee(sale.starting_price_eur)
         : null),
+    guaranteeAmountFromSale: rules?.guarantee.amount_eur != null,
     guaranteeRatePct:
       rules?.guarantee.rate_pct ?? (venueType === "tribunal" && venueIsConfirmed ? 10 : null),
     guaranteeMinimumEur:

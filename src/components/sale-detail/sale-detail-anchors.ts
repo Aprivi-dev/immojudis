@@ -18,19 +18,58 @@ export const SALE_DETAIL_SECTIONS: ReadonlyArray<{
   label: string;
   /** Libellé affiché dans le sommaire, qui n'a pas la place des libellés complets. */
   shortLabel: string;
+  /** La question à laquelle la section répond, dite sous son titre. */
+  question: string;
 }> = [
-  { id: "bien", number: "01", label: "Le bien", shortLabel: "Le bien" },
-  { id: "prix", number: "02", label: "Prix et plafond", shortLabel: "Plafond" },
-  { id: "pieces", number: "03", label: "Pièces du dossier", shortLabel: "Pièces" },
-  { id: "marche", number: "04", label: "Marché et comparables", shortLabel: "Comparables" },
-  { id: "urbanisme-risques", number: "05", label: "Urbanisme et risques", shortLabel: "Urbanisme" },
+  {
+    id: "bien",
+    number: "01",
+    label: "Le bien",
+    shortLabel: "Le bien",
+    question: "Qu’est-ce qui est vendu, et qu’en sait-on ?",
+  },
+  {
+    id: "prix",
+    number: "02",
+    label: "Prix et plafond",
+    shortLabel: "Plafond",
+    question: "Jusqu’où enchérir ?",
+  },
+  {
+    id: "pieces",
+    number: "03",
+    label: "Pièces du dossier",
+    shortLabel: "Pièces",
+    question: "Que disent les pièces, et lesquelles manquent ?",
+  },
+  {
+    id: "marche",
+    number: "04",
+    label: "Marché et comparables",
+    shortLabel: "Comparables",
+    question: "Que vaut ce bien sur son marché ?",
+  },
+  {
+    id: "urbanisme-risques",
+    number: "05",
+    label: "Urbanisme et risques",
+    shortLabel: "Urbanisme",
+    question: "Quelles contraintes pèsent sur le terrain ?",
+  },
   {
     id: "travaux-financement",
     number: "06",
     label: "Travaux et financement",
     shortLabel: "Financement",
+    question: "Combien prévoir en plus du prix ?",
   },
-  { id: "demarches", number: "07", label: "Démarches", shortLabel: "Démarches" },
+  {
+    id: "demarches",
+    number: "07",
+    label: "Démarches",
+    shortLabel: "Démarches",
+    question: "Que faire, et avant quelle date ?",
+  },
 ];
 
 /** Section 05 « Pièces du dossier » : cible du lien « Où consulter le cahier » des mentions de l'avocat. */
