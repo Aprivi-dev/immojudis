@@ -184,33 +184,12 @@
   font-weight: 600;
   text-underline-offset: 3px;
 }
-.checksEvidence {
-  margin-top: 12px;
-  font-size: 14px;
-}
-.checksEvidence summary {
-  min-height: 44px;
-  padding: 10px 0;
-  color: var(--gold-text);
-  cursor: pointer;
-  font-weight: 600;
-}
-.checksEvidence article {
-  display: grid;
-  gap: 6px;
-  padding: 12px 0;
-  border-top: 1px solid var(--line-soft);
-}
-.checksEvidence h4 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-.checksEvidence blockquote {
-  margin: 4px 0 0;
-  padding-left: 12px;
+/* L'extrait de la pièce qui fonde un point à vérifier. */
+.proofQuote {
+  display: block;
+  margin-top: 2px;
+  padding-left: 10px;
   border-left: 2px solid var(--line);
-  color: var(--ink-soft);
 }
 
 .dialogContent {

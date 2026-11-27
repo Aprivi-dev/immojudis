@@ -330,17 +330,37 @@ export function ListingChecks({
               <Badge tone="info">Repère</Badge>
             </li>
           ) : null}
-          {risks.map((risk) => (
-            <li key={`risk-${risk.risk_type}-${risk.risk_label}`}>
-              <div>
-                <strong>{risk.risk_label}</strong>
-                <span>{riskEvidence(risk).action}</span>
-              </div>
-              <Badge tone="warning">
-                {risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier"}
-              </Badge>
-            </li>
-          ))}
+          {risks.map((risk) => {
+            const evidence = riskEvidence(risk);
+            return (
+              <li key={`risk-${risk.risk_type}-${risk.risk_label}`}>
+                <div>
+                  <strong>{risk.risk_label}</strong>
+                  {/* Le constat et sa preuve d'abord (pièce, page, extrait), puis ce qu'il reste à faire. */}
+                  {evidence.proofs.map((proof, index) => (
+                    <span key={`${index}-${proof.label}`} data-testid="risk-proof">
+                      {proof.url ? (
+                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
+                          {proof.label} (nouvel onglet)
+                        </a>
+                      ) : (
+                        proof.label
+                      )}
+                      {proof.page != null ? ` · page ${proof.page}` : null}
+                      {proof.excerpt ? <q className={styles.proofQuote}>{proof.excerpt}</q> : null}
+                    </span>
+                  ))}
+                  <span className={styles.todo}>
+                    <span>Que faire : </span>
+                    {evidence.action}
+                  </span>
+                </div>
+                <Badge tone="warning">
+                  {risk.severity != null && risk.severity >= 4 ? "Prioritaire" : "À vérifier"}
+                </Badge>
+              </li>
+            );
+          })}
           {shownPoints.map((point) => (
             <li key={`point-${point.key}`}>
               <div>
@@ -397,36 +417,6 @@ export function ListingChecks({
           </>
         ) : null}
       </p>
-
-      {risks.length ? (
-        <details className={styles.checksEvidence}>
-          <summary>Voir les sources et actions à confirmer</summary>
-          <div>
-            {risks.map((risk) => {
-              const evidence = riskEvidence(risk);
-              return (
-                <article key={`${risk.risk_type}-${risk.risk_label}`}>
-                  <h4>{risk.risk_label}</h4>
-                  <p>{evidence.action}</p>
-                  {evidence.proofs.map((proof, index) => (
-                    <div key={`${index}-${proof.label}`}>
-                      {proof.url ? (
-                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
-                          {proof.label} (nouvel onglet)
-                        </a>
-                      ) : (
-                        <span>{proof.label}</span>
-                      )}
-                      {proof.page != null ? <span> · page {proof.page}</span> : null}
-                      {proof.excerpt ? <blockquote>{proof.excerpt}</blockquote> : null}
-                    </div>
-                  ))}
-                </article>
-              );
-            })}
-          </div>
-        </details>
-      ) : null}
 
       {preparation ? (
         <div className={styles.remainingActions}>

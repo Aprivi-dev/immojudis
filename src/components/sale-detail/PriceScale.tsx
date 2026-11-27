@@ -129,16 +129,18 @@ export function PriceScale({
       {usual ? (
         <p className={styles.usualNote} data-testid="price-scale-usual-note">
           <span>
-            Hachures : la moitié des ventes comparables{" "}
+            Hachures : une vente comparable sur deux{" "}
             {usual.scope === "court" && usual.courtName
               ? `du ${usual.courtName}`
               : usual.scope === "court"
                 ? "de ce tribunal"
                 : "des tribunaux couverts"}{" "}
-            ont été adjugées entre <strong>{formatEuro(usual.low)}</strong> et{" "}
-            <strong>{formatEuro(usual.high)}</strong>
+            a été adjugée entre <strong>{formatEuro(usual.low)}</strong> et{" "}
+            <strong>{formatEuro(usual.high)}</strong>, une sur quatre au-dessus, une sur quatre en
+            dessous
             {usual.median != null ? ` (prix médian : environ ${formatEuro(usual.median)})` : ""},
-            avant éventuelle surenchère et hors frais. Ce n’est pas une prévision.{" "}
+            avant éventuelle surenchère et hors frais. Ce repère ignore l’état du bien et le nombre
+            d’enchérisseurs : ce n’est pas une prévision.{" "}
             <a href="#statistiques">Voir les scénarios d’enchères</a>
           </span>
         </p>

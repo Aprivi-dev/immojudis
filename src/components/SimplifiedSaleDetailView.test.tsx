@@ -1213,13 +1213,13 @@ describe("integrated listing", () => {
   it("keeps protected market and risk evidence out of discovery access", () => {
     const discovery = renderDetail("discovery");
     expect(screen.queryByText("Marché local")).toBeNull();
-    expect(screen.queryByText("Voir les sources et actions à confirmer")).toBeNull();
+    expect(screen.queryByTestId("risk-proof")).toBeNull();
     expect(mocks.fetchMarket).not.toHaveBeenCalled();
     discovery.unmount();
 
     window.history.replaceState(null, "", "/");
     const analysis = renderDetail("analysis");
-    expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
+    expect(screen.getAllByTestId("risk-proof").length).toBeGreaterThan(0);
     selectTab("Quartier");
     expect(analysis.container.querySelector("#market")).not.toBeNull();
     // La valeur estimée mise en phrase, chiffres surlignés, en tête de « Marché et comparables ».
@@ -1754,7 +1754,7 @@ describe("the free unlock on the sale page", () => {
     const { container } = renderUnlocked();
 
     // Aperçu: the points read in the documents, as for Analyse.
-    expect(screen.getByText("Voir les sources et actions à confirmer")).toBeTruthy();
+    expect(screen.getAllByTestId("risk-proof").length).toBeGreaterThan(0);
     // Prix: the range of the value and the scale of the subscriber.
     selectTab("Prix et plafond");
     await waitFor(() => expect(screen.getByTestId("price-scale")).toBeTruthy());

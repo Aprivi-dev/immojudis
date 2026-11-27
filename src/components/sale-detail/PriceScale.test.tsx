@@ -76,7 +76,9 @@ describe("PriceScale", () => {
     expect(note).toContain("du tribunal judiciaire de Bordeaux");
     expect(note).toMatch(/120\s000\s€/);
     expect(note).toMatch(/210\s000\s€/);
-    expect(note).toContain("Ce n’est pas une prévision.");
+    expect(note).toContain("une vente comparable sur deux");
+    expect(note).toContain("une sur quatre au-dessus, une sur quatre en dessous");
+    expect(note).toContain("ce n’est pas une prévision.");
     expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
       "prix habituellement atteints",
     );
