@@ -17,6 +17,7 @@ import {
   feeSensitivity,
   PROPERTY_TAX_NOT_COUNTED,
   propertyTaxMissing,
+  summarizeCashPlan,
   targetYieldPct,
   type CeilingHypotheses,
   type CeilingPlan,
@@ -194,6 +195,9 @@ export function CeilingPlanner({
                 </p>
               ) : null}
             </div>
+          ) : null}
+          {gap == null && !marketLoading && plan.available && plan.reachable ? (
+            <CashSummary hypotheses={hypotheses} plan={plan} />
           ) : null}
         </div>
 
@@ -849,6 +853,57 @@ function cashStepTerms(hypotheses: CeilingHypotheses): Record<string, TermeKey> 
     ...(cash.overbid ? { [cash.overbid.label]: "surenchere" as const } : {}),
     "Libération du bien": "liberation",
   };
+}
+
+/** D'où vient le montant de la garantie affichée : l'annonce, la personne, ou la règle du régime. */
+const CONSIGNATION_SOURCE_NOTES: Record<CeilingHypotheses["feesSource"]["consignation"], string> = {
+  document: "montant indiqué dans l’annonce",
+  saisie: "montant que vous avez saisi",
+  regle:
+    "montant calculé selon la règle légale, à confirmer dans le cahier des conditions de vente",
+  defaut: "montant estimé, à confirmer dans les conditions de la vente",
+};
+
+/**
+ * « L'argent à réunir » : les sommes de la trésorerie regroupées par échéance et leur total, visibles
+ * sous le plafond sans rien déplier. Le détail ligne à ligne reste dans « Trésorerie à prévoir ».
+ */
+function CashSummary({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
+  const { deadlines, total } = summarizeCashPlan(buildCashPlan(hypotheses, plan, plan.maxBid));
+  if (deadlines.length === 0) return null;
+  const consignation = labelsOf(hypotheses).cash.consignation;
+  return (
+    <section
+      aria-labelledby="ceiling-cash-summary-title"
+      data-testid="cash-summary"
+      className="mt-4 border-t border-gold/30 pt-4"
+    >
+      <h4 id="ceiling-cash-summary-title" className="text-sm font-semibold text-foreground">
+        L’argent à réunir pour {formatPrice(plan.maxBid)}
+      </h4>
+      <dl className="mt-2 grid max-w-md gap-1 text-sm">
+        {deadlines.map((deadline) => (
+          <div key={deadline.when} className="flex items-baseline justify-between gap-4">
+            <dt className="text-ink-soft">{deadline.when}</dt>
+            <dd className="font-semibold tabular-nums">{formatPrice(deadline.amount)}</dd>
+          </div>
+        ))}
+        <div className="mt-1 flex items-baseline justify-between gap-4 border-t border-gold/30 pt-2">
+          <dt className="font-semibold text-foreground">Total à réunir</dt>
+          <dd className="text-base font-semibold tabular-nums">{formatPrice(total)}</dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs leading-relaxed text-ink-soft">
+        {consignation
+          ? `${consignation.label} : ${CONSIGNATION_SOURCE_NOTES[hypotheses.feesSource.consignation]}. `
+          : null}
+        {hypotheses.regime?.kind === "notarial"
+          ? null
+          : "Aucune condition suspensive de prêt : le prix est dû même si le crédit est refusé. "}
+        Détail dans « Trésorerie à prévoir », plus bas.
+      </p>
+    </section>
+  );
 }
 
 function CashPlan({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {

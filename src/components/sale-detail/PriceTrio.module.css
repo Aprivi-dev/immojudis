@@ -116,6 +116,63 @@
   background: var(--sand);
 }
 
+/* Prix habituellement atteints : hachures par-dessus la fourchette de marché, qui reste lisible. */
+.bandUsual {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--gold) 55%, transparent) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.usualMedian {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--gold);
+}
+
+.usualNote {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.usualNote strong {
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.usualNote a {
+  color: var(--ink-strong);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.usualSwatch {
+  flex: none;
+  width: 18px;
+  height: 10px;
+  margin-top: 5px;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--gold) 55%, transparent) 0 2px,
+    transparent 2px 6px
+  );
+}
+
 .marker {
   position: absolute;
   top: 0;

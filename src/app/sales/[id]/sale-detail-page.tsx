@@ -7,6 +7,7 @@ import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
+import { SaleHearingProvider } from "@/components/sale-detail/SaleHearingNav";
 import type { SaleGuideLink } from "@/components/SalePublicFurther";
 import { Button, Notice } from "@/components/ui/primitives";
 import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
@@ -29,6 +30,7 @@ import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
 import type { PublicRentalYield } from "@/lib/public-rental-yield";
 import type { SaleUnlockResult } from "@/lib/sale-unlocks";
+import type { SaleHearing } from "@/lib/sale-hearing";
 
 const loadSaleViews = () => import("@/components/SimplifiedSaleDetailView");
 
@@ -94,6 +96,8 @@ type SaleDetailPageProps = {
   rentalYield?: PublicRentalYield | null;
   /** Articles du blog proposés en bas de la fiche publique, choisis par le serveur. */
   guides?: readonly SaleGuideLink[];
+  /** Les ventes de la même audience (`saleHearing`), lues par le serveur ; `null` : pas de bandeau. */
+  hearing?: SaleHearing | null;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -103,7 +107,9 @@ export function SaleDetailPage(props: SaleDetailPageProps) {
       {/* Identité déjà vérifiée mais revérification impossible (réseau) : la fiche reste affichée.
           Sans session, la fiche elle-même explique pourquoi elle ne s'ouvre pas. */}
       {!loading && authError && session ? <AuthConnectionBanner className="mt-3" /> : null}
-      <SaleDetailContent {...props} />
+      <SaleHearingProvider hearing={props.hearing ?? null}>
+        <SaleDetailContent {...props} />
+      </SaleHearingProvider>
     </>
   );
 }

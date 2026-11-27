@@ -15,6 +15,8 @@ import {
 } from "@/lib/seo";
 import { pageMetadata } from "@/lib/page-metadata";
 import { rotatingResources } from "@/lib/resource-related";
+import { saleHearing } from "@/lib/sale-hearing";
+import { tryLoadUpcomingHearings } from "@/lib/upcoming-hearings.server";
 import { siteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "./sale-detail-page";
 import { jsonLdString } from "@/lib/json-ld";
@@ -123,9 +125,18 @@ export default async function Page({ params }: PageProps) {
   // Loyer de référence de la commune (carte ANIL), lu côté serveur : le navigateur ne lit jamais la
   // table. Le rapport enregistré lit la même référence, pour que les deux plafonds restent égaux.
   // Le zonage « zone tendue » de la commune (fait neutre du bloc « Marché locatif ») se lit au même endroit.
-  const [rentReference, housingTension] = sale
-    ? await Promise.all([rentReferenceWithinDeadline(sale), loadSaleHousingTension(sale)])
-    : [null, null];
+  // Les audiences publiques des 30 prochains jours (une lecture mise en cache, partagée avec
+  // « Audiences à venir ») : la fiche y retrouve les autres ventes de son audience. Base en panne ou
+  // vente hors de la liste : pas de bandeau.
+  const [rentReference, housingTension, hearings] = sale
+    ? await Promise.all([
+        rentReferenceWithinDeadline(sale),
+        loadSaleHousingTension(sale),
+        tryLoadUpcomingHearings(),
+      ])
+    : [null, null, null];
+  const hearing =
+    sale && hearings?.status === "ok" ? saleHearing(hearings.hearings, sale.id) : null;
   // Rendement brut de la fiche publique, calculé ici : le navigateur n'embarque pas le calcul des frais.
   const rentalYield = sale ? publicRentalYield(sale, rentReference) : null;
   // Deux articles du blog en bas de fiche, différents d'une vente à l'autre : les fiches sont les
@@ -160,6 +171,7 @@ export default async function Page({ params }: PageProps) {
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        hearing={hearing}
         nextSalePrices={publicNextSalePricesText()}
       />
     </>

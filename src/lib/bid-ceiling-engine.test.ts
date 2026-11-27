@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCashPlan,
+  summarizeCashPlan,
   ceilingConfidence,
   ceilingsByWorks,
   computeCeilingPlan,
@@ -258,6 +259,34 @@ describe("buildCashPlan", () => {
     expect(cash.find((step) => step.label === "Frais préalables")?.amount).toBe(5_000);
     expect(cash.find((step) => step.label === "Solde du prix et droits")?.amount).toBeGreaterThan(
       47_000,
+    );
+  });
+});
+
+describe("summarizeCashPlan", () => {
+  it("groups the sums by deadline, in the order they are due, and totals them", () => {
+    const summary = summarizeCashPlan([
+      { when: "Avant l’audience", label: "Consignation", amount: 3_000, detail: "" },
+      { when: "Avant l’audience", label: "Honoraires de votre avocat", amount: 1_500, detail: "" },
+      { when: "10 jours après", label: "Fin du délai de surenchère", amount: null, detail: "" },
+      { when: "Sous 2 mois", label: "Solde du prix et droits", amount: 50_000, detail: "" },
+      { when: "Ensuite", label: "Travaux et imprévus", amount: 0, detail: "" },
+    ]);
+
+    expect(summary.deadlines).toEqual([
+      { when: "Avant l’audience", amount: 4_500 },
+      { when: "Sous 2 mois", amount: 50_000 },
+    ]);
+    expect(summary.total).toBe(54_500);
+  });
+
+  it("totals the same sums as the detailed plan", () => {
+    const h = hypotheses({ startingPrice: 20_000 });
+    const plan = computeCeilingPlan(h);
+    const steps = buildCashPlan(h, plan, 50_000);
+
+    expect(summarizeCashPlan(steps).total).toBe(
+      steps.reduce((sum, step) => sum + (step.amount ?? 0), 0),
     );
   });
 });

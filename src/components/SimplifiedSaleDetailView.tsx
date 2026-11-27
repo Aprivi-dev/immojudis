@@ -88,6 +88,8 @@ import {
   getSaleSurface,
 } from "@/lib/surface";
 import { PriceScale } from "@/components/sale-detail/PriceScale";
+import { SaleHearingNav } from "@/components/sale-detail/SaleHearingNav";
+import { useUsualAuctionRange } from "@/components/sale-detail/use-usual-auction-range";
 import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
@@ -495,6 +497,13 @@ function SaleDetailWorkspace({
   // Les statistiques des tribunaux restent fermées tant que le drapeau l'est : ni l'onglet, ni
   // son aperçu verrouillé, ni les ancres qui y mènent.
   const statisticsAvailable = isTribunalSale && adjudicationStatisticsEnabled;
+  // Mêmes conditions que « Mon plafond face au tribunal » : un compte, hors exemple public.
+  const usualRange = useUsualAuctionRange({
+    saleId: sale.id,
+    access,
+    userKey: user?.id,
+    enabled: statisticsAvailable && fullData && ceilingOpen && Boolean(user) && !publicDemo,
+  });
   const budgetTarget =
     fullData && ceilingOpen && !valuationConflict ? "calculation" : fullData ? "budget" : "summary";
   const hasVerifiedTribunal = saleHasVerifiedTribunal(sale);
@@ -909,6 +918,7 @@ function SaleDetailWorkspace({
             publicDemo={publicDemo}
             showFavorite={dossierInPanel && isPersistedSale(sale)}
           />
+          <SaleHearingNav className="mb-4" />
           <SaleDetailHeading
             sale={displaySale}
             publicDemo={publicDemo}
@@ -1245,6 +1255,7 @@ function SaleDetailWorkspace({
                         ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}
                         value={comparedValue}
                         range={occupancyGapWithheld ? null : marketRange}
+                        usual={usualRange}
                       />
                       {surfaceEnteredByUser ? (
                         <p className={panelStyles.surfaceCaution}>
