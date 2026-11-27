@@ -18,6 +18,7 @@ import pymupdf as fitz
 
 from src.config import llm_provider, load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
+from src.information_agent_auto_publication_arbiter import run_arbitration_pass
 from src.information_agent_evidence_child import (
     child_popen_kwargs,
     kill_and_collect,
@@ -209,7 +210,27 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
                 client, supabase_url, service_key, jobs[0], read_deadline=read_deadline, requeue_not_before=batch_end
             )
             processed += 1
+        # Publication automatique (étape 6) : verdict de Claude Haiku sur les informations du corps des réponses, après
+        # le lot (les faits des règles et la lecture du corps sont alors écrits). Un échec n'annule pas le lot (déjà
+        # écrit) : il est annoncé dans le workflow (annotation d'erreur), puis relevé à la fin pour que l'exécution
+        # échoue visiblement. Un fait sans verdict reste en relecture humaine.
+        arbitration_error: Exception | None = None
+        try:
+            run_arbitration_pass(client, supabase_url, service_key, settings)
+        except Exception as exc:
+            arbitration_error = exc
+            print(
+                "::error title=Arbitre de la publication automatique::passe en échec "
+                f"({type(exc).__name__}) ; les faits sans verdict restent en relecture humaine.",
+                flush=True,
+            )
+    if arbitration_error is not None:
+        raise AutoPublicationArbitrationFailed(type(arbitration_error).__name__) from arbitration_error
     return processed
+
+
+class AutoPublicationArbitrationFailed(RuntimeError):
+    """La passe de l'arbitre a échoué après le lot des pièces (le lot, lui, est écrit)."""
 
 
 def analyze_evidence_bytes(

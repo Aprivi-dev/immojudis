@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Base en mémoire du banc d'évaluation : elle remplace `supabaseAdmin` (par `vi.mock` dans le test du banc)
  * pour que la VRAIE chaîne tourne sans réseau : enregistrement des faits des règles
- * (`persistFactCandidates`) et passe de simulation du moteur (`runAutoPublicationSimulation`). Elle honore
+ * (`persistFactCandidates`) et passe du moteur en simulation (`runAutoPublicationPass`). Elle honore
  * les seuls appels que ces deux fonctions font (`select`, `eq`, `in`, `gte`, `order`, `range`, `limit`,
  * `single`, `maybeSingle`, `upsert`, la RPC du journal) et lève une erreur sur tout autre appel : un
  * changement de la chaîne casse le banc au lieu d'être ignoré.

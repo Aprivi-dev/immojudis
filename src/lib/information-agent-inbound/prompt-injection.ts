@@ -24,8 +24,10 @@ const ENGLISH_GAP = String.raw`[\s.,;:!-]+`;
 
 const PROMPT_INJECTION_PATTERNS: RegExp[] = [
   // « Ignore les consignes précédentes », « oubliez toutes vos instructions », mais pas « j'ignore les consignes ».
+  // Le verbe est vérifié AVANT le regard en arrière (`\s*` de longueur variable) : sinon ce regard serait évalué à
+  // chaque position d'une longue suite d'espaces, en temps quadratique.
   new RegExp(
-    String.raw`(?<!\b(?:j['’]|je|n['’]|on|il|elle|ils|elles|nous)\s*)\b(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er)|ne\s+(?:tiens|tenez)\s+pas\s+compte)\s+(?:de\s+|des\s+|d['’])?(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?${ORDER_NOUNS}`,
+    String.raw`\b(?=ignor|oubli|ne\s)(?<!\b(?:j['’]|je|n['’]|on|il|elle|ils|elles|nous)\s*)(?:ignor(?:e|es|ez|er)|oubli(?:e|es|ez|er)|ne\s+(?:tiens|tenez)\s+pas\s+compte)\s+(?:de\s+|des\s+|d['’])?(?:toutes?\s+)?(?:les\s+|tes\s+|vos\s+|ces\s+|ses\s+|leurs\s+)?${ORDER_NOUNS}`,
     "iu",
   ),
   // « Oubliez tout ce qui précède ».
@@ -36,8 +38,10 @@ const PROMPT_INJECTION_PATTERNS: RegExp[] = [
     "iu",
   ),
   /\b(?:ignore|disregard|forget)\s+(?:everything|anything|all)\s+(?:above|before|prior|previous|earlier)\b/iu,
-  // Rôle d'une conversation de modèle : « system: », « rôle : system », « SYSTEM PROMPT ».
-  /(?:^|[\n\r>"'«([{.!?;])\s*(?:system|developer)\s*:/imu,
+  // Rôle d'une conversation de modèle : « system: », « rôle : system », « SYSTEM PROMPT ». Le mot est cherché d'abord,
+  // puis ce qui le précède (début de ligne ou ponctuation, puis espaces) : une longue suite de retours à la ligne
+  // n'est ainsi parcourue qu'une fois (pas de temps quadratique).
+  /(?=system|developer)(?<=(?:^|[\n\r>"'«([{.!?;])\s*)(?:system|developer)\s*:/imu,
   /\br[ôo]le\s*:\s*(?:system|syst[èe]me|assistant|developer|d[ée]veloppeur)\b/iu,
   /\bsystem\s+prompt\b/iu,
   // « assistant: » seul sur sa ligne ou suivi d'une consigne en minuscule ; pas une signature

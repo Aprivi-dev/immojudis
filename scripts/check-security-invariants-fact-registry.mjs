@@ -37,8 +37,8 @@ import { createHash } from "node:crypto";
 //    enveloppe ni ne lit une table du registre, et dans l'application seul un module serveur les nomme ; aucun
 //    code ne nomme la projection. Lot R2c : les quatre fonctions de décision ne sont exécutables que par
 //    authenticated, par un droit donné dans la seule migration 20261119100400, jamais par anon, PUBLIC ni
-//    service_role ; seules trois fonctions appliquent la projection (décision, report à la fusion, relance
-//    planifiée).
+//    service_role ; seules quatre fonctions appliquent la projection (décision, décision automatique de l'étape 6
+//    de l'agent d'information, report à la fusion, relance planifiée).
 // 6. fact-claims-never-repointed : une observation n'est jamais rattachée à une autre vente ; sa garde
 //    d'immuabilité garde la clause « détacher seulement ».
 // 7. registry-no-fk-to-auction-sales : aucune clé étrangère du registre vers auction_sales (verrou sur la table
@@ -80,6 +80,14 @@ import { createHash } from "node:crypto";
 //    pg_cron dont un argument n'est pas un littéral, une table fille ou une copie de structure d'une table du
 //    registre (INHERITS, LIKE), et toute instruction UPDATE, DELETE ou TRUNCATE du journal des décisions. Les
 //    trois lectures des interrupteurs gardent leur sens sûr.
+//    Étape 6 de l'agent d'information (décision du propriétaire du 27/11/2026, accord explicite pour modifier cet
+//    invariant) : UNE seconde fonction écrit une décision, la décision automatique
+//    app_private.accept_information_agent_claim_automatically, et elle seule. Elle est définie dans la seule
+//    migration 20261211100000, son corps est épinglé par une empreinte, elle n'a aucun paramètre d'auteur, ne lit ni
+//    le jeton ni is_admin, contrôle les déclencheurs du registre avant toute écriture, n'écrit qu'une acceptation
+//    du système (auteur « system », sans identifiant), n'est exécutable par aucun rôle de l'API et n'est appelée que
+//    par public.publish_information_agent_fact_auto. Dans sa migration, le journal des décisions n'est écrit que
+//    dans son corps.
 // 14. registry-rpc-no-error-detail : les fonctions de décision ne lisent d'une erreur que son SQLSTATE et le nom
 //    de la contrainte, et ne relaient ni détail, ni indice, ni message de PostgreSQL.
 // Partout : aucune instruction ALTER FUNCTION ne touche une fonction du registre (mode de sécurité, propriétaire),
@@ -230,6 +238,13 @@ const OWNER_SWITCH_STATEMENTS = new Map([
 // Toute retouche du corps la change : relire la retouche, puis mettre l'empreinte à jour dans le même commit
 // (procédure : docs/runbooks/registre-des-pieces-r2b.md, « Retoucher la fonction de décision »).
 const DECIDE_BODY_SHA256 = "889cccd7fff80bcffe5a357889257aae87844fe7d23a91357ac9e992a17fcd9c";
+// Étape 6 de l'agent d'information (20261211100000) : la seule décision automatique, appelée seulement par la RPC
+// de publication automatique, définie dans la seule migration de l'étape, corps épinglé (même procédure que
+// DECIDE_BODY_SHA256).
+const AUTO_DECIDE_FUNCTION = "app_private.accept_information_agent_claim_automatically";
+const AUTO_PUBLISH_RPC = "public.publish_information_agent_fact_auto";
+const AUTO_DECISION_MIGRATION = "20261211100000_information_agent_auto_publication_live.sql";
+const AUTO_DECIDE_BODY_SHA256 = "b0af6179cecd72e7b1b2c7ddc5f0dbd19efdeb8bd95182a8a35c5e5c1e6c9582";
 // Première migration du lot R2b. Depuis elle, un EXECUTE ne prend qu'un littéral.
 const R2B_MIGRATION = "20261118100000";
 // Seules migrations qui nomment la fonction de décision et ses quatre fonctions publiques, et qui écrivent le
@@ -278,7 +293,12 @@ const UNINHERITABLE_TABLES = [
   "auction_sales",
 ];
 // Seules fonctions qui appliquent la projection (troisième argument autre que le littéral false).
-const PROJECTION_APPLIERS = new Set([DECIDE_FUNCTION, MERGE_CARRY_FUNCTION, REPROJECTION_FUNCTION]);
+const PROJECTION_APPLIERS = new Set([
+  DECIDE_FUNCTION,
+  AUTO_DECIDE_FUNCTION,
+  MERGE_CARRY_FUNCTION,
+  REPROJECTION_FUNCTION,
+]);
 // Fonctions internes des lots R2a et R2b : aucune n'est exécutable par un rôle de l'API.
 const INTERNAL_FUNCTIONS = [
   "app_private.fact_registry_triggers_not_always",
@@ -292,6 +312,7 @@ const INTERNAL_FUNCTIONS = [
   MARKER_GUARD_FUNCTION,
   ALERTS_FROM_REPORT_FUNCTION,
   DECIDE_FUNCTION,
+  AUTO_DECIDE_FUNCTION,
   SALE_LOCK_FUNCTION,
   MERGE_CARRY_FUNCTION,
   ...SWITCH_SETTERS,
@@ -2322,13 +2343,27 @@ export async function checkFactRegistryInvariants({
         `${definition.migration}: ${definition.name} names a decision function of the fact registry: nothing wraps accept_, reject_, withdraw_ or oppose_auction_fact_claim`,
       );
     }
-    // Une seule fonction insère dans le journal des décisions, quel que soit le schéma.
+    // Deux fonctions seulement insèrent dans le journal des décisions, quel que soit le schéma : la décision d'un
+    // administrateur et la décision automatique de l'étape 6, dans sa seule migration.
     if (
       definition.name !== DECIDE_FUNCTION &&
+      !(
+        definition.name === AUTO_DECIDE_FUNCTION && definition.migration === AUTO_DECISION_MIGRATION
+      ) &&
       /\binsert\s+into\s+(?:public\.)?auction_fact_claim_decisions\b/i.test(definition.body)
     ) {
       failures.push(
-        `${definition.migration}: ${definition.name} inserts into public.auction_fact_claim_decisions: only ${DECIDE_FUNCTION} writes a decision`,
+        `${definition.migration}: ${definition.name} inserts into public.auction_fact_claim_decisions: only ${DECIDE_FUNCTION} and ${AUTO_DECIDE_FUNCTION} write a decision`,
+      );
+    }
+    // La décision automatique n'est appelée que par la RPC de publication automatique.
+    if (
+      definition.name !== AUTO_PUBLISH_RPC &&
+      definition.name !== AUTO_DECIDE_FUNCTION &&
+      /\baccept_information_agent_claim_automatically\b/i.test(definition.body)
+    ) {
+      failures.push(
+        `${definition.migration}: ${definition.name} calls ${AUTO_DECIDE_FUNCTION}: only ${AUTO_PUBLISH_RPC} may`,
       );
     }
   }
@@ -2346,13 +2381,67 @@ export async function checkFactRegistryInvariants({
         `${name} names a decision function of the fact registry: only ${[...DECISION_MIGRATIONS].join(", ")} may (nothing wraps, grants or redefines them elsewhere)`,
       );
     }
+    const autoDecide =
+      name === AUTO_DECISION_MIGRATION
+        ? definitions.filter(
+            (entry) => entry.migration === name && entry.name === AUTO_DECIDE_FUNCTION,
+          )
+        : [];
+    const writes = [
+      ...sql.matchAll(
+        /\b(?:insert\s+into|merge\s+into|copy)\s+(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\b/gi,
+      ),
+    ];
     if (
-      /\b(?:insert\s+into|merge\s+into|copy)\s+(?:only\s+)?(?:public\.)?auction_fact_claim_decisions\b/i.test(
-        sql,
+      writes.some(
+        (write) =>
+          !autoDecide.some((entry) => write.index >= entry.start && write.index < entry.end),
       )
     ) {
       failures.push(
-        `${name} writes public.auction_fact_claim_decisions (insert, merge or copy): only ${DECIDE_FUNCTION}, in ${[...DECISION_MIGRATIONS].join(", ")}, writes a decision`,
+        `${name} writes public.auction_fact_claim_decisions (insert, merge or copy): only ${DECIDE_FUNCTION}, in ${[...DECISION_MIGRATIONS].join(", ")}, and ${AUTO_DECIDE_FUNCTION}, in ${AUTO_DECISION_MIGRATION}, write a decision`,
+      );
+    }
+    // La décision automatique n'est nommée que par sa migration.
+    if (
+      name !== AUTO_DECISION_MIGRATION &&
+      /\baccept_information_agent_claim_automatically\b/i.test(sql)
+    ) {
+      failures.push(
+        `${name} names ${AUTO_DECIDE_FUNCTION}: only ${AUTO_DECISION_MIGRATION} defines and calls it`,
+      );
+    }
+  }
+  // Forme de la décision automatique : définie dans sa migration, aucun paramètre d'auteur, ni jeton ni is_admin,
+  // contrôle des déclencheurs avant toute écriture, acceptation du système seulement, corps épinglé.
+  const autoDecide = lastDefinition(AUTO_DECIDE_FUNCTION);
+  if (autoDecide) {
+    const triggerCheck = autoDecide.body.search(
+      /app_private\.assert_fact_registry_triggers\s*\(\s*\)/i,
+    );
+    const firstWrite = autoDecide.body.search(/\binsert\s+into\b|\bupdate\s+[a-z_.]+\s/i);
+    if (
+      autoDecide.migration !== AUTO_DECISION_MIGRATION ||
+      AUTHOR_PARAMETER.test(autoDecide.head) ||
+      AUTHOR_PARAMETER.test(autoDecide.body) ||
+      !/security\s+definer/i.test(autoDecide.head) ||
+      !/set\s+search_path\s*=\s*''/i.test(autoDecide.head) ||
+      /\bauth\s*\.\s*(?:uid|jwt|role|email)\s*\(|\bis_admin\s*\(|request\.jwt/i.test(
+        autoDecide.body,
+      ) ||
+      triggerCheck < 0 ||
+      firstWrite < triggerCheck ||
+      [...autoDecide.body.matchAll(/\binsert\s+into\b/gi)].length !== 1 ||
+      !/'accepted'\s*,\s*'single_lot'\s*,\s*'system'\s*,\s*null\s*,/i.test(autoDecide.body)
+    ) {
+      failures.push(
+        `${autoDecide.migration}: ${AUTO_DECIDE_FUNCTION} must be defined in ${AUTO_DECISION_MIGRATION} only, take no author, read neither the token nor is_admin, check the registry triggers before its single write, and write only an acceptance by the system`,
+      );
+    }
+    const autoFingerprint = createHash("sha256").update(autoDecide.body).digest("hex");
+    if (autoFingerprint !== AUTO_DECIDE_BODY_SHA256) {
+      failures.push(
+        `${autoDecide.migration}: the body of ${AUTO_DECIDE_FUNCTION} is not the reviewed one (fingerprint ${autoFingerprint}): review the change, then update AUTO_DECIDE_BODY_SHA256 in the same commit`,
       );
     }
   }
@@ -2529,7 +2618,12 @@ export async function checkFactRegistryInvariants({
   // 14. registry-rpc-no-error-detail ----------------------------------------------------------------------------
   const ERROR_DETAIL =
     /\bdetail\s*=|\bhint\s*=|pg_exception_detail|pg_exception_hint|pg_exception_context|message_text|\bsqlerrm\b/i;
-  for (const fn of [DECIDE_FUNCTION, SALE_LOCK_FUNCTION, ...DECISION_RPCS.keys()]) {
+  for (const fn of [
+    DECIDE_FUNCTION,
+    AUTO_DECIDE_FUNCTION,
+    SALE_LOCK_FUNCTION,
+    ...DECISION_RPCS.keys(),
+  ]) {
     const definition = lastDefinition(fn);
     if (definition && ERROR_DETAIL.test(definition.body)) {
       failures.push(
