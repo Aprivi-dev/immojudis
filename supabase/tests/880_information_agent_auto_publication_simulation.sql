@@ -1,11 +1,12 @@
 -- 20261115100000 : moteur « publier ou relire » en simulation (propositions 6 et 7).
---   * réglage à ligne unique, 'off' par défaut, mode 'auto' verrouillé (contrainte ET refus de la RPC) ;
+--   * réglage à ligne unique, 'off' par défaut, trois modes (le mode 'auto' est déverrouillé depuis l'étape 6,
+--     20261211100000, test 924) ;
 --   * changement de mode réservé à un administrateur et tracé (qui, quand, ancien et nouveau mode) ;
 --   * arrêt d'urgence : un geste, effet immédiat (plus aucune décision écrite) ;
 --   * journal des décisions en ajout seul, fermé aux rôles de l'API, motifs en liste fermée, champs en liste
 --     fermée ; il suit la vente ;
---   * aucun chemin ne publie : la base refuse toute publication 'auto' (verrou du journal des publications),
---     même par un appel direct du noyau.
+--   * depuis l'étape 6, une publication 'auto' a une forme unique (contrainte de forme du journal des
+--     publications) et une seule fonction appelle le noyau avec 'auto' (test 924).
 begin;
 
 set local timezone = 'UTC';
@@ -73,24 +74,23 @@ select throws_ok(
   '23514', null, 'the settings table keeps a single row'
 );
 select throws_ok(
-  $$update public.information_agent_auto_publication_settings set mode = 'auto'$$,
-  '23514',
-  'new row for relation "information_agent_auto_publication_settings" violates check constraint "information_agent_auto_publication_settings_auto_locked"',
-  'the auto mode cannot be stored, even by a direct write of the owner (lock constraint)'
+  $$update public.information_agent_auto_publication_settings set mode = 'turbo'$$,
+  '23514', null,
+  'only the three modes can be stored, even by a direct write of the owner'
 );
 select is(
   (select pg_get_constraintdef(oid) from pg_constraint
    where conrelid = 'public.information_agent_auto_publication_settings'::regclass
-     and conname = 'information_agent_auto_publication_settings_auto_locked'),
-  'CHECK ((mode <> ''auto''::text))',
-  'the mode lock has its exact definition (a constraint of the same name that checks nothing would fail)'
+     and conname = 'information_agent_auto_publication_settings_mode_check'),
+  'CHECK ((mode = ANY (ARRAY[''off''::text, ''simulation''::text, ''auto''::text])))',
+  'the mode column keeps exactly three modes (the auto lock was lifted at step 6)'
 );
 select is(
   (select pg_get_constraintdef(oid) from pg_constraint
    where conrelid = 'public.information_agent_fact_publications'::regclass
-     and conname = 'information_agent_fact_publications_auto_locked'),
-  'CHECK ((actor_kind <> ''auto''::text))',
-  'the publication lock has its exact definition'
+     and conname = 'information_agent_fact_publications_auto_shape'),
+  'CHECK (((actor_kind <> ''auto''::text) OR ((actor_id IS NULL) AND (policy_version ~ ''^auto_publication_v[0-9]{1,4}$''::text))))',
+  'the publication shape constraint has its exact definition'
 );
 
 -- Fixtures ---------------------------------------------------------------------------------------------------------
@@ -156,13 +156,13 @@ insert into public.information_agent_fact_candidates (
    '88000000-4000-4000-8000-000000000001', '88000000-1000-4000-8000-000000000001', 'rooms_count',
    '{"value": 3}'::jsonb, '3 pièces', 'L''appartement compte 3 pièces.', 0.9, 'accepted');
 
--- Aucun chemin ne publie : le noyau appelé directement avec 'auto' échoue et n'écrit rien ---------------------
+-- Forme d'une publication 'auto' : un appel du noyau hors de cette forme échoue et n'écrit rien --------------------
 select throws_ok(
   $$select app_private.apply_information_agent_fact(
-      '88000000-5000-4000-8000-000000000003', 'auto', null, 'auto_publication_v1')$$,
+      '88000000-5000-4000-8000-000000000003', 'auto', null, 'politique-libre')$$,
   '23514',
-  'new row for relation "information_agent_fact_publications" violates check constraint "information_agent_fact_publications_auto_locked"',
-  'a direct call of the publication core with auto fails on the lock'
+  'new row for relation "information_agent_fact_publications" violates check constraint "information_agent_fact_publications_auto_shape"',
+  'a direct call of the publication core with auto and a version outside the engine format fails on the shape'
 );
 select ok(
   (select rooms_count is null
@@ -175,9 +175,9 @@ select ok(
   'the failed automatic call left neither the sale nor the journal changed'
 );
 select ok(
-  (select prosrc ~ 'Automatic information-agent publications have no fact-claim provenance yet'
+  (select prosrc ~ 'An automatic information-agent publication needs a body fact, no reviewer and a policy version'
      from pg_proc where oid = 'app_private.bridge_accepted_information_agent_fact_claim()'::regprocedure),
-  'the claim bridge still refuses auto as a second barrier'
+  'the claim bridge still frames auto as a second barrier (body fact, no reviewer, policy version)'
 );
 
 -- Mode off : rien n'est écrit -----------------------------------------------------------------------------------
@@ -229,10 +229,12 @@ select throws_ok(
 
 -- Administrateur ----------------------------------------------------------------------------------------------------
 select set_config('request.jwt.claims', '{"sub":"88000000-0000-4000-8000-0000000000a1","role":"authenticated","aal":"aal2"}', true);
-select throws_ok(
-  $$select public.set_information_agent_auto_publication_mode('auto')$$,
-  '55000', null, 'the auto mode is refused by the RPC, even for an administrator'
+select is(
+  (select mode from public.set_information_agent_auto_publication_mode('auto')),
+  'auto',
+  'since step 6 an administrator can switch to the auto mode (no 55000 refusal)'
 );
+select mode from public.set_information_agent_auto_publication_mode('off');
 select throws_ok(
   $$select public.set_information_agent_auto_publication_mode('turbo')$$,
   '22023', null, 'an unknown mode is refused'
@@ -394,16 +396,15 @@ select is(
   'the emergency stop is always allowed, even when already off'
 );
 
--- Aucune fonction n'appelle le noyau avec 'auto' --------------------------------------------------------------------
-select ok(
-  not exists (
-    select 1 from pg_proc
+-- Une seule fonction appelle le noyau avec 'auto' --------------------------------------------------------------------
+select is(
+  (select array_agg(pronamespace::regnamespace::text || '.' || proname order by proname) from pg_proc
     where prokind = 'f'
       and pronamespace in ('public'::regnamespace, 'app_private'::regnamespace)
       and oid <> 'app_private.apply_information_agent_fact(uuid,text,uuid,text)'::regprocedure
-      and prosrc ~* 'apply_information_agent_fact"?\s*\([^)]*''auto'''
-  ),
-  'no function calls the publication core with auto'
+      and prosrc ~* 'apply_information_agent_fact"?\s*\([^)]*''auto'''),
+  array['public.publish_information_agent_fact_auto']::text[],
+  'one function only calls the publication core with auto: the automatic publication RPC'
 );
 
 -- Le journal suit la vente : seule suppression admise --------------------------------------------------------------

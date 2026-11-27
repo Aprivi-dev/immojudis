@@ -9,8 +9,8 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 import {
   AutoPublicationPassError,
   loadLatestAutoPublicationDecisions,
-  runAutoPublicationSimulation,
-  runAutoPublicationSimulationForCron,
+  runAutoPublicationPass,
+  runAutoPublicationPassForCron,
 } from "./auto-publication-store";
 
 type Row = Record<string, unknown>;
@@ -104,7 +104,22 @@ function uuid(prefix: string) {
   return `${prefix}-${String(sequence).padStart(6, "0")}`;
 }
 
-/** Un dossier « propre » : vente vide, dossier répondu, message authentifié, fait net. */
+/** Verdict de Haiku « publier » pour un fait et sa valeur. */
+function verdict(factId: string, value: number, patch: Row = {}) {
+  db.information_agent_auto_publication_arbitrations!.push({
+    id: uuid("arbitration"),
+    fact_id: factId,
+    status: "completed",
+    publish: true,
+    reason_code: "clear_statement",
+    value,
+    prompt_version: "auto_publication_arbiter_v1",
+    recorded_at: "2026-11-19T11:00:00Z",
+    ...patch,
+  });
+}
+
+/** Un dossier « propre » : vente vide, dossier répondu, message authentifié, fait net, verdict « publier ». */
 function seedCleanFact({
   factKey = "surface_m2",
   value = 54,
@@ -123,12 +138,16 @@ function seedCleanFact({
     carrez_surface_m2: null,
     land_surface_m2: null,
     rooms_count: null,
+    quality_flags: [],
+    source_lot_selection: null,
   });
   db.information_agent_cases!.push({
     id: caseId,
     sent_at: "2026-11-18T09:00:00Z",
     recipient_kind: "source_lawyer",
     status: "replied",
+    metadata: {},
+    normalized_recipient_email: `${caseId}@example.test`,
   });
   db.information_agent_messages!.push({
     id: messageId,
@@ -158,13 +177,14 @@ function seedCleanFact({
     metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v3" },
     created_at: createdAt,
   });
+  verdict(factId, value);
   return { saleId, caseId, messageId, factId };
 }
 
 function decision(row: Row) {
   db.information_agent_auto_publication_decisions!.push({
     id: uuid("decision"),
-    policy_version: "auto_publication_v1",
+    policy_version: "auto_publication_v2",
     ...row,
   });
 }
@@ -183,20 +203,38 @@ beforeEach(() => {
     auction_sales: [],
     information_agent_evidence_assets: [],
     information_agent_auto_publication_decisions: [],
+    information_agent_auto_publication_arbitrations: [],
+    information_agent_contacts: [],
   };
   mocks.from.mockImplementation(query);
-  mocks.rpc.mockResolvedValue({ data: true, error: null });
+  mocks.rpc.mockImplementation((name: string) =>
+    Promise.resolve(
+      name === "publish_information_agent_fact_auto"
+        ? { data: { status: "published" }, error: null }
+        : { data: true, error: null },
+    ),
+  );
   vi.spyOn(console, "error").mockImplementation(() => undefined);
 });
 
+/** Décisions inscrites au journal (RPC de journal seulement). */
 function recorded() {
-  return mocks.rpc.mock.calls.map(([, args]) => args as Record<string, unknown>);
+  return mocks.rpc.mock.calls
+    .filter(([name]) => name === "record_information_agent_auto_publication_decision")
+    .map(([, args]) => args as Record<string, unknown>);
+}
+
+/** Appels de la RPC de publication automatique. */
+function published() {
+  return mocks.rpc.mock.calls
+    .filter(([name]) => name === "publish_information_agent_fact_auto")
+    .map(([, args]) => args as Record<string, unknown>);
 }
 
 describe("passe de simulation : modes", () => {
   it("mode arrêt : rien n'est lu ni calculé", async () => {
     db.information_agent_auto_publication_settings = [{ singleton: true, mode: "off" }];
-    expect(await runAutoPublicationSimulation({ now: NOW })).toEqual({
+    expect(await runAutoPublicationPass({ now: NOW })).toEqual({
       status: "inactive",
       mode: "off",
     });
@@ -208,10 +246,10 @@ describe("passe de simulation : modes", () => {
 
   it("table absente : un échec comme un autre, avec son seul code (plus de tolérance de migration)", async () => {
     failures.information_agent_auto_publication_settings = { code: "PGRST205" };
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toMatchObject({
       code: "PGRST205",
     });
-    expect(await runAutoPublicationSimulationForCron()).toEqual({
+    expect(await runAutoPublicationPassForCron()).toEqual({
       status: "failed",
       code: "PGRST205",
     });
@@ -219,10 +257,10 @@ describe("passe de simulation : modes", () => {
 
   it("toute autre erreur du réglage est un échec, avec son seul code", async () => {
     failures.information_agent_auto_publication_settings = { code: "PGRST301" };
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toMatchObject({
       code: "PGRST301",
     });
-    expect(await runAutoPublicationSimulationForCron()).toEqual({
+    expect(await runAutoPublicationPassForCron()).toEqual({
       status: "failed",
       code: "PGRST301",
     });
@@ -230,9 +268,7 @@ describe("passe de simulation : modes", () => {
 
   it("un réglage illisible lève une erreur", async () => {
     db.information_agent_auto_publication_settings = [];
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toThrow(
-      /missing or unreadable/,
-    );
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toThrow(/missing or unreadable/);
   });
 });
 
@@ -243,7 +279,7 @@ describe("passe de simulation : lecture filtrée", () => {
     db.information_agent_fact_candidates!.find((row) => row.id === other.factId)!.status =
       "conflict";
     const occupancy = seedCleanFact({ factKey: "occupancy_status" });
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ status: "done", examined: 1, recorded: 1, wouldPublish: 1 });
     expect(recorded()).toEqual([
       {
@@ -251,7 +287,7 @@ describe("passe de simulation : lecture filtrée", () => {
         p_fact_key: "surface_m2",
         p_outcome: "would_publish",
         p_reasons: [],
-        p_policy_version: "auto_publication_v1",
+        p_policy_version: "auto_publication_v2",
       },
     ]);
     expect(recorded().some((args) => args.p_fact_id === occupancy.factId)).toBe(false);
@@ -261,7 +297,7 @@ describe("passe de simulation : lecture filtrée", () => {
     for (let index = 0; index < 150; index += 1) {
       seedCleanFact({ createdAt: `2026-11-19T10:${String(index % 60).padStart(2, "0")}:00Z` });
     }
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ status: "done", examined: 150, truncated: false });
     expect(mocks.rpc).toHaveBeenCalledTimes(150);
   });
@@ -277,7 +313,7 @@ describe("passe de simulation : lecture filtrée", () => {
       reasons: [],
       decided_at: "2026-11-20T08:00:00Z",
     });
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ unchanged: 1, recorded: 0 });
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
@@ -297,7 +333,7 @@ describe("passe de simulation : lecture filtrée", () => {
         created_at: "2026-01-01T00:00:00Z",
       });
     }
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ wouldPublish: 0, unreadable: 1 });
     expect(recorded()[0]).toMatchObject({
       p_outcome: "review",
@@ -331,7 +367,7 @@ describe("passe de simulation : lecture filtrée", () => {
       metadata: {},
       created_at: "2026-11-19T11:00:00Z",
     });
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
       p_outcome: "review",
       p_reasons: expect.arrayContaining(["other_value_for_sale"]),
@@ -346,7 +382,7 @@ describe("passe de simulation : lecture filtrée", () => {
       id: "asset-body",
       metadata: { evidence_kind: "email_body" },
     });
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     const reasons = recorded()[0]!.p_reasons as string[];
     expect(reasons).toContain("semantic_only_body");
     expect(reasons).not.toContain("attachment_source");
@@ -355,7 +391,7 @@ describe("passe de simulation : lecture filtrée", () => {
   it("une lecture de contexte en échec donne « relecture » et est signalée", async () => {
     seedCleanFact();
     failures.auction_sales = { code: "57014" };
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ status: "done", wouldPublish: 0, review: 1, unreadable: 1 });
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("57014"));
   });
@@ -376,7 +412,7 @@ describe("passe de simulation : plafonds", () => {
       });
     }
     seedCleanFact();
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ examined: 11, frozen: 10, wouldPublish: 1, recorded: 1 });
   });
 
@@ -420,7 +456,8 @@ describe("passe de simulation : plafonds", () => {
       metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v3" },
       created_at: "2026-11-19T08:00:00Z",
     });
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    verdict("fact-2", 54);
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ frozen: 1 });
     expect(recorded().find((args) => args.p_fact_id === "fact-2")).toMatchObject({
       p_outcome: "review",
@@ -441,7 +478,7 @@ describe("passe de simulation : plafonds", () => {
       });
     }
     seedCleanFact();
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     expect(recorded()[0]).toMatchObject({ p_outcome: "review", p_reasons: ["daily_cap_reached"] });
   });
 });
@@ -450,7 +487,7 @@ describe("passe de simulation : écriture bornée", () => {
   it("s'arrête après trois échecs consécutifs du même code", async () => {
     for (let index = 0; index < 5; index += 1) seedCleanFact();
     mocks.rpc.mockResolvedValue({ data: null, error: { code: "23514" } });
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ recordFailed: 3, stoppedOnRepeatedError: true });
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
@@ -458,7 +495,7 @@ describe("passe de simulation : écriture bornée", () => {
   it("s'arrête quand le temps de la passe est épuisé, avec un statut explicite", async () => {
     for (let index = 0; index < 3; index += 1) seedCleanFact();
     let ticks = 0;
-    const result = await runAutoPublicationSimulation({
+    const result = await runAutoPublicationPass({
       now: NOW,
       timeBudgetMs: 10,
       clock: () => (ticks++ < 2 ? 0 : 1_000),
@@ -519,11 +556,11 @@ describe("passe de simulation : état global illisible", () => {
       code: "57014",
       whenFilter: "in:fact_id",
     };
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toBeInstanceOf(
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toBeInstanceOf(
       AutoPublicationPassError,
     );
     expect(mocks.rpc).not.toHaveBeenCalled();
-    expect(await runAutoPublicationSimulationForCron()).toEqual({
+    expect(await runAutoPublicationPassForCron()).toEqual({
       status: "failed",
       code: "decisions_unreadable",
     });
@@ -543,7 +580,7 @@ describe("passe de simulation : état global illisible", () => {
         decided_at: `2026-11-19T08:00:00.${String(index).padStart(3, "0")}Z`,
       });
     }
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toMatchObject({
       code: "decisions_unreadable",
     });
     expect(mocks.rpc).not.toHaveBeenCalled();
@@ -555,7 +592,7 @@ describe("passe de simulation : état global illisible", () => {
       code: "57014",
       whenFilter: "eq:outcome",
     };
-    await expect(runAutoPublicationSimulation({ now: NOW })).rejects.toMatchObject({
+    await expect(runAutoPublicationPass({ now: NOW })).rejects.toMatchObject({
       code: "counters_unreadable",
     });
     expect(mocks.rpc).not.toHaveBeenCalled();
@@ -595,7 +632,8 @@ describe("passe de simulation : branchements prouvés", () => {
       proposed_value: { value: 4 },
       created_at: "2026-11-19T10:02:00Z",
     });
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    verdict("fact-rooms", 4);
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ frozen: 2 });
     expect(recorded()).toEqual([
       expect.objectContaining({
@@ -618,7 +656,7 @@ describe("passe de simulation : branchements prouvés", () => {
       body_text: "Finalement, ne publiez pas cette surface.",
       metadata: { inbound_processing: { status: "completed" } },
     });
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
       p_outcome: "review",
       p_reasons: expect.arrayContaining(["later_message_in_case"]),
@@ -637,7 +675,7 @@ describe("passe de simulation : branchements prouvés", () => {
       body_text: "Ne publiez pas, merci.",
       metadata: { inbound_processing: { status: "completed" } },
     });
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
       p_reasons: expect.arrayContaining(["later_message_in_case"]),
     });
@@ -645,7 +683,7 @@ describe("passe de simulation : branchements prouvés", () => {
 
   it("les faits voisins ne sont lus que pour les champs de la liste fermée", async () => {
     seedCleanFact();
-    await runAutoPublicationSimulation({ now: NOW });
+    await runAutoPublicationPass({ now: NOW });
     const related = queries.filter(
       (item) =>
         item.table === "information_agent_fact_candidates" && item.filters.includes("in:sale_id"),
@@ -664,7 +702,164 @@ describe("passe de simulation : branchements prouvés", () => {
     for (let index = 0; index < 70; index += 1) {
       seedCleanFact({ createdAt: `2026-11-19T10:${String(index % 60).padStart(2, "0")}:00Z` });
     }
-    const result = await runAutoPublicationSimulation({ now: NOW });
+    const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ examined: 70, truncated: false });
+  });
+});
+
+describe("passe du moteur v2 : verdict de Haiku et contrôles structurels", () => {
+  it("sans verdict de Haiku : relecture « verdict pas encore rendu »", async () => {
+    const { factId } = seedCleanFact();
+    db.information_agent_auto_publication_arbitrations = [];
+    await runAutoPublicationPass({ now: NOW });
+    expect(recorded().find((args) => args.p_fact_id === factId)).toMatchObject({
+      p_outcome: "review",
+      p_reasons: ["arbiter_pending"],
+    });
+  });
+
+  it("le dernier verdict compte : un refus après un accord renvoie en relecture", async () => {
+    const { factId } = seedCleanFact();
+    verdict(factId, 54, {
+      publish: false,
+      reason_code: "conditional_or_approximate",
+      recorded_at: "2026-11-19T12:00:00Z",
+    });
+    await runAutoPublicationPass({ now: NOW });
+    expect(recorded()[0]).toMatchObject({ p_outcome: "review", p_reasons: ["arbiter_declined"] });
+  });
+
+  it("le motif générique de la réception ne bloque pas ; un contact opposé bloque", async () => {
+    const clean = seedCleanFact();
+    db.information_agent_messages!.find((row) => row.id === clean.messageId)!.metadata = {
+      imported_manually: false,
+      sender_matches_recipient: true,
+      sender_authentication: { dkim: "pass", dmarc: "pass" },
+      inbound_processing: { status: "review", reason: "candidate_or_attachment_review" },
+    };
+    const opposed = seedCleanFact();
+    db.information_agent_contacts!.push({
+      id: "contact-1",
+      normalized_email: `${opposed.caseId}@example.test`,
+      opposition_status: "opposed",
+    });
+    await runAutoPublicationPass({ now: NOW });
+    expect(recorded().find((args) => args.p_fact_id === clean.factId)).toMatchObject({
+      p_outcome: "would_publish",
+    });
+    expect(recorded().find((args) => args.p_fact_id === opposed.factId)).toMatchObject({
+      p_outcome: "review",
+      p_reasons: ["contact_opposed"],
+    });
+  });
+
+  it("verdicts illisibles : relecture, motif « données illisibles »", async () => {
+    seedCleanFact();
+    failures.information_agent_auto_publication_arbitrations = { code: "57014" };
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ unreadable: 1, wouldPublish: 0 });
+  });
+});
+
+describe("passe du moteur v2 : mode automatique", () => {
+  beforeEach(() => {
+    db.information_agent_auto_publication_settings = [{ singleton: true, mode: "auto" }];
+  });
+
+  it("« publier » appelle la seule RPC de publication, avec la version de la règle, sans écrire au journal", async () => {
+    const { factId } = seedCleanFact();
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ status: "done", mode: "auto", published: 1, recorded: 0 });
+    expect(published()).toEqual([
+      { p_fact_id: factId, p_fact_key: "surface_m2", p_policy_version: "auto_publication_v2" },
+    ]);
+    expect(recorded()).toEqual([]);
+  });
+
+  it("une relecture s'inscrit au journal, sans appel de la RPC de publication", async () => {
+    const { factId } = seedCleanFact();
+    db.information_agent_auto_publication_arbitrations = [];
+    await runAutoPublicationPass({ now: NOW });
+    expect(published()).toEqual([]);
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_fact_id: factId, p_outcome: "review" }),
+    ]);
+  });
+
+  it("arrêt d'urgence pendant la passe : la RPC rend « inactive », plus rien n'est tenté", async () => {
+    seedCleanFact();
+    seedCleanFact();
+    mocks.rpc.mockResolvedValue({ data: { status: "inactive" }, error: null });
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ status: "stopped", published: 0 });
+    expect(published()).toHaveLength(1);
+  });
+
+  it("vente occupée par un import : publication remise à la passe suivante, rien n'est écrit", async () => {
+    seedCleanFact();
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: "55P03" } });
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ deferred: 1, publishFailed: 0 });
+    expect(recorded()).toEqual([]);
+  });
+
+  it("publication en échec : relecture humaine (« publication_failed »), jamais retentée", async () => {
+    const { factId, caseId, saleId } = seedCleanFact();
+    mocks.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "publish_information_agent_fact_auto"
+          ? { data: null, error: { code: "P0001" } }
+          : { data: true, error: null },
+      ),
+    );
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ publishFailed: 1 });
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_fact_id: factId, p_reasons: ["publication_failed"] }),
+    ]);
+
+    mocks.rpc.mockClear();
+    decision({
+      fact_id: factId,
+      case_id: caseId,
+      sale_id: saleId,
+      fact_key: "surface_m2",
+      outcome: "review",
+      reasons: ["publication_failed"],
+      decided_at: "2026-11-20T11:00:00Z",
+    });
+    const again = await runAutoPublicationPass({ now: NOW });
+    expect(again).toMatchObject({ frozen: 1 });
+    expect(published()).toEqual([]);
+  });
+
+  it("une réponse inattendue de la RPC est un échec de publication, pas une publication", async () => {
+    seedCleanFact();
+    mocks.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "publish_information_agent_fact_auto"
+          ? { data: { status: "ok" }, error: null }
+          : { data: true, error: null },
+      ),
+    );
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ published: 0, publishFailed: 1 });
+  });
+
+  it("les plafonds se comptent sur les publications faites, pas sur la simulation", async () => {
+    for (let index = 0; index < 10; index += 1) {
+      decision({
+        fact_id: `simulated-${index}`,
+        case_id: `case-s-${index}`,
+        sale_id: `sale-s-${index}`,
+        fact_key: "surface_m2",
+        outcome: "would_publish",
+        reasons: [],
+        decided_at: "2026-11-20T08:00:00Z",
+      });
+    }
+    seedCleanFact();
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ published: 1 });
   });
 });

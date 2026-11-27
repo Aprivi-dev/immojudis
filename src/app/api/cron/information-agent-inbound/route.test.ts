@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   runMonitoredCron: vi.fn(),
   runInformationAgentInboundQueue: vi.fn(),
   dispatchPendingInformationAgentEvidence: vi.fn(),
-  runAutoPublicationSimulationForCron: vi.fn(),
+  runAutoPublicationPassForCron: vi.fn(),
 }));
 
 vi.mock("@/lib/cron-jobs", () => ({
@@ -19,12 +19,12 @@ vi.mock("@/lib/information-agent-evidence-dispatch.server", () => ({
   dispatchPendingInformationAgentEvidence: mocks.dispatchPendingInformationAgentEvidence,
 }));
 vi.mock("@/lib/information-agent/auto-publication-store", () => ({
-  runAutoPublicationSimulationForCron: mocks.runAutoPublicationSimulationForCron,
+  runAutoPublicationPassForCron: mocks.runAutoPublicationPassForCron,
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.runAutoPublicationSimulationForCron.mockResolvedValue({ status: "inactive", mode: "off" });
+  mocks.runAutoPublicationPassForCron.mockResolvedValue({ status: "inactive", mode: "off" });
   mocks.runMonitoredCron.mockImplementation(
     async (_request: Request, jobName: string, handler: () => Promise<unknown>) => {
       try {
@@ -121,7 +121,7 @@ describe("information-agent inbound queue cron", () => {
     const queue = { claimed: 1, completed: 1, reviewed: 0, ignored: 0, failed: 0 };
     mocks.runInformationAgentInboundQueue.mockResolvedValueOnce(queue);
     mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
-    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce({
+    mocks.runAutoPublicationPassForCron.mockResolvedValueOnce({
       status: "failed",
       code: "PGRST116",
     });
@@ -130,11 +130,11 @@ describe("information-agent inbound queue cron", () => {
 
     expect(mocks.runInformationAgentInboundQueue).toHaveBeenCalledTimes(1);
     expect(failed.status).toBe(500);
-    expect((await failed.json()).error).toBe("Auto-publication simulation failed: code PGRST116.");
+    expect((await failed.json()).error).toBe("Auto-publication pass failed: code PGRST116.");
 
     mocks.runInformationAgentInboundQueue.mockResolvedValueOnce(queue);
     mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
-    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce({
+    mocks.runAutoPublicationPassForCron.mockResolvedValueOnce({
       status: "done",
       examined: 3,
       recorded: 2,
@@ -149,7 +149,33 @@ describe("information-agent inbound queue cron", () => {
 
     expect(partial.status).toBe(500);
     expect((await partial.json()).error).toBe(
-      "Auto-publication simulation failed: 1 decision(s) not recorded.",
+      "Auto-publication pass failed: 1 decision(s) not recorded.",
+    );
+  });
+
+  it("mode automatique : une publication en échec (laissée en relecture) fait échouer le cron", async () => {
+    mocks.runInformationAgentInboundQueue.mockResolvedValueOnce({
+      claimed: 0,
+      completed: 0,
+      reviewed: 0,
+      ignored: 0,
+      failed: 0,
+    });
+    mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
+    mocks.runAutoPublicationPassForCron.mockResolvedValueOnce({
+      status: "done",
+      mode: "auto",
+      examined: 2,
+      published: 1,
+      recordFailed: 0,
+      publishFailed: 1,
+    });
+
+    const response = await GET(new Request("https://example.test/cron"));
+
+    expect(response.status).toBe(500);
+    expect((await response.json()).error).toBe(
+      "Auto-publication pass failed: 1 publication(s) failed and left for review.",
     );
   });
 
@@ -176,7 +202,7 @@ describe("information-agent inbound queue cron", () => {
       timedOut: true,
       stoppedOnRepeatedError: false,
     };
-    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce(timeLimited);
+    mocks.runAutoPublicationPassForCron.mockResolvedValueOnce(timeLimited);
 
     const response = await GET(new Request("https://example.test/cron"));
 
@@ -193,7 +219,7 @@ describe("information-agent inbound queue cron", () => {
       failed: 0,
     });
     mocks.dispatchPendingInformationAgentEvidence.mockResolvedValueOnce({ status: "not_pending" });
-    mocks.runAutoPublicationSimulationForCron.mockResolvedValueOnce({ status: "not_installed" });
+    mocks.runAutoPublicationPassForCron.mockResolvedValueOnce({ status: "not_installed" });
 
     const response = await GET(new Request("https://example.test/cron"));
 

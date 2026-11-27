@@ -25,14 +25,6 @@ function view(overrides: Record<string, unknown> = {}) {
   return {
     mode: "off",
     modeLabel: "Arrêt",
-    autoLocked: true,
-    lockReasons: [
-      "textes juridiques mis à jour et publiés",
-      "AIPD mise à jour et signée",
-      "validation des huit points par un avocat",
-      "jeu d’évaluation à zéro publication fausse",
-      "période de simulation concluante",
-    ],
     eligibleFields: ["surface", "surface du terrain", "nombre de pièces"],
     caps: { daily: 10, perCase: 2 },
     changes: [],
@@ -50,19 +42,30 @@ function renderPanel() {
 }
 
 describe("AdminInformationAgentAutoPublicationPanel", () => {
-  it("affiche le mode, l'automatique verrouillé avec ses conditions, et les plafonds", async () => {
+  it("affiche le mode et les plafonds ; « Automatique » n'est proposé qu'après la confirmation", async () => {
     mocks.fetch.mockResolvedValue(view());
+    mocks.run.mockResolvedValueOnce(view({ mode: "auto", modeLabel: "Automatique" }));
     renderPanel();
     expect(await screen.findByText("Arrêt", { selector: "strong" })).toBeTruthy();
-    const locked = screen.getByRole("button", { name: "Automatique (verrouillé)" });
-    expect((locked as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("AIPD mise à jour et signée")).toBeTruthy();
-    expect(screen.getByText("validation des huit points par un avocat")).toBeTruthy();
+    expect(screen.queryByText(/verrouillé/)).toBeNull();
     expect(screen.getByText(/10 par jour, 2 par dossier/)).toBeTruthy();
     // En mode arrêt, ni « Arrêt » ni l'arrêt d'urgence ne sont proposés.
     expect(
       (screen.getByRole("button", { name: "Arrêt d’urgence" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+    const auto = screen.getByRole("button", { name: "Automatique" }) as HTMLButtonElement;
+    expect(auto.disabled).toBe(true);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /publiées sur les fiches sans relecture/ }),
+    );
+    expect(auto.disabled).toBe(false);
+    fireEvent.click(auto);
+    await waitFor(() =>
+      expect(mocks.run).toHaveBeenCalledWith(
+        { action: "set_mode", mode: "auto" },
+        expect.anything(),
+      ),
+    );
   });
 
   it("lance la simulation, puis l'arrêt d'urgence en un geste", async () => {
@@ -109,9 +112,11 @@ describe("AutoPublicationDecisionNote", () => {
           outcome: "would_publish",
           label: "Aurait été publié",
           reasons: [],
+          arbiterReason: null,
           recorded: true,
           decidedAt: "2026-11-20T09:00:00.000Z",
         }}
+        simulation
       />,
     );
     expect(
@@ -122,18 +127,56 @@ describe("AutoPublicationDecisionNote", () => {
       <AutoPublicationDecisionNote
         decision={{
           outcome: "review",
-          label: "Relecture",
+          label: "À relire",
           reasons: ["plafond atteint : 10 informations par jour"],
+          arbiterReason: null,
           recorded: true,
           decidedAt: null,
         }}
+        simulation
       />,
     );
     expect(
-      screen.getByText("Simulation : relecture (plafond atteint : 10 informations par jour)."),
+      screen.getByText("Simulation : à relire (plafond atteint : 10 informations par jour)."),
     ).toBeTruthy();
     cleanup();
-    render(<AutoPublicationDecisionNote decision={undefined} />);
+    render(<AutoPublicationDecisionNote decision={undefined} simulation />);
     expect(screen.getByText("Simulation : décision du moteur pas encore calculée.")).toBeTruthy();
+  });
+
+  it("mode automatique : « Publié automatiquement le … » ou « À relire (raisons) », motif de l'IA compris", () => {
+    render(
+      <AutoPublicationDecisionNote
+        decision={{
+          outcome: "published",
+          label: "Publié automatiquement",
+          reasons: [],
+          arbiterReason: null,
+          recorded: true,
+          decidedAt: "2026-11-27T09:00:00.000Z",
+        }}
+        simulation={false}
+      />,
+    );
+    expect(screen.getByText("Publié automatiquement le 27 nov. 2026, 10:00.")).toBeTruthy();
+    cleanup();
+    render(
+      <AutoPublicationDecisionNote
+        decision={{
+          outcome: "review",
+          label: "À relire",
+          reasons: ["l’IA (Claude Haiku) ne confirme pas la publication"],
+          arbiterReason: "valeur au conditionnel ou approximative",
+          recorded: true,
+          decidedAt: null,
+        }}
+        simulation={false}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "À relire (l’IA (Claude Haiku) ne confirme pas la publication ; motif de l’IA : valeur au conditionnel ou approximative).",
+      ),
+    ).toBeTruthy();
   });
 });

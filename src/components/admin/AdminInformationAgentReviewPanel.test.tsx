@@ -139,7 +139,7 @@ describe("AdminInformationAgentReviewPanel", () => {
           },
           "44444444-4444-4444-8444-444444444442": {
             outcome: "review",
-            label: "Relecture",
+            label: "À relire",
             reasons: ["le champ est déjà renseigné sur la fiche"],
           },
         },
@@ -155,11 +155,14 @@ describe("AdminInformationAgentReviewPanel", () => {
 
     expect(await screen.findByText("Simulation : aurait été publié.")).toBeTruthy();
     expect(
-      screen.getByText("Simulation : relecture (le champ est déjà renseigné sur la fiche)."),
+      screen.getByText("Simulation : à relire (le champ est déjà renseigné sur la fiche)."),
     ).toBeTruthy();
 
     cleanup();
-    mocks.fetchReview.mockResolvedValue({ ...page, autoPublication: { mode: "off" } });
+    mocks.fetchReview.mockResolvedValue({
+      ...page,
+      autoPublication: { mode: "off", decisions: {} },
+    });
     render(
       <QueryClientProvider
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -169,6 +172,42 @@ describe("AdminInformationAgentReviewPanel", () => {
     );
     expect(await screen.findByText("54 m²")).toBeTruthy();
     expect(screen.queryByText(/^Simulation :/)).toBeNull();
+  });
+
+  it("lists the facts published automatically, with their date and the way to withdraw them", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      messages: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      offset: 0,
+      limit: 50,
+      total: 0,
+      autoPublication: { mode: "auto", decisions: {} },
+      autoPublished: [
+        {
+          factId: "44444444-4444-4444-8444-444444444449",
+          factKey: "surface_m2",
+          displayValue: "54 m²",
+          saleId: "11111111-1111-4111-8111-111111111111",
+          publishedAt: "2026-11-27T09:00:00.000Z",
+        },
+      ],
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Publiées automatiquement, 30 derniers jours (1)")).toBeTruthy();
+    expect(screen.getByText(/Publié automatiquement le 27 nov\. 2026, 10:00/)).toBeTruthy();
+    expect(screen.getByText(/54 m²/)).toBeTruthy();
+    expect(
+      screen.getAllByRole("link", { name: "Ouvrir les observations de cette vente" }).length,
+    ).toBe(1);
   });
 
   it("shows where each fact comes from (email, portal or manual import)", async () => {

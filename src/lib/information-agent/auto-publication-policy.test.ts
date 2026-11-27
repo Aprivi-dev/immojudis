@@ -2,12 +2,15 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_PUBLICATION_ARBITER_REASON_LABELS,
+  AUTO_PUBLICATION_ARBITER_VERSION,
   AUTO_PUBLICATION_CASE_CAP,
   AUTO_PUBLICATION_DAILY_CAP,
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   AUTO_PUBLICATION_MODES,
   AUTO_PUBLICATION_POLICY_VERSION,
   AUTO_PUBLICATION_REASON_LABELS,
+  autoPublicationArbiterReasonLabel,
   autoPublicationReasonLabels,
   decideAutoPublication,
   isPlausibleValue,
@@ -18,6 +21,15 @@ import {
 import { mentionsDoNotPublish, namesPrivatePerson } from "./auto-publication-text";
 
 const SENT_AT = "2026-11-01T09:00:00.000Z";
+
+/** Verdict de Haiku « publier » pour la valeur du fait propre (54). */
+const PUBLISH_VERDICT = {
+  status: "completed",
+  publish: true,
+  reason_code: "clear_statement",
+  value: 54,
+  prompt_version: AUTO_PUBLICATION_ARBITER_VERSION,
+};
 
 /** Un fait qui remplit toutes les conditions : la seule décision « aurait été publié ». */
 function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicationInput {
@@ -46,7 +58,13 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
         inbound_processing: { status: "completed" },
       },
     },
-    informationCase: { sentAt: SENT_AT, recipientKind: "source_lawyer", status: "replied" },
+    informationCase: {
+      sentAt: SENT_AT,
+      recipientKind: "source_lawyer",
+      status: "replied",
+      metadata: {},
+    },
+    contactOpposed: false,
     sale: {
       propertyType: "apartment",
       surfaceM2: null,
@@ -57,11 +75,14 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
       surfaceScope: null,
       landSurfaceM2: null,
       roomsCount: null,
+      qualityFlags: [],
+      sourceLotSelection: null,
     },
     otherCandidatesForKey: 0,
     otherValuesForSale: 0,
-    laterMessages: [],
+    otherMessages: [],
     fieldFilledInSimulation: false,
+    arbitration: { found: true, row: PUBLISH_VERDICT },
     ...overrides,
   };
 }
@@ -86,6 +107,10 @@ function withSale(patch: Partial<NonNullable<AutoPublicationInput["sale"]>>) {
   return cleanInput({ sale: { ...base.sale!, ...patch } });
 }
 
+function withVerdict(patch: Record<string, unknown>) {
+  return cleanInput({ arbitration: { found: true, row: { ...PUBLISH_VERDICT, ...patch } } });
+}
+
 function reasonsOf(input: AutoPublicationInput) {
   return decideAutoPublication(input).reasons;
 }
@@ -105,13 +130,47 @@ describe("moteur « publier ou relire » : le cas net", () => {
             proposedValue: { value: "850" },
           },
           sale: { ...cleanInput().sale!, propertyType: "house" },
+          arbitration: { found: true, row: { ...PUBLISH_VERDICT, value: "850" } },
         }),
       ).outcome,
     ).toBe("would_publish");
     expect(
-      decideAutoPublication(withCandidate({ factKey: "rooms_count", proposedValue: { value: 3 } }))
-        .outcome,
+      decideAutoPublication({
+        ...withCandidate({ factKey: "rooms_count", proposedValue: { value: 3 } }),
+        arbitration: { found: true, row: { ...PUBLISH_VERDICT, value: 3 } },
+      }).outcome,
     ).toBe("would_publish");
+  });
+
+  it("le motif générique de relecture de la réception ne bloque pas, ni un dossier en relecture", () => {
+    expect(
+      decideAutoPublication({
+        ...withMessageMetadata({
+          inbound_processing: { status: "review", reason: "candidate_or_attachment_review" },
+        }),
+        informationCase: {
+          sentAt: SENT_AT,
+          recipientKind: "source_lawyer",
+          status: "review",
+          metadata: {},
+        },
+      }),
+    ).toEqual({ outcome: "would_publish", reasons: [] });
+  });
+
+  it("règles de prudence de la version 1 confiées à Haiku : elles ne bloquent plus d'elles-mêmes", () => {
+    // Accord des règles et de l'IA, motifs de la phrase et nom d'un particulier : Haiku juge la phrase.
+    for (const input of [
+      withCandidate({ metadata: {} }),
+      withCandidate({
+        metadata: { semantic_agreement: false, semantic_extraction_method: "semantic_evidence_v3" },
+      }),
+      withCandidate({ metadata: { review_reasons: ["hedged_statement"] } }),
+      withMessage({ bodyText: "La surface est de 54 m². Le bien est occupé par M. Martin." }),
+      withMessage({ subject: "Vente Mme Martin" }),
+    ]) {
+      expect(decideAutoPublication(input)).toEqual({ outcome: "would_publish", reasons: [] });
+    }
   });
 });
 
@@ -165,7 +224,12 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     [
       "dossier adressé à un greffe ou un notaire",
       cleanInput({
-        informationCase: { sentAt: SENT_AT, recipientKind: "source_contact", status: "replied" },
+        informationCase: {
+          sentAt: SENT_AT,
+          recipientKind: "source_contact",
+          status: "replied",
+          metadata: {},
+        },
       }),
       "recipient_not_lawyer",
     ],
@@ -175,51 +239,37 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       withCandidate({ evidenceAssetId: "asset-1", evidenceKind: "attachment" }),
       "attachment_source",
     ],
-    // 3. Accord des règles et de l'IA, valeur unique.
-    ["IA absente", withCandidate({ metadata: {} }), "semantic_not_confirmed"],
+    // 3. Verdict de Haiku (moteur v2) : il remplace l'accord des règles et de l'IA de la version 1.
+    ["aucun verdict", cleanInput({ arbitration: { found: false } }), "arbiter_pending"],
     [
-      "IA en désaccord",
-      withCandidate({
-        metadata: { semantic_agreement: false, semantic_extraction_method: "semantic_evidence_v3" },
-      }),
-      "semantic_not_confirmed",
+      "verdict d'un autre prompt",
+      withVerdict({ prompt_version: "auto_publication_arbiter_v0" }),
+      "arbiter_pending",
     ],
     [
-      "IA en version 2",
-      withCandidate({
-        metadata: { semantic_agreement: true, semantic_extraction_method: "semantic_evidence_v2" },
-      }),
-      "semantic_not_confirmed",
+      "Haiku refuse",
+      withVerdict({ publish: false, reason_code: "conditional_or_approximate" }),
+      "arbiter_declined",
     ],
+    [
+      "verdict en erreur",
+      withVerdict({ status: "unavailable", publish: false, reason_code: null }),
+      "arbiter_unavailable",
+    ],
+    ["verdict mal formé", withVerdict({ publish: "oui" }), "arbiter_unavailable"],
+    ["motif hors liste", withVerdict({ reason_code: "parce_que" }), "arbiter_unavailable"],
+    ["verdict sur une autre valeur", withVerdict({ value: 64 }), "arbiter_value_mismatch"],
     [
       "autre valeur dans la réponse",
       cleanInput({ otherCandidatesForKey: 1 }),
       "other_value_in_reply",
     ],
-    // 4 et 5. Motifs de la phrase et du lot.
-    ...(
-      ["hedged_statement", "value_range", "pending_verification", "lot_unidentified"] as const
-    ).map((reason): [string, AutoPublicationInput, string] => [
-      `motif ${reason}`,
-      withCandidate({
-        metadata: {
-          semantic_agreement: true,
-          semantic_extraction_method: "semantic_evidence_v3",
-          review_reasons: [reason],
-        },
-      }),
-      "statement_review_reason",
-    ]),
+    // 4 et 5. Lot : seule une vente à un seul lot est publiée (le reste des motifs de phrase est jugé par Haiku).
+    ["vente à plusieurs lots", withSale({ qualityFlags: ["multi_lot_sale"] }), "multi_lot_sale"],
     [
-      "lot non identifié (marque historique)",
-      withCandidate({
-        metadata: {
-          semantic_agreement: true,
-          semantic_extraction_method: "semantic_evidence_v3",
-          lot_unidentified: true,
-        },
-      }),
-      "statement_review_reason",
+      "lot vendu choisi dans l'annonce",
+      withSale({ sourceLotSelection: { status: "selected", lot_number: 2 } }),
+      "multi_lot_sale",
     ],
     // Réponse entière en relecture ou non traitée.
     [
@@ -234,6 +284,19 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       withMessageMetadata({ inbound_processing: { status: "processing" } }),
       "reply_in_review",
     ],
+    ...(
+      [
+        "possible_prompt_injection",
+        "wrong_recipient",
+        "sender_mismatch",
+        "ambiguous_reply_review",
+        "unidentified_lot_review",
+      ] as const
+    ).map((reason): [string, AutoPublicationInput, string] => [
+      `réponse en relecture pour ${reason}`,
+      withMessageMetadata({ inbound_processing: { status: "review", reason } }),
+      "reply_in_review",
+    ]),
     // 7. Ne pas publier, particulier, manipulation.
     [
       "ne pas publier",
@@ -241,11 +304,6 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
         bodyText: "La surface est de 54 m². Merci de ne pas publier cette information.",
       }),
       "do_not_publish_requested",
-    ],
-    [
-      "particulier nommé",
-      withMessage({ bodyText: "La surface est de 54 m². Le bien est occupé par M. Martin." }),
-      "private_person_named",
     ],
     [
       "manipulation",
@@ -316,17 +374,50 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     ],
     // Dossier et messages postérieurs.
     [
-      "dossier repassé en relecture",
+      "dossier clos",
       cleanInput({
-        informationCase: { sentAt: SENT_AT, recipientKind: "source_lawyer", status: "review" },
+        informationCase: {
+          sentAt: SENT_AT,
+          recipientKind: "source_lawyer",
+          status: "completed",
+          metadata: {},
+        },
       }),
       "case_not_replied",
     ],
     [
+      "dossier marqué opposé",
+      cleanInput({
+        informationCase: {
+          sentAt: SENT_AT,
+          recipientKind: "source_lawyer",
+          status: "review",
+          metadata: { last_inbound_contact_opposed: true },
+        },
+      }),
+      "case_not_replied",
+    ],
+    ["contact opposé au registre", cleanInput({ contactOpposed: true }), "contact_opposed"],
+    [
+      "« ne publiez rien » dans un message antérieur",
+      cleanInput({
+        otherMessages: [
+          {
+            after: false,
+            subject: "Re: demande",
+            bodyText: "Je vous réponds, mais ne publiez rien de ce que je vous écris.",
+            metadata: { inbound_processing: { status: "completed" } },
+          },
+        ],
+      }),
+      "other_message_in_case",
+    ],
+    [
       "opposition reçue ensuite",
       cleanInput({
-        laterMessages: [
+        otherMessages: [
           {
+            after: true,
             subject: "Re: demande",
             bodyText: "Merci de ne plus me contacter.",
             metadata: { inbound_processing: { status: "review", reason: "contact_opposed" } },
@@ -338,8 +429,9 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     [
       "« finalement, ne publiez pas » dans un message traité",
       cleanInput({
-        laterMessages: [
+        otherMessages: [
           {
+            after: true,
             subject: "Re: demande",
             bodyText: "Finalement, ne publiez pas cette surface.",
             metadata: { inbound_processing: { status: "completed" } },
@@ -351,8 +443,13 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     [
       "message postérieur encore en traitement",
       cleanInput({
-        laterMessages: [
-          { subject: null, bodyText: null, metadata: { inbound_processing: { status: "queued" } } },
+        otherMessages: [
+          {
+            after: true,
+            subject: null,
+            bodyText: null,
+            metadata: { inbound_processing: { status: "queued" } },
+          },
         ],
       }),
       "later_message_in_case",
@@ -366,11 +463,6 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       "« ne pas publier » dans l'objet",
       withMessage({ subject: "CONFIDENTIEL" }),
       "do_not_publish_requested",
-    ],
-    [
-      "particulier nommé dans l'objet",
-      withMessage({ subject: "Vente Mme Martin" }),
-      "private_person_named",
     ],
   ];
 
@@ -392,14 +484,21 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
     [
       "date d'envoi absente",
       cleanInput({
-        informationCase: { sentAt: null, recipientKind: "source_lawyer", status: "replied" },
+        informationCase: {
+          sentAt: null,
+          recipientKind: "source_lawyer",
+          status: "replied",
+          metadata: {},
+        },
       }),
     ],
     ["vente illisible", cleanInput({ sale: null })],
     ["métadonnées du fait illisibles", withCandidate({ metadata: null })],
     ["autres candidats illisibles", cleanInput({ otherCandidatesForKey: null })],
     ["autres valeurs de la vente illisibles", cleanInput({ otherValuesForSale: null })],
-    ["messages postérieurs illisibles", cleanInput({ laterMessages: null })],
+    ["autres messages du dossier illisibles", cleanInput({ otherMessages: null })],
+    ["verdicts de Haiku illisibles", cleanInput({ arbitration: null })],
+    ["registre des contacts illisible", cleanInput({ contactOpposed: null })],
     [
       "nature de la pièce illisible",
       withCandidate({ evidenceAssetId: "asset-1", evidenceKind: null }),
@@ -412,7 +511,7 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
     expect(decision.reasons).toContain("input_unreadable");
   });
 
-  it("des motifs de relecture illisibles comptent comme des motifs", () => {
+  it("des motifs de relecture de la phrase ne sont plus lus (Haiku juge la phrase), même illisibles", () => {
     expect(
       reasonsOf(
         withCandidate({
@@ -423,7 +522,7 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
           },
         }),
       ),
-    ).toContain("statement_review_reason");
+    ).toEqual([]);
   });
 });
 
@@ -589,6 +688,10 @@ describe("plafonds, appliqués dès la simulation", () => {
             proposedValue: { value: factKey === "rooms_count" ? 4 : 120 },
           },
           sale: { ...cleanInput().sale!, propertyType: "house" },
+          arbitration: {
+            found: true,
+            row: { ...PUBLISH_VERDICT, value: factKey === "rooms_count" ? 4 : 120 },
+          },
         }),
       }),
     );
@@ -672,7 +775,7 @@ describe("verrous figés", () => {
       .map((name) => readFileSync(join(migrations, name), "utf8"));
     const definitions = sources.flatMap((sql) => [
       ...sql.matchAll(
-        /information_agent_auto_publication_decisions_eligible_check\s+check\s*\(\s*outcome\s*<>\s*'would_publish'\s+or\s+fact_key\s+in\s*\(([^)]*)\)/gi,
+        /information_agent_auto_publication_decisions_eligible_check\s+check\s*\(\s*outcome\s*(?:<>\s*'would_publish'|not\s+in\s*\([^)]*\))\s+or\s+fact_key\s+in\s*\(([^)]*)\)/gi,
       ),
     ]);
     expect(definitions.length).toBeGreaterThan(0);
@@ -682,21 +785,67 @@ describe("verrous figés", () => {
     ]);
   });
 
-  it("trois modes, et la base refuse d'enregistrer le mode automatique", () => {
+  it("trois modes ; l'étape 6 retire le verrou du mode automatique sans jamais écrire le mode", () => {
     expect([...AUTO_PUBLICATION_MODES]).toEqual(["off", "simulation", "auto"]);
+    const read = (name: string) =>
+      readFileSync(join(process.cwd(), "supabase", "migrations", name), "utf8");
+    expect(read("20261115100000_information_agent_auto_publication_simulation.sql")).toMatch(
+      /mode text not null default 'off'/,
+    );
+    const step6 = read("20261211100000_information_agent_auto_publication_live.sql").replace(
+      /--[^\n]*/g,
+      "",
+    );
+    expect(step6).toMatch(
+      /drop constraint if exists information_agent_auto_publication_settings_auto_locked/,
+    );
+    expect(step6).not.toMatch(/set\s+mode\s*=\s*'auto'/i);
+    expect(step6).not.toMatch(
+      /information_agent_auto_publication_settings\s*\([^)]*\)\s*values[^;]*'auto'/i,
+    );
+  });
+
+  it("verdicts de Haiku : la contrainte de la table porte exactement la liste des motifs, « publier » ne va qu'avec la déclaration nette", () => {
     const sql = readFileSync(
       join(
         process.cwd(),
         "supabase",
         "migrations",
-        "20261115100000_information_agent_auto_publication_simulation.sql",
+        "20261211100000_information_agent_auto_publication_live.sql",
       ),
       "utf8",
     );
-    expect(sql).toMatch(
-      /constraint information_agent_auto_publication_settings_auto_locked check \(mode <> 'auto'\)/,
+    const list = /reason_code is null or reason_code in \(([^)]*)\)/.exec(sql)?.[1];
+    expect(list).toBeDefined();
+    expect([...list!.matchAll(/'([a-z_]+)'/g)].map((match) => match[1])).toEqual(
+      Object.keys(AUTO_PUBLICATION_ARBITER_REASON_LABELS),
     );
-    expect(sql).toMatch(/mode text not null default 'off'/);
+    expect(sql).toMatch(/reason_code = 'clear_statement'/);
+    expect(sql).toContain(`'^auto_publication_arbiter_v[0-9]{1,4}$'`);
+    expect(AUTO_PUBLICATION_ARBITER_VERSION).toMatch(/^auto_publication_arbiter_v[0-9]{1,4}$/);
+    expect(autoPublicationArbiterReasonLabel("other_lot_or_property")).toBe(
+      "valeur d’un autre lot ou d’un autre bien",
+    );
+    expect(autoPublicationArbiterReasonLabel("inconnu")).toBe("motif non reconnu");
+  });
+
+  it("verdicts de Haiku : même version de prompt et mêmes motifs dans le worker Python", () => {
+    const python = readFileSync(
+      join(
+        process.cwd(),
+        "services",
+        "data-pipeline",
+        "src",
+        "information_agent_auto_publication_arbiter.py",
+      ),
+      "utf8",
+    );
+    expect(python).toContain(`ARBITER_PROMPT_VERSION = "${AUTO_PUBLICATION_ARBITER_VERSION}"`);
+    const codes = /ARBITER_REASON_CODES = \(([\s\S]*?)\)/.exec(python)?.[1];
+    expect(codes).toBeDefined();
+    expect([...codes!.matchAll(/"([a-z_]+)"/g)].map((match) => match[1])).toEqual(
+      Object.keys(AUTO_PUBLICATION_ARBITER_REASON_LABELS),
+    );
   });
 
   it("la contrainte du journal porte exactement la liste des motifs (concordance TypeScript et SQL)", () => {

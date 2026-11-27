@@ -1692,6 +1692,7 @@ export type Database = {
           information_agent_fact_id: string | null;
           lot_attachment: string;
           lot_ref: string | null;
+          policy_version: string | null;
           publication_mode: string;
           reason_code: string | null;
           received_at: string | null;
@@ -1711,6 +1712,7 @@ export type Database = {
           information_agent_fact_id?: string | null;
           lot_attachment: string;
           lot_ref?: string | null;
+          policy_version?: string | null;
           publication_mode?: string;
           reason_code?: string | null;
           received_at?: string | null;
@@ -1730,6 +1732,7 @@ export type Database = {
           information_agent_fact_id?: string | null;
           lot_attachment?: string;
           lot_ref?: string | null;
+          policy_version?: string | null;
           publication_mode?: string;
           reason_code?: string | null;
           received_at?: string | null;
@@ -6806,6 +6809,117 @@ export type Database = {
           user_id?: string;
         };
         Relationships: [];
+      };
+      information_agent_auto_publication_arbitrations: {
+        Row: {
+          case_id: string;
+          confidence: number | null;
+          error_code: string | null;
+          fact_id: string;
+          fact_key: string;
+          id: string;
+          message_id: string;
+          model: string;
+          prompt_version: string;
+          publish: boolean;
+          reason_code: string | null;
+          recorded_at: string;
+          sale_id: string;
+          status: string;
+          value: number;
+        };
+        Insert: {
+          case_id: string;
+          confidence?: number | null;
+          error_code?: string | null;
+          fact_id: string;
+          fact_key: string;
+          id?: string;
+          message_id: string;
+          model: string;
+          prompt_version: string;
+          publish?: boolean;
+          reason_code?: string | null;
+          recorded_at?: string;
+          sale_id: string;
+          status: string;
+          value: number;
+        };
+        Update: {
+          case_id?: string;
+          confidence?: number | null;
+          error_code?: string | null;
+          fact_id?: string;
+          fact_key?: string;
+          id?: string;
+          message_id?: string;
+          model?: string;
+          prompt_version?: string;
+          publish?: boolean;
+          reason_code?: string | null;
+          recorded_at?: string;
+          sale_id?: string;
+          status?: string;
+          value?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "auction_sales";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_map_pins";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_preview";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_app_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_discovery_search";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "information_agent_auto_publication_arbitrations_sale_id_fkey";
+            columns: ["sale_id"];
+            isOneToOne: false;
+            referencedRelation: "v_auction_sales_unlocked";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       information_agent_auto_publication_decisions: {
         Row: {
@@ -16862,6 +16976,10 @@ export type Database = {
       };
       postgis_version: { Args: never; Returns: string };
       postgis_wagyu_version: { Args: never; Returns: string };
+      publish_information_agent_fact_auto: {
+        Args: { p_fact_id: string; p_fact_key: string; p_policy_version: string };
+        Returns: Json;
+      };
       publish_information_agent_email_template: {
         Args: { p_admin_id: string; p_template_id: string };
         Returns: {
@@ -16993,6 +17111,20 @@ export type Database = {
           p_user_id?: string;
         };
         Returns: string;
+      };
+      record_information_agent_auto_publication_arbitration: {
+        Args: {
+          p_confidence: number;
+          p_error_code: string;
+          p_fact_id: string;
+          p_model: string;
+          p_prompt_version: string;
+          p_publish: boolean;
+          p_reason_code: string;
+          p_status: string;
+          p_value: number;
+        };
+        Returns: boolean;
       };
       record_information_agent_auto_publication_decision: {
         Args: {

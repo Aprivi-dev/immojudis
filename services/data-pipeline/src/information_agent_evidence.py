@@ -18,6 +18,7 @@ import pymupdf as fitz
 
 from src.config import llm_provider, load_settings
 from src.image_dimensions import _isobmff_dimensions, _jpeg_dimensions, _webp_dimensions
+from src.information_agent_auto_publication_arbiter import run_arbitration_pass
 from src.information_agent_evidence_child import (
     child_popen_kwargs,
     kill_and_collect,
@@ -209,6 +210,13 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
                 client, supabase_url, service_key, jobs[0], read_deadline=read_deadline, requeue_not_before=batch_end
             )
             processed += 1
+        # Publication automatique (étape 6) : verdict de Claude Haiku sur les informations du corps des réponses, après
+        # le lot (les faits des règles et la lecture du corps sont alors écrits). Un échec est signalé et n'arrête pas
+        # le worker : un fait sans verdict reste en relecture humaine.
+        try:
+            run_arbitration_pass(client, supabase_url, service_key, settings)
+        except Exception as exc:
+            print(f"information_agent.auto_publication_arbiter failed: {type(exc).__name__}", file=sys.stderr)
     return processed
 
 

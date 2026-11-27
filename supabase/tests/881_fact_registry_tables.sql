@@ -357,8 +357,8 @@ select is(
        and attribute.attname not in (
          'field_key', 'decision', 'lot_attachment', 'actor_kind', 'reason_code', 'recipient_kind',
          'publication_mode', 'event')),
-  array['lot_ref']::text[],
-  'apart from the lot label (40 characters at most), every text column of the journals is a closed list'
+  array['lot_ref', 'policy_version']::text[],
+  'apart from the lot label (40 characters at most) and the policy version of an automatic decision (auto_publication_vN, step 6), every text column of the journals is a closed list'
 );
 
 -- Le libellé du lot : un motif structurel (20261117100100), écrit sans BETWEEN.
@@ -466,11 +466,11 @@ select throws_ok(
       'property.rooms_count', 'accepted', 'single_lot', 'admin', '88100000-0000-4000-8000-0000000000a1',
       'auto')$$,
   '23514',
-  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_auto_locked"',
-  'automatic publication is locked: no decision can be automatic'
+  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_auto_shape"',
+  'an automatic decision has one shape only (step 6): never an administrator decision'
 );
 
--- Qui peut accepter : un administrateur existant, et personne d'autre.
+-- Qui peut accepter : un administrateur existant, ou la publication automatique (étape 6), et personne d'autre.
 select throws_ok(
   $$insert into public.auction_fact_claim_decisions (
       claim_id, sale_id, field_key, decision, lot_attachment, actor_kind
@@ -478,8 +478,8 @@ select throws_ok(
       '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
       'property.rooms_count', 'accepted', 'single_lot', 'system')$$,
   '23514',
-  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_accepted_by_admin"',
-  'the system never accepts a piece'
+  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_accepted_by_admin_or_auto"',
+  'the system never accepts a piece outside an automatic publication'
 );
 
 select throws_ok(
@@ -489,7 +489,7 @@ select throws_ok(
       '88100000-2000-4000-8000-000000000002', '88100000-1000-4000-8000-000000000001',
       'property.rooms_count', 'accepted', 'single_lot', 'lawyer', '88100000-0000-4000-8000-0000000000a1')$$,
   '23514',
-  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_accepted_by_admin"',
+  'new row for relation "auction_fact_claim_decisions" violates check constraint "auction_fact_claim_decisions_accepted_by_admin_or_auto"',
   'a lawyer cannot accept a piece alone: the answer is an observation, accepted by a member of the team'
 );
 

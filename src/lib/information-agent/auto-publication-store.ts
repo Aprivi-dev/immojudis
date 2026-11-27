@@ -10,14 +10,17 @@ import {
   type AutoPublicationMode,
   type AutoPublicationPlanItem,
 } from "@/lib/information-agent/auto-publication-policy";
+import { z } from "zod";
 import { startOfParisDay } from "@/lib/paris-time";
 import { chunks } from "@/lib/chunks";
 
 /**
- * Accès en base du moteur « publier ou relire » (migration 20261115100000) : lecture du mode, passe de
- * simulation (lecture des faits et de leur contexte, décision, journal) et lecture des dernières décisions.
- * Rien ici n'écrit sur une fiche : le journal est la seule écriture, par la RPC de service qui n'écrit
- * qu'en mode « simulation ».
+ * Accès en base du moteur « publier ou relire » (migrations 20261115100000 et 20261211100000) : lecture du mode,
+ * passe du moteur (lecture des faits, de leur contexte et du verdict de Haiku, décision, journal) et lecture des
+ * dernières décisions. En simulation, le journal est la seule écriture. En mode automatique, une décision
+ * « publier » appelle `publish_information_agent_fact_auto` : SEUL appelant de la seule RPC qui publie avec
+ * l'auteur 'auto' (invariant information-agent-single-automatic-publication-path). La RPC relit le mode sous
+ * verrou (arrêt d'urgence), redit les contrôles de sécurité et tient les plafonds en base.
  */
 
 /** Fenêtre des faits examinés : au-delà, la réponse est hors du délai de 30 jours de toute façon. */
@@ -46,17 +49,21 @@ export class AutoPublicationPassError extends Error {
 }
 
 export type AutoPublicationDecisionRow = {
-  outcome: "would_publish" | "review";
+  outcome: "would_publish" | "published" | "review";
   reasons: string[];
   decidedAt: string;
   policyVersion: string;
 };
 
-export type AutoPublicationSimulationResult =
+export type AutoPublicationPassResult =
   | { status: "inactive"; mode: AutoPublicationMode }
   | {
-      /** `time_limit_reached` : la limite de temps a arrêté l'écriture (visible, pas un échec). */
-      status: "done" | "time_limit_reached";
+      /**
+       * `time_limit_reached` : la limite de temps a arrêté l'écriture (visible, pas un échec). `stopped` : le mode
+       * a changé pendant la passe (arrêt d'urgence) ; la RPC de publication n'a plus rien publié.
+       */
+      status: "done" | "time_limit_reached" | "stopped";
+      mode: "simulation" | "auto";
       /** Faits ouverts lus (en attente, champ de la liste fermée). */
       examined: number;
       /** Faits déjà « publiés » en simulation un jour antérieur : sortis du lot. */
@@ -65,7 +72,13 @@ export type AutoPublicationSimulationResult =
       /** Décision identique à la dernière du journal : aucun appel. */
       unchanged: number;
       wouldPublish: number;
+      /** Mode automatique : faits publiés par la RPC dans cette passe. */
+      published: number;
       review: number;
+      /** Mode automatique : publication remise à la passe suivante (vente occupée par un import, conflit). */
+      deferred: number;
+      /** Mode automatique : publication en échec, laissée en relecture humaine (motif `publication_failed`). */
+      publishFailed: number;
       /** Faits décidés « relecture » parce qu'une lecture a échoué (signalés dans le journal serveur). */
       unreadable: number;
       /** Décisions que la RPC n'a pas pu écrire. */
@@ -199,7 +212,11 @@ async function readLatestDecisions(
   const latest = new Map<string, AutoPublicationDecisionRow>();
   for (const row of rows) {
     if (latest.has(row.fact_id)) continue;
-    if (row.outcome !== "would_publish" && row.outcome !== "review") {
+    if (
+      row.outcome !== "would_publish" &&
+      row.outcome !== "published" &&
+      row.outcome !== "review"
+    ) {
       logFailure("latest_decisions", { code: "invalid_outcome" });
       return null;
     }
@@ -220,6 +237,7 @@ async function readLatestDecisions(
 async function loadCounters(
   now: Date,
   plan: CandidateRow[],
+  outcome: "would_publish" | "published",
 ): Promise<AutoPublicationCounters | null> {
   const inPlan = new Set(plan.map((row) => row.id));
   const {
@@ -229,7 +247,7 @@ async function loadCounters(
   } = await supabaseAdmin
     .from("information_agent_auto_publication_decisions")
     .select("id,fact_id", { count: "exact" })
-    .eq("outcome", "would_publish")
+    .eq("outcome", outcome)
     .gte("decided_at", startOfParisDay(now).toISOString())
     .order("decided_at", { ascending: false })
     .order("id", { ascending: false })
@@ -249,7 +267,7 @@ async function loadCounters(
       supabaseAdmin
         .from("information_agent_auto_publication_decisions")
         .select("id,fact_id,case_id", { count: "exact" })
-        .eq("outcome", "would_publish")
+        .eq("outcome", outcome)
         .in("case_id", ids)
         .order("id", { ascending: true })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
@@ -261,7 +279,7 @@ async function loadCounters(
       supabaseAdmin
         .from("information_agent_auto_publication_decisions")
         .select("id,fact_id,sale_id,fact_key", { count: "exact" })
-        .eq("outcome", "would_publish")
+        .eq("outcome", outcome)
         .in("sale_id", ids)
         .order("id", { ascending: true })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
@@ -327,7 +345,8 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
   const saleIds = plan.map((row) => row.sale_id);
   const assetIds = plan.flatMap((row) => (row.evidence_asset_id ? [row.evidence_asset_id] : []));
   const eligible = [...AUTO_PUBLICATION_ELIGIBLE_FIELDS];
-  const [messages, cases, sales, related, assets] = await Promise.all([
+  const factIds = plan.map((row) => row.id);
+  const [messages, cases, sales, related, assets, arbitrations] = await Promise.all([
     readInChunks<MessageRow>("messages", caseIds, (ids) =>
       supabaseAdmin
         .from("information_agent_messages")
@@ -343,7 +362,9 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
     readInChunks("cases", caseIds, (ids) =>
       supabaseAdmin
         .from("information_agent_cases")
-        .select("id,sent_at,recipient_kind,status", { count: "exact" })
+        .select("id,sent_at,recipient_kind,status,metadata,normalized_recipient_email", {
+          count: "exact",
+        })
         .in("id", ids)
         .order("id", { ascending: true })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
@@ -352,7 +373,7 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
       supabaseAdmin
         .from("auction_sales")
         .select(
-          "id,property_type,surface_m2,app_surface_m2,app_surface_kind,surface_scope,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count",
+          "id,property_type,surface_m2,app_surface_m2,app_surface_kind,surface_scope,habitable_surface_m2,carrez_surface_m2,land_surface_m2,rooms_count,quality_flags,source_lot_selection:raw_payload->source_lot_selection",
           { count: "exact" },
         )
         .in("id", ids)
@@ -379,7 +400,41 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
             .limit(AUTO_PUBLICATION_REQUEST_ROWS),
         )
       : Promise.resolve([]),
+    // Verdicts de Haiku, le plus récent d'abord (validés par le moteur, jamais crus sur parole).
+    readInChunks("arbitrations", factIds, (ids) =>
+      supabaseAdmin
+        .from("information_agent_auto_publication_arbitrations")
+        .select("id,fact_id,status,publish,reason_code,value,prompt_version,recorded_at", {
+          count: "exact",
+        })
+        .in("fact_id", ids)
+        .order("recorded_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
+    ),
   ]);
+  // Opposition du destinataire (registre des contacts, toute portée), lue après le dossier.
+  const recipients = (cases ?? []).flatMap((row) =>
+    row.normalized_recipient_email ? [row.normalized_recipient_email] : [],
+  );
+  const opposed = cases
+    ? recipients.length
+      ? await readInChunks("contacts", recipients, (emails) =>
+          supabaseAdmin
+            .from("information_agent_contacts")
+            .select("id,normalized_email", { count: "exact" })
+            .in("normalized_email", emails)
+            .eq("opposition_status", "opposed")
+            .order("id", { ascending: true })
+            .limit(AUTO_PUBLICATION_REQUEST_ROWS),
+        )
+      : []
+    : null;
+  const opposedEmails = new Set((opposed ?? []).map((row) => row.normalized_email));
+  const latestArbitration = new Map<string, unknown>();
+  for (const row of arbitrations ?? []) {
+    if (!latestArbitration.has(row.fact_id)) latestArbitration.set(row.fact_id, row);
+  }
 
   const messageById = new Map((messages ?? []).map((row) => [row.id, row]));
   const caseById = new Map((cases ?? []).map((row) => [row.id, row]));
@@ -394,14 +449,16 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
       asset?.metadata && typeof asset.metadata === "object" && !Array.isArray(asset.metadata)
         ? (asset.metadata as Record<string, unknown>)
         : null;
-    const laterMessages =
+    const otherMessages =
       messages && message
-        ? messages.filter(
-            (other) =>
-              other.case_id === row.case_id &&
-              other.id !== message.id &&
-              receivedAfter(other, message),
-          )
+        ? messages
+            .filter((other) => other.case_id === row.case_id && other.id !== message.id)
+            .map((other) => ({
+              after: receivedAfter(other, message),
+              subject: other.subject,
+              bodyText: other.body_text,
+              metadata: other.metadata,
+            }))
         : null;
     return {
       factId: row.id,
@@ -438,8 +495,13 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
               sentAt: informationCase.sent_at,
               recipientKind: informationCase.recipient_kind,
               status: informationCase.status,
+              metadata: informationCase.metadata,
             }
           : null,
+        contactOpposed:
+          opposed && informationCase
+            ? opposedEmails.has(informationCase.normalized_recipient_email)
+            : null,
         sale: sale
           ? {
               propertyType: sale.property_type,
@@ -451,14 +513,15 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
               carrezSurfaceM2: sale.carrez_surface_m2,
               landSurfaceM2: sale.land_surface_m2,
               roomsCount: sale.rooms_count,
+              qualityFlags: sale.quality_flags,
+              sourceLotSelection: sale.source_lot_selection,
             }
           : null,
-        laterMessages: laterMessages
-          ? laterMessages.map((later) => ({
-              subject: later.subject,
-              bodyText: later.body_text,
-              metadata: later.metadata,
-            }))
+        otherMessages,
+        arbitration: arbitrations
+          ? latestArbitration.has(row.id)
+            ? { found: true, row: latestArbitration.get(row.id) }
+            : { found: false }
           : null,
         otherCandidatesForKey: related
           ? related.filter(
@@ -481,7 +544,8 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
           : null,
         // Calculé par le plan à partir des compteurs.
         fieldFilledInSimulation: false,
-        readFailed: !messages || !cases || !sales || !related || !assets,
+        readFailed:
+          !messages || !cases || !sales || !related || !assets || !arbitrations || !opposed,
       },
     };
   });
@@ -501,16 +565,25 @@ function sameDecision(
   );
 }
 
+/** Codes d'erreur d'une publication à reprendre à la passe suivante : vente tenue par un import, conflit. */
+const TRANSIENT_PUBLISH_CODES = new Set(["55P03", "40001", "40P01"]);
+
+/** Réponse de la RPC de publication, validée : une forme inconnue est un échec de publication. */
+const publishResultSchema = z.object({
+  status: z.enum(["published", "review", "inactive", "missing"]),
+});
+
 /**
- * Passe de simulation : en mode « simulation » seulement, décide pour chaque fait en attente d'un champ de
- * la liste fermée reçu depuis 45 jours, et inscrit la décision au journal quand elle change. Hors
- * simulation : rien n'est lu ni calculé. Une lecture du contexte d'un fait (message, dossier, vente, autres
- * valeurs, pièce) qui échoue ou est tronquée donne « relecture » (motif `input_unreadable`) pour ce fait et
- * est signalée. Une lecture d'état global (mode, liste des faits, dernières décisions, compteurs) qui
- * échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE : une telle relecture défèrait le gel
- * des faits et gonflerait le journal. Une passe arrêtée par sa limite de temps rend `time_limit_reached`.
+ * Passe du moteur : en mode « simulation » ou « automatique », décide pour chaque fait en attente d'un champ de la
+ * liste fermée reçu depuis 45 jours. Simulation : la décision est inscrite au journal quand elle change.
+ * Automatique : une relecture est inscrite au journal ; « publier » appelle `publish_information_agent_fact_auto`,
+ * qui relit le mode sous verrou et publie (ou écrit lui-même la relecture). Une publication en échec est laissée en
+ * relecture (motif `publication_failed`) et n'est plus retentée ; un verrou d'import ou un conflit la remet à la
+ * passe suivante. Hors de ces deux modes, rien n'est lu ni calculé. Une lecture du contexte d'un fait qui échoue ou
+ * est tronquée donne « relecture » (motif `input_unreadable`). Une lecture d'état global (mode, liste des faits,
+ * dernières décisions, compteurs) qui échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE.
  */
-export async function runAutoPublicationSimulation({
+export async function runAutoPublicationPass({
   now = new Date(),
   timeBudgetMs = PASS_TIME_BUDGET_MS,
   clock = () => Date.now(),
@@ -518,10 +591,10 @@ export async function runAutoPublicationSimulation({
   now?: Date;
   timeBudgetMs?: number;
   clock?: () => number;
-} = {}): Promise<AutoPublicationSimulationResult> {
+} = {}): Promise<AutoPublicationPassResult> {
   const started = clock();
   const mode = await loadAutoPublicationMode();
-  if (mode !== "simulation") return { status: "inactive", mode };
+  if (mode !== "simulation" && mode !== "auto") return { status: "inactive", mode };
 
   const { rows: candidates, truncated } = await loadOpenCandidates(now);
   const latest = candidates.length
@@ -529,9 +602,18 @@ export async function runAutoPublicationSimulation({
     : new Map<string, AutoPublicationDecisionRow>();
   if (!latest) throw new AutoPublicationPassError("decisions_unreadable");
   const todayStart = startOfParisDay(now).getTime();
+  // Sortis du lot : en simulation, un fait « aurait été publié » un jour antérieur (il compte dans son jour) ; en
+  // automatique, un fait dont la publication a échoué avec cette version (relecture humaine, jamais retenté).
   const frozen = new Set(
     [...latest]
       .filter(([, decision]) => {
+        if (mode === "auto") {
+          return (
+            decision.outcome === "review" &&
+            decision.policyVersion === AUTO_PUBLICATION_POLICY_VERSION &&
+            decision.reasons.includes("publication_failed")
+          );
+        }
         const at = Date.parse(decision.decidedAt);
         return decision.outcome === "would_publish" && Number.isFinite(at) && at < todayStart;
       })
@@ -540,19 +622,23 @@ export async function runAutoPublicationSimulation({
   const plan = candidates.filter((row) => !frozen.has(row.id));
   // Plafonds et champs remplis : état global, lu avant le contexte des faits ; illisible, rien n'est écrit.
   const counters = plan.length
-    ? await loadCounters(now, plan)
+    ? await loadCounters(now, plan, mode === "auto" ? "published" : "would_publish")
     : { today: 0, byCase: new Map<string, number>(), filled: new Set<string>() };
   if (!counters) throw new AutoPublicationPassError("counters_unreadable");
   const items = plan.length ? await buildPlanItems(plan) : [];
 
-  const result: Extract<AutoPublicationSimulationResult, { examined: number }> = {
+  const result: Extract<AutoPublicationPassResult, { examined: number }> = {
     status: "done",
+    mode,
     examined: candidates.length,
     frozen: frozen.size,
     recorded: 0,
     unchanged: 0,
     wouldPublish: 0,
+    published: 0,
     review: 0,
+    deferred: 0,
+    publishFailed: 0,
     unreadable: 0,
     recordFailed: 0,
     truncated,
@@ -561,28 +647,18 @@ export async function runAutoPublicationSimulation({
   };
   let lastErrorCode: string | null = null;
   let errorStreak = 0;
-  for (const { item, decision } of planAutoPublicationDecisions(items, counters)) {
-    if (decision.outcome === "would_publish") result.wouldPublish += 1;
-    else result.review += 1;
-    if ((decision.reasons as readonly string[]).includes("input_unreadable")) {
-      result.unreadable += 1;
-    }
-    if (sameDecision(latest.get(item.factId), decision.outcome, decision.reasons)) {
-      result.unchanged += 1;
-      continue;
-    }
-    if (clock() - started > timeBudgetMs) {
-      result.timedOut = true;
-      result.status = "time_limit_reached";
-      break;
-    }
+  const recordDecision = async (
+    item: AutoPublicationPlanItem,
+    outcome: "would_publish" | "review",
+    reasons: readonly string[],
+  ): Promise<boolean> => {
     const { data, error } = await supabaseAdmin.rpc(
       "record_information_agent_auto_publication_decision",
       {
         p_fact_id: item.factId,
         p_fact_key: item.factKey,
-        p_outcome: decision.outcome,
-        p_reasons: decision.reasons,
+        p_outcome: outcome,
+        p_reasons: [...reasons],
         p_policy_version: AUTO_PUBLICATION_POLICY_VERSION,
       },
     );
@@ -592,27 +668,82 @@ export async function runAutoPublicationSimulation({
       const code = errorCode(error);
       errorStreak = code === lastErrorCode ? errorStreak + 1 : 1;
       lastErrorCode = code;
-      if (errorStreak >= MAX_SAME_ERROR_STREAK) {
-        result.stoppedOnRepeatedError = true;
-        break;
-      }
-      continue;
+      return false;
     }
     errorStreak = 0;
     lastErrorCode = null;
     if (data === true) result.recorded += 1;
+    return true;
+  };
+
+  for (const { item, decision } of planAutoPublicationDecisions(items, counters)) {
+    if ((decision.reasons as readonly string[]).includes("input_unreadable")) {
+      result.unreadable += 1;
+    }
+    const publishNow = mode === "auto" && decision.outcome === "would_publish";
+    if (!publishNow && sameDecision(latest.get(item.factId), decision.outcome, decision.reasons)) {
+      if (decision.outcome === "would_publish") result.wouldPublish += 1;
+      else result.review += 1;
+      result.unchanged += 1;
+      continue;
+    }
+    if (clock() - started > timeBudgetMs) {
+      result.timedOut = true;
+      result.status = "time_limit_reached";
+      break;
+    }
+    if (!publishNow) {
+      if (decision.outcome === "would_publish") result.wouldPublish += 1;
+      else result.review += 1;
+      await recordDecision(item, decision.outcome, decision.reasons);
+    } else {
+      // Mode automatique : la RPC relit le mode sous verrou, redit les contrôles, tient les plafonds et publie.
+      const { data, error } = await supabaseAdmin.rpc("publish_information_agent_fact_auto", {
+        p_fact_id: item.factId,
+        p_fact_key: item.factKey,
+        p_policy_version: AUTO_PUBLICATION_POLICY_VERSION,
+      });
+      const parsed = error ? null : publishResultSchema.safeParse(data);
+      if (parsed?.success) {
+        errorStreak = 0;
+        lastErrorCode = null;
+        if (parsed.data.status === "inactive") {
+          // Arrêt d'urgence pendant la passe : plus rien n'est publié.
+          result.status = "stopped";
+          break;
+        }
+        if (parsed.data.status === "published") result.published += 1;
+        else if (parsed.data.status === "review") result.review += 1;
+        continue;
+      }
+      const code = error ? errorCode(error) : "invalid_result";
+      logFailure("publish", { code });
+      if (TRANSIENT_PUBLISH_CODES.has(code)) {
+        result.deferred += 1;
+        continue;
+      }
+      result.publishFailed += 1;
+      result.review += 1;
+      await recordDecision(item, "review", ["publication_failed"]);
+      errorStreak = code === lastErrorCode ? errorStreak + 1 : 1;
+      lastErrorCode = code;
+    }
+    if (errorStreak >= MAX_SAME_ERROR_STREAK) {
+      result.stoppedOnRepeatedError = true;
+      break;
+    }
   }
   if (result.unreadable > 0) logFailure("unreadable_inputs", { code: String(result.unreadable) });
   return result;
 }
 
 /**
- * Passe de simulation pour le cron : ne lève pas, mais rend « failed » (avec le seul code d'erreur, signalé
- * dans le journal serveur) pour que l'appelant fasse échouer le cron après la passe des réponses.
+ * Passe du moteur pour le cron : ne lève pas, mais rend « failed » (avec le seul code d'erreur, signalé dans le
+ * journal serveur) pour que l'appelant fasse échouer le cron après la passe des réponses.
  */
-export async function runAutoPublicationSimulationForCron(): Promise<AutoPublicationSimulationResult> {
+export async function runAutoPublicationPassForCron(): Promise<AutoPublicationPassResult> {
   try {
-    return await runAutoPublicationSimulation();
+    return await runAutoPublicationPass();
   } catch (error) {
     logFailure("pass", error);
     return { status: "failed", code: errorCode(error) };
@@ -630,5 +761,30 @@ export async function loadLatestAutoPublicationDecisions(
   if (!factIds.length) return new Map();
   const latest = await readLatestDecisions(factIds);
   if (!latest) throw new Error("Auto-publication decision log unreadable or truncated");
+  return latest;
+}
+
+/**
+ * Motif du dernier verdict de Haiku de chaque fait demandé (code de la liste fermée, ou null), pour l'onglet
+ * Réponses. Une lecture en échec ou tronquée lève une erreur (« indisponible » à l'écran).
+ */
+export async function loadLatestArbiterReasons(
+  factIds: string[],
+): Promise<Map<string, string | null>> {
+  if (!factIds.length) return new Map();
+  const rows = await readInChunks("arbiter_reasons", factIds, (ids) =>
+    supabaseAdmin
+      .from("information_agent_auto_publication_arbitrations")
+      .select("id,fact_id,reason_code,recorded_at", { count: "exact" })
+      .in("fact_id", ids)
+      .order("recorded_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(AUTO_PUBLICATION_REQUEST_ROWS),
+  );
+  if (!rows) throw new Error("Auto-publication verdicts unreadable or truncated");
+  const latest = new Map<string, string | null>();
+  for (const row of rows) {
+    if (!latest.has(row.fact_id)) latest.set(row.fact_id, row.reason_code);
+  }
   return latest;
 }

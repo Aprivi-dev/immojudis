@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_PUBLICATION_ARBITER_VERSION,
   AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS,
   decideAutoPublication,
   type AutoPublicationInput,
@@ -78,7 +79,9 @@ describe("plafond de taille du texte analysé", () => {
       sentAt: "2026-11-01T09:00:00.000Z",
       recipientKind: "source_lawyer",
       status: "replied",
+      metadata: {},
     },
+    contactOpposed: false,
     sale: {
       propertyType: "apartment",
       surfaceM2: null,
@@ -89,11 +92,23 @@ describe("plafond de taille du texte analysé", () => {
       surfaceScope: null,
       landSurfaceM2: null,
       roomsCount: null,
+      qualityFlags: [],
+      sourceLotSelection: null,
     },
     otherCandidatesForKey: 0,
     otherValuesForSale: 0,
-    laterMessages: [],
+    otherMessages: [],
     fieldFilledInSimulation: false,
+    arbitration: {
+      found: true,
+      row: {
+        status: "completed",
+        publish: true,
+        reason_code: "clear_statement",
+        value: 54,
+        prompt_version: AUTO_PUBLICATION_ARBITER_VERSION,
+      },
+    },
   };
 
   it("un corps au-delà du plafond n'est pas analysé : relecture, jamais tronqué en silence", () => {
@@ -111,8 +126,9 @@ describe("plafond de taille du texte analysé", () => {
   it("un message postérieur au-delà du plafond : relecture", () => {
     const decision = decideAutoPublication({
       ...base,
-      laterMessages: [
+      otherMessages: [
         {
+          after: true,
           subject: null,
           bodyText: "a".repeat(AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS + 1),
           metadata: { inbound_processing: { status: "completed" } },

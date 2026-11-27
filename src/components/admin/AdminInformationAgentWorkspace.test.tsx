@@ -94,8 +94,6 @@ beforeEach(() => {
   mocks.autoPublication.mockResolvedValue({
     mode: "off",
     modeLabel: "Arrêt",
-    autoLocked: true,
-    lockReasons: ["textes juridiques mis à jour et publiés"],
     eligibleFields: ["surface"],
     caps: { daily: 10, perCase: 2 },
     changes: [],

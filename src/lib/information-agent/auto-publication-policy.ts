@@ -1,32 +1,69 @@
+import { z } from "zod";
 import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
-import {
-  mentionsDoNotPublish,
-  namesPrivatePerson,
-} from "@/lib/information-agent/auto-publication-text";
+import { mentionsDoNotPublish } from "@/lib/information-agent/auto-publication-text";
 import { getDisplaySurface, getRecordedSurface } from "@/lib/surface";
 
 /**
- * Moteur de décision « publier ou relire » des informations extraites d'une réponse (étape 3 du plan
- * d'enrichissement, propositions 6 et 7). MODULE PUR : ni réseau, ni base, ni horloge (la date de
- * référence n'intervient pas : seules comptent les dates de l'envoi et de la réception).
+ * Moteur de décision « publier ou relire » des informations extraites d'une réponse. MODULE PUR : ni réseau, ni
+ * base, ni horloge (seules comptent les dates de l'envoi et de la réception).
  *
- * À cette étape, la décision n'est qu'une SIMULATION : elle est journalisée et affichée, jamais appliquée.
- * Aucun chemin ne publie (`app_private.apply_information_agent_fact` n'est appelé qu'avec 'admin', et la
- * base refuse toute publication 'auto').
+ * Version 2 (étape 6, décision du propriétaire du 27/11/2026) : conditions STRUCTURELLES (authenticité de la
+ * réponse, injection, contradictions, liste fermée), puis le verdict de Claude Haiku (worker Python, table
+ * `information_agent_auto_publication_arbitrations`), qui juge la phrase à la place des règles de prudence de la
+ * version 1. En mode simulation, la décision est journalisée ; en mode automatique, « publier » appelle la RPC de
+ * publication, qui redit en base les contrôles de sécurité (`auto-publication-store.ts`).
  *
- * Règle appliquée (toutes les conditions sont requises, voir `docs/runbooks/information-agent.md`) :
- * réponse e-mail de l'adresse contactée, DKIM et DMARC « pass », moins de 30 jours après l'envoi, dossier
- * adressé à l'avocat poursuivant et toujours au statut « répondu » ; information du corps du message lue
- * par les règles (jamais d'une pièce jointe) ; règles et IA (version 3 ou suivante) d'accord sans motif,
- * aucune autre valeur pour ce champ ni dans la réponse ni dans une autre information en attente pour la
- * vente ; aucun message postérieur du dossier en relecture ou qui demande de ne pas publier ; aucun motif
- * de relecture (phrase, lot, réponse) ; champ de la liste fermée, vide sur la fiche, valeur plausible pour
- * le type de bien ; ni « ne pas publier », ni nom de particulier, ni soupçon de manipulation (objet et
- * corps) ; plafonds par jour et par dossier. Toute donnée manquante ou illisible donne « relecture ».
+ * Conditions structurelles (toutes requises, voir `docs/runbooks/information-agent.md`) : réponse e-mail de
+ * l'adresse contactée, DKIM et DMARC « pass », moins de 30 jours après l'envoi ; dossier adressé à l'avocat
+ * poursuivant, répondu ou en relecture, sans opposition (dossier ou contact) ; réponse traitée sans autre motif de
+ * relecture que le motif générique `candidate_or_attachment_review` ; information du corps du message lue par
+ * les règles (jamais d'une pièce jointe, jamais de l'IA seule) ; aucune autre valeur pour ce champ ni dans la
+ * réponse ni dans une autre information en attente pour la vente ; aucun autre message du dossier en relecture
+ * bloquante, opposé ou qui demande de ne pas publier ; ni « ne pas publier » ni consigne adressée à un modèle
+ * (objet et corps) ; champ de la liste fermée, vide sur la fiche, valeur plausible pour le type de bien ; vente à
+ * un seul lot ; plafonds par jour et par dossier. Puis : dernier verdict de Haiku « publier » pour cette valeur,
+ * avec la version de prompt courante. Toute donnée manquante ou illisible donne « relecture ».
+ *
+ * Règles de la version 1 confiées à Haiku (règles de prudence, sans lien avec l'authenticité ni l'injection) :
+ * accord des règles et de la lecture par l'IA (`semantic_not_confirmed`), motifs de la phrase (conditionnel,
+ * approximation, valeur rapportée, fourchette, correction, renvoi : `statement_review_reason`), nom d'un
+ * particulier (`private_person_named`). Leurs codes restent dans la liste pour les décisions déjà écrites.
  */
 
 /** Version de la règle, inscrite au journal avec chaque décision. */
-export const AUTO_PUBLICATION_POLICY_VERSION = "auto_publication_v1";
+export const AUTO_PUBLICATION_POLICY_VERSION = "auto_publication_v2";
+
+/**
+ * Version du prompt de l'arbitre (Claude Haiku). Même valeur que `ARBITER_PROMPT_VERSION` du worker Python
+ * (`services/data-pipeline/src/information_agent_auto_publication_arbiter.py`, test de concordance) : un verdict
+ * d'une autre version est ignoré (« arbitrage en attente ») et le worker le refait.
+ */
+export const AUTO_PUBLICATION_ARBITER_VERSION = "auto_publication_arbiter_v1";
+
+/**
+ * Codes de motif du verdict de Haiku, liste fermée : même liste que la contrainte de la table des verdicts
+ * (migration 20261211100000) et `ARBITER_REASON_CODES` du worker Python (tests de concordance). Seul
+ * `clear_statement` accompagne « publier ».
+ */
+export const AUTO_PUBLICATION_ARBITER_REASON_LABELS = {
+  clear_statement: "déclaration nette de la valeur",
+  conditional_or_approximate: "valeur au conditionnel ou approximative",
+  other_lot_or_property: "valeur d’un autre lot ou d’un autre bien",
+  reported_or_compared_value: "valeur rapportée ou comparée, pas affirmée",
+  correction_or_range: "correction, fourchette ou plusieurs valeurs",
+  different_quantity: "autre grandeur (terrain, chambres, surface utile…)",
+  not_current: "valeur ancienne ou future, pas actuelle",
+  do_not_publish_requested: "l’avocat demande de ne pas publier",
+  unclear_or_ambiguous: "phrase ambiguë ou peu claire",
+  inconsistent_with_record: "valeur incohérente avec la fiche",
+  possible_manipulation: "consignes adressées à un modèle",
+  other: "autre raison",
+} as const satisfies Record<string, string>;
+export type AutoPublicationArbiterReason = keyof typeof AUTO_PUBLICATION_ARBITER_REASON_LABELS;
+const ARBITER_REASON_CODES = Object.keys(AUTO_PUBLICATION_ARBITER_REASON_LABELS) as [
+  AutoPublicationArbiterReason,
+  ...AutoPublicationArbiterReason[],
+];
 
 /**
  * Liste fermée des champs éligibles. SEUL endroit qui la définit : la contrainte du journal
@@ -40,14 +77,15 @@ export const AUTO_PUBLICATION_ELIGIBLE_FIELDS = [
 ] as const;
 export type AutoPublicationEligibleField = (typeof AUTO_PUBLICATION_ELIGIBLE_FIELDS)[number];
 
-/** Modes du réglage. « auto » est verrouillé à cette étape (contrainte en base et refus du serveur). */
+/** Modes du réglage. « auto » publie (étape 6) ; seul un administrateur le pose, avec son jeton. */
 export const AUTO_PUBLICATION_MODES = ["off", "simulation", "auto"] as const;
 export type AutoPublicationMode = (typeof AUTO_PUBLICATION_MODES)[number];
 
 /**
  * Plafonds appliqués dès la simulation. Par jour (heure de Paris) : au plus 10 informations publiées (ou
  * qui l'auraient été). Par dossier : au plus 2, sur les trois champs éligibles ; une réponse qui remplirait
- * d'un coup surface, terrain et pièces garde la troisième en relecture.
+ * d'un coup surface, terrain et pièces garde la troisième en relecture. En mode automatique, la RPC de
+ * publication tient les mêmes plafonds en base, sous verrou (mêmes valeurs, migration 20261211100000).
  */
 export const AUTO_PUBLICATION_DAILY_CAP = 10;
 export const AUTO_PUBLICATION_CASE_CAP = 2;
@@ -56,8 +94,14 @@ export const AUTO_PUBLICATION_CASE_CAP = 2;
 const AUTO_PUBLICATION_REPLY_WINDOW_DAYS = 30;
 const REPLY_WINDOW_MS = AUTO_PUBLICATION_REPLY_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-/** Version minimale de la lecture par l'IA (`semantic_evidence_vN`). */
-const MIN_SEMANTIC_VERSION = 3;
+/**
+ * Seul motif de relecture de la réception qui ne bloque pas : il est posé sur toute réponse qui a un corps
+ * (`information-agent-inbound.ts`). Tous les autres (expéditeur, authentification, opposition possible, mauvais
+ * destinataire, consigne adressée à un modèle, réponse ambiguë, lot) bloquent.
+ */
+const NON_BLOCKING_INBOUND_REVIEW_REASONS: ReadonlySet<string> = new Set([
+  "candidate_or_attachment_review",
+]);
 
 /**
  * Taille maximale (objet et corps réunis, en caractères) d'un texte analysé par les détecteurs. Au-delà,
@@ -80,8 +124,7 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   sender_not_authenticated: "authentification DKIM et DMARC incomplète",
   reply_outside_window: "réponse reçue hors du délai de 30 jours après l’envoi",
   recipient_not_lawyer: "dossier adressé à un autre destinataire que l’avocat poursuivant",
-  case_not_replied:
-    "le dossier n’est plus au statut « répondu » (relecture, opposition ou clôture)",
+  case_not_replied: "le dossier est clos, en échec ou opposé",
   attachment_source: "information tirée d’une pièce jointe, pas du corps du message",
   semantic_only_body:
     "information lue par l’IA seule dans le corps du message, sans accord des règles",
@@ -92,7 +135,8 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   later_message_in_case:
     "un message postérieur du dossier est en relecture, en cours de traitement ou demande de ne pas publier",
   statement_review_reason: "motif de relecture sur la phrase ou le lot",
-  reply_in_review: "la réponse entière est en relecture ou n’est pas entièrement traitée",
+  reply_in_review:
+    "la réponse a un motif de relecture de la réception (expéditeur, opposition, consignes, lot…) ou n’est pas traitée",
   possible_manipulation: "soupçon de manipulation (consignes adressées à un modèle)",
   do_not_publish_requested: "la réponse demande de ne pas publier",
   private_person_named: "la réponse nomme un particulier",
@@ -101,6 +145,15 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   implausible_value: "valeur invraisemblable pour ce type de bien, ou type de bien inconnu",
   daily_cap_reached: `plafond atteint : ${AUTO_PUBLICATION_DAILY_CAP} informations par jour`,
   case_cap_reached: `plafond atteint : ${AUTO_PUBLICATION_CASE_CAP} informations par dossier`,
+  other_message_in_case:
+    "un message antérieur du dossier est en relecture, opposé ou demande de ne pas publier",
+  contact_opposed: "le contact s’est opposé",
+  multi_lot_sale: "vente à plusieurs lots : rattachement au lot à vérifier",
+  arbiter_pending: "verdict de l’IA (Claude Haiku) pas encore rendu",
+  arbiter_unavailable: "verdict de l’IA indisponible (erreur, délai ou réponse invalide)",
+  arbiter_declined: "l’IA (Claude Haiku) ne confirme pas la publication",
+  arbiter_value_mismatch: "le verdict de l’IA porte sur une autre valeur",
+  publication_failed: "la publication a échoué : relecture humaine",
 } as const satisfies Record<string, string>;
 
 export type AutoPublicationReason = keyof typeof AUTO_PUBLICATION_REASON_LABELS;
@@ -109,12 +162,28 @@ export type AutoPublicationDecision =
   | { outcome: "would_publish"; reasons: [] }
   | { outcome: "review"; reasons: AutoPublicationReason[] };
 
-/** Un message entrant du même dossier, reçu après celui du fait. */
-type AutoPublicationLaterMessage = {
+/** Un autre message entrant du même dossier ; `after` : reçu après celui du fait. */
+type AutoPublicationOtherMessage = {
+  after: boolean;
   subject: string | null;
   bodyText: string | null;
   metadata: unknown;
 };
+
+/**
+ * Verdict de Haiku tel que lu en base, validé ici (zod) : un verdict mal formé compte comme indisponible, jamais
+ * comme « publier ».
+ */
+export const autoPublicationArbitrationSchema = z.object({
+  status: z.enum(["completed", "invalid_output", "unavailable", "skipped"]),
+  publish: z.boolean(),
+  reason_code: z.enum(ARBITER_REASON_CODES).nullable(),
+  value: z
+    .union([z.number().finite(), z.string().regex(/^\d{1,9}(?:\.\d{1,4})?$/u)])
+    .transform(Number),
+  prompt_version: z.string(),
+});
+export type AutoPublicationArbitration = z.output<typeof autoPublicationArbitrationSchema>;
 
 /** Données lues pour un fait candidat. `null` : la donnée n'a pas pu être lue (échec fermé). */
 export type AutoPublicationInput = {
@@ -139,7 +208,10 @@ export type AutoPublicationInput = {
     sentAt: string | null;
     recipientKind: string | null;
     status: string | null;
+    metadata: unknown;
   } | null;
+  /** Le destinataire du dossier est opposé (registre des contacts) ; null si illisible. */
+  contactOpposed: boolean | null;
   sale: {
     propertyType: string | null;
     surfaceM2: number | null;
@@ -151,13 +223,18 @@ export type AutoPublicationInput = {
     surfaceScope: string | null;
     landSurfaceM2: number | null;
     roomsCount: number | null;
+    /** `quality_flags` et `raw_payload.source_lot_selection` de la vente (vente à un seul lot). */
+    qualityFlags: unknown;
+    sourceLotSelection: unknown;
   } | null;
   /** Nombre d'autres candidats du même message pour la même clé (toute provenance, tout statut). */
   otherCandidatesForKey: number | null;
   /** Nombre d'autres candidats en attente pour la même vente et la même clé, avec une autre valeur. */
   otherValuesForSale: number | null;
-  /** Messages entrants du dossier reçus après celui du fait. */
-  laterMessages: AutoPublicationLaterMessage[] | null;
+  /** Autres messages entrants du dossier, avant ou après celui du fait. */
+  otherMessages: AutoPublicationOtherMessage[] | null;
+  /** Dernier verdict de Haiku pour ce fait : `{ found: false }` s'il n'y en a pas ; null si illisible. */
+  arbitration: { found: false } | { found: true; row: unknown } | null;
   /** Un autre fait a déjà « rempli » ce champ de la vente dans la simulation. */
   fieldFilledInSimulation: boolean | null;
   /** Une lecture annexe a échoué (journal, vente…) : relecture, motif `input_unreadable`. */
@@ -191,13 +268,6 @@ const PLAUSIBLE_RANGES: Record<AutoPublicationEligibleField, Record<string, [num
     house: [1, 30],
   },
 };
-
-/** Version de la lecture par l'IA (`semantic_evidence_v3` → 3), ou null si illisible. */
-function semanticVersion(method: unknown): number | null {
-  if (typeof method !== "string") return null;
-  const match = /^semantic_evidence_v(\d{1,4})$/.exec(method);
-  return match ? Number(match[1]) : null;
-}
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -279,12 +349,39 @@ function fieldIsEmpty(
   return sale.roomsCount == null;
 }
 
-/** Un message reçu proprement : traité sans motif, ou réponse automatique ignorée. */
-function processedCleanly(metadata: unknown): boolean {
+/**
+ * Un message traité sans motif de relecture bloquant : traité sans motif, ou en relecture pour le seul motif
+ * générique ; pour un autre message du dossier, une réponse automatique ignorée aussi.
+ */
+function processedForPublication(metadata: unknown, ownMessage: boolean): boolean {
   const processing = record(record(metadata)?.inbound_processing);
   if (!processing) return false;
   if (processing.status === "completed") return processing.reason == null;
-  return processing.status === "ignored" && processing.reason === "auto_reply";
+  if (processing.status === "review") {
+    return (
+      typeof processing.reason === "string" &&
+      NON_BLOCKING_INBOUND_REVIEW_REASONS.has(processing.reason)
+    );
+  }
+  return !ownMessage && processing.status === "ignored" && processing.reason === "auto_reply";
+}
+
+/**
+ * Vente à un seul lot : ni le signal `multi_lot_sale`, ni une sélection de lot dans l'annonce. Même règle que la
+ * RPC de publication et la décision automatique du registre (migration 20261211100000), plus stricte que
+ * `saleLotContext` (une sélection, même incomplète, suffit).
+ */
+export function isSingleLotSale(qualityFlags: unknown, sourceLotSelection: unknown): boolean {
+  const flags = Array.isArray(qualityFlags) ? qualityFlags : [];
+  return !flags.includes("multi_lot_sale") && sourceLotSelection == null;
+}
+
+/** Dossier ouvert à la publication : répondu ou en relecture, sans opposition reçue. */
+function caseOpenForPublication(status: string | null, metadata: unknown): boolean {
+  return (
+    (status === "replied" || status === "review") &&
+    record(metadata)?.last_inbound_contact_opposed !== true
+  );
 }
 
 function textOf(parts: Array<string | null>): string {
@@ -327,21 +424,17 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     if (authentication?.dkim !== "pass" || authentication?.dmarc !== "pass") {
       reasons.add("sender_not_authenticated");
     }
-    const processing = record(messageMetadata.inbound_processing);
-    if (!processing || processing.status !== "completed" || processing.reason != null) {
-      reasons.add("reply_in_review");
-    }
+    if (!processedForPublication(messageMetadata, true)) reasons.add("reply_in_review");
     if (typeof message.bodyText !== "string") {
       reasons.add("input_unreadable");
     } else {
-      // Objet et corps : une consigne, une demande de ne pas publier ou un nom peut être dans l'objet.
+      // Objet et corps : une consigne ou une demande de ne pas publier peut être dans l'objet.
       const text = textOf([message.subject, message.bodyText]);
       if (text.length > AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS) {
         reasons.add("input_unreadable");
       } else {
         if (detectPossiblePromptInjection(text)) reasons.add("possible_manipulation");
         if (mentionsDoNotPublish(text)) reasons.add("do_not_publish_requested");
-        if (namesPrivatePerson(text)) reasons.add("private_person_named");
       }
     }
   }
@@ -355,27 +448,36 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
   if (informationCase && informationCase.recipientKind !== "source_lawyer") {
     reasons.add("recipient_not_lawyer");
   }
-  if (informationCase && informationCase.status !== "replied") reasons.add("case_not_replied");
-
-  // Messages postérieurs du dossier : en relecture, en cours, opposés ou qui demandent de ne pas publier.
   if (
-    input.laterMessages === null ||
-    input.laterMessages.some(
-      (later) =>
-        textOf([later.subject, later.bodyText]).length > AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS,
+    informationCase &&
+    !caseOpenForPublication(informationCase.status, informationCase.metadata)
+  ) {
+    reasons.add("case_not_replied");
+  }
+  if (input.contactOpposed === null) reasons.add("input_unreadable");
+  else if (input.contactOpposed) reasons.add("contact_opposed");
+
+  // Autres messages du dossier : en relecture bloquante, en cours, opposés ou qui demandent de ne pas publier.
+  if (
+    input.otherMessages === null ||
+    input.otherMessages.some(
+      (other) =>
+        textOf([other.subject, other.bodyText]).length > AUTO_PUBLICATION_MAX_ANALYZED_TEXT_CHARS,
     )
   ) {
     reasons.add("input_unreadable");
-  } else if (
-    input.laterMessages.some(
-      (later) =>
-        !processedCleanly(later.metadata) ||
-        record(later.metadata)?.admin_handled_action === "record_opposition" ||
-        record(later.metadata)?.admin_handled_action === "wrong_recipient" ||
-        mentionsDoNotPublish(textOf([later.subject, later.bodyText])),
-    )
-  ) {
-    reasons.add("later_message_in_case");
+  } else {
+    for (const other of input.otherMessages) {
+      const action = record(other.metadata)?.admin_handled_action;
+      if (
+        !processedForPublication(other.metadata, false) ||
+        action === "record_opposition" ||
+        action === "wrong_recipient" ||
+        mentionsDoNotPublish(textOf([other.subject, other.bodyText]))
+      ) {
+        reasons.add(other.after ? "later_message_in_case" : "other_message_in_case");
+      }
+    }
   }
 
   // 2. Corps du message lu par les règles, jamais une pièce jointe ni l'IA seule.
@@ -384,50 +486,65 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     else if (candidate.evidenceKind == null) reasons.add("input_unreadable");
     else reasons.add("attachment_source");
   }
+  if (!record(candidate.metadata)) reasons.add("input_unreadable");
 
-  // 3. Règles et IA d'accord, aucune autre valeur pour ce champ.
-  const metadata = record(candidate.metadata);
-  if (!metadata) {
-    reasons.add("input_unreadable");
-  } else {
-    const version = semanticVersion(metadata.semantic_extraction_method);
-    if (
-      metadata.semantic_agreement !== true ||
-      version === null ||
-      version < MIN_SEMANTIC_VERSION
-    ) {
-      reasons.add("semantic_not_confirmed");
-    }
-    // 4 et 5. Aucun motif sur la phrase ni sur le lot (un champ illisible compte comme un motif).
-    const reviewReasons = metadata.review_reasons;
-    if (
-      (reviewReasons !== undefined &&
-        (!Array.isArray(reviewReasons) || reviewReasons.length > 0)) ||
-      metadata.lot_unidentified !== undefined
-    ) {
-      reasons.add("statement_review_reason");
-    }
-  }
+  // 3. Aucune autre valeur pour ce champ, ni dans la réponse ni pour la vente.
   if (input.otherCandidatesForKey === null) reasons.add("input_unreadable");
   else if (input.otherCandidatesForKey > 0) reasons.add("other_value_in_reply");
   if (input.otherValuesForSale === null) reasons.add("input_unreadable");
   else if (input.otherValuesForSale > 0) reasons.add("other_value_for_sale");
 
-  // 6. Champ vide sur la fiche, valeur plausible pour le type de bien.
+  // 4. Champ vide sur la fiche, valeur plausible pour le type de bien, vente à un seul lot.
   const value = proposedNumber(candidate.proposedValue);
   if (!sale) {
     reasons.add("input_unreadable");
-  } else if (field) {
-    if (!fieldIsEmpty(field, sale)) reasons.add("field_not_empty");
-    if (value === null || !isPlausibleValue(field, sale.propertyType, value)) {
-      reasons.add("implausible_value");
+  } else {
+    if (field) {
+      if (!fieldIsEmpty(field, sale)) reasons.add("field_not_empty");
+      if (value === null || !isPlausibleValue(field, sale.propertyType, value)) {
+        reasons.add("implausible_value");
+      }
+    }
+    if (!isSingleLotSale(sale.qualityFlags, sale.sourceLotSelection)) {
+      reasons.add("multi_lot_sale");
     }
   }
   if (input.fieldFilledInSimulation === null) reasons.add("input_unreadable");
   else if (input.fieldFilledInSimulation) reasons.add("field_already_filled_in_simulation");
 
+  // 5. Verdict de Haiku : « publier », pour cette valeur, avec le prompt courant.
+  const arbitration = readArbitration(input.arbitration);
+  if (arbitration === "unreadable") reasons.add("input_unreadable");
+  else if (arbitration === "invalid") reasons.add("arbiter_unavailable");
+  else if (
+    arbitration === null ||
+    arbitration.prompt_version !== AUTO_PUBLICATION_ARBITER_VERSION
+  ) {
+    reasons.add("arbiter_pending");
+  } else if (arbitration.status !== "completed") reasons.add("arbiter_unavailable");
+  else if (!arbitration.publish) reasons.add("arbiter_declined");
+  else if (value === null || arbitration.value !== value) reasons.add("arbiter_value_mismatch");
+
   if (reasons.size === 0) return { outcome: "would_publish", reasons: [] };
   return { outcome: "review", reasons: [...reasons] };
+}
+
+/** Verdict lu : absent (null), illisible (lecture en échec), invalide (forme refusée par zod) ou validé. */
+function readArbitration(
+  arbitration: AutoPublicationInput["arbitration"],
+): AutoPublicationArbitration | null | "unreadable" | "invalid" {
+  if (arbitration === null) return "unreadable";
+  if (!arbitration.found) return null;
+  const parsed = autoPublicationArbitrationSchema.safeParse(arbitration.row);
+  return parsed.success ? parsed.data : "invalid";
+}
+
+/** Libellé lisible du motif d'un verdict de Haiku ; un code inconnu reste signalé. */
+export function autoPublicationArbiterReasonLabel(reason: string | null): string | null {
+  if (reason === null) return null;
+  return Object.hasOwn(AUTO_PUBLICATION_ARBITER_REASON_LABELS, reason)
+    ? AUTO_PUBLICATION_ARBITER_REASON_LABELS[reason as AutoPublicationArbiterReason]
+    : "motif non reconnu";
 }
 
 export type AutoPublicationPlanItem = {

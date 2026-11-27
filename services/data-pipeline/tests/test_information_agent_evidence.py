@@ -2338,3 +2338,21 @@ def test_a_worker_error_at_the_last_attempt_leaves_an_exact_summary(monkeypatch)
     assert row["completed_at"] is not None
     assert row["summary"].startswith("Analyse interrompue : 3 erreurs de traitement pendant la lecture.")
     assert "seront proposées" not in row["summary"]
+
+
+def test_the_batch_ends_with_the_auto_publication_arbitration_and_survives_its_failure(monkeypatch) -> None:
+    # Étape 6 : après le lot des pièces, la passe de l'arbitre (Claude Haiku) juge les faits du corps des réponses.
+    # Son échec est signalé et n'arrête pas le worker (un fait sans verdict reste en relecture humaine).
+    settings = {"supabase_url": "https://local.example.test", "supabase_service_role_key": "fixture-key"}
+    monkeypatch.setattr(evidence, "load_settings", lambda: settings)
+    monkeypatch.setattr(evidence, "claim_jobs", lambda *args: [])
+    calls: list[object] = []
+    monkeypatch.setattr(evidence, "run_arbitration_pass", lambda client, url, key, seen: calls.append(seen))
+    assert evidence.run_information_agent_evidence_batch(limit=5) == 0
+    assert calls == [settings]
+
+    def failing(*args):
+        raise RuntimeError("panne")
+
+    monkeypatch.setattr(evidence, "run_arbitration_pass", failing)
+    assert evidence.run_information_agent_evidence_batch(limit=5) == 0

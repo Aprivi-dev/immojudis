@@ -11,7 +11,10 @@ import { recordInformationAgentContactOpposition } from "@/lib/information-agent
 import { normalizedEmail } from "@/lib/information-agent/email-address";
 import { applyWrongRecipient } from "@/lib/information-agent-inbound/wrong-recipient";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
-import { loadAutoPublicationReviewAnnotations } from "@/lib/admin-information-agent-auto-publication";
+import {
+  listRecentAutoPublications,
+  loadAutoPublicationReviewAnnotations,
+} from "@/lib/admin-information-agent-auto-publication";
 import {
   listInformationAgentPendingRegistryDecisions,
   listInformationAgentWithdrawalTasks,
@@ -161,20 +164,23 @@ export async function listAdminInformationAgentReview(
     : { data: [], error: null };
   if (extractionsError) throw extractionsError;
 
-  // Simulation du moteur « publier ou relire » : rien en mode arrêt.
+  // Décisions du moteur « publier ou relire » (simulation ou automatique ; en arrêt, publications faites).
   const autoPublication = await loadAutoPublicationReviewAnnotations(facts);
   // Tâches du registre (lot C) : valeurs d'un avocat opposé à retirer dans le mois, réponses acceptées sans
   // décision au registre. Une lecture en échec ne fait pas tomber l'écran : la liste dit qu'elle est indisponible.
-  const [withdrawalTasks, pendingRegistryDecisions] = await Promise.all([
+  // Publications automatiques récentes (étape 6) : à retirer au besoin par le chemin existant.
+  const [withdrawalTasks, pendingRegistryDecisions, autoPublished] = await Promise.all([
     registryTaskList("withdrawal_tasks", () => listInformationAgentWithdrawalTasks()),
     registryTaskList("pending_registry_decisions", () =>
       listInformationAgentPendingRegistryDecisions(),
     ),
+    registryTaskList("auto_published", () => listRecentAutoPublications()),
   ]);
 
   return {
     withdrawalTasks,
     pendingRegistryDecisions,
+    autoPublished,
     cases: cases ?? [],
     facts,
     assets: assets ?? [],
