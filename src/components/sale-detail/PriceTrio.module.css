@@ -140,8 +140,6 @@
 }
 
 .usualNote {
-  display: flex;
-  gap: 8px;
   margin: 10px 0 0;
   color: var(--ink-soft);
   font-size: 13px;
@@ -157,20 +155,6 @@
   color: var(--ink-strong);
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-
-.usualSwatch {
-  flex: none;
-  width: 18px;
-  height: 10px;
-  margin-top: 5px;
-  border: 1px solid var(--gold);
-  border-radius: 3px;
-  background: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--gold) 55%, transparent) 0 2px,
-    transparent 2px 6px
-  );
 }
 
 .marker {

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { SaleHearingNav, SaleHearingProvider } from "@/components/sale-detail/SaleHearingNav";
+import { SaleHearingNav } from "@/components/sale-detail/SaleHearingNav";
+import { SaleHearingSlot, SaleHearingSlotProvider } from "@/components/sale-detail/SaleHearingSlot";
 import type { SaleHearing } from "@/lib/sale-hearing";
 
 const hearing: SaleHearing = {
@@ -21,9 +22,9 @@ afterEach(cleanup);
 describe("SaleHearingNav", () => {
   it("shows the position of the sale in its hearing and links to the other sales", () => {
     render(
-      <SaleHearingProvider hearing={hearing}>
-        <SaleHearingNav />
-      </SaleHearingProvider>,
+      <SaleHearingSlotProvider nav={<SaleHearingNav hearing={hearing} />}>
+        <SaleHearingSlot />
+      </SaleHearingSlotProvider>,
     );
 
     const nav = within(screen.getByRole("navigation", { name: "Ventes de la même audience" }));
@@ -40,11 +41,7 @@ describe("SaleHearingNav", () => {
   });
 
   it("offers no previous sale on the first one", () => {
-    render(
-      <SaleHearingProvider hearing={{ ...hearing, index: 0 }}>
-        <SaleHearingNav />
-      </SaleHearingProvider>,
-    );
+    render(<SaleHearingNav hearing={{ ...hearing, index: 0 }} />);
 
     expect(screen.queryByRole("link", { name: /^Vente précédente/ })).toBeNull();
     expect(screen.getByRole("link", { name: /^Vente suivante/ })).toBeTruthy();
@@ -52,9 +49,9 @@ describe("SaleHearingNav", () => {
 
   it("shows nothing without a shared hearing", () => {
     const { container } = render(
-      <SaleHearingProvider hearing={null}>
-        <SaleHearingNav />
-      </SaleHearingProvider>,
+      <SaleHearingSlotProvider nav={null}>
+        <SaleHearingSlot />
+      </SaleHearingSlotProvider>,
     );
 
     expect(container.innerHTML).toBe("");

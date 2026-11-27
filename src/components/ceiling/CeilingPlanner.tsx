@@ -855,15 +855,6 @@ function cashStepTerms(hypotheses: CeilingHypotheses): Record<string, TermeKey> 
   };
 }
 
-/** D'où vient le montant de la garantie affichée : l'annonce, la personne, ou la règle du régime. */
-const CONSIGNATION_SOURCE_NOTES: Record<CeilingHypotheses["feesSource"]["consignation"], string> = {
-  document: "montant indiqué dans l’annonce",
-  saisie: "montant que vous avez saisi",
-  regle:
-    "montant calculé selon la règle légale, à confirmer dans le cahier des conditions de vente",
-  defaut: "montant estimé, à confirmer dans les conditions de la vente",
-};
-
 /**
  * « L'argent à réunir » : les sommes de la trésorerie regroupées par échéance et leur total, visibles
  * sous le plafond sans rien déplier. Le détail ligne à ligne reste dans « Trésorerie à prévoir ».
@@ -871,7 +862,6 @@ const CONSIGNATION_SOURCE_NOTES: Record<CeilingHypotheses["feesSource"]["consign
 function CashSummary({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan: CeilingPlan }) {
   const { deadlines, total } = summarizeCashPlan(buildCashPlan(hypotheses, plan, plan.maxBid));
   if (deadlines.length === 0) return null;
-  const consignation = labelsOf(hypotheses).cash.consignation;
   return (
     <section
       aria-labelledby="ceiling-cash-summary-title"
@@ -894,9 +884,6 @@ function CashSummary({ hypotheses, plan }: { hypotheses: CeilingHypotheses; plan
         </div>
       </dl>
       <p className="mt-2 text-xs leading-relaxed text-ink-soft">
-        {consignation
-          ? `${consignation.label} : ${CONSIGNATION_SOURCE_NOTES[hypotheses.feesSource.consignation]}. `
-          : null}
         {hypotheses.regime?.kind === "notarial"
           ? null
           : "Aucune condition suspensive de prêt : le prix est dû même si le crédit est refusé. "}

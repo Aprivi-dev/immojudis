@@ -15,6 +15,7 @@ import {
 } from "@/lib/seo";
 import { pageMetadata } from "@/lib/page-metadata";
 import { rotatingResources } from "@/lib/resource-related";
+import { SaleHearingNav } from "@/components/sale-detail/SaleHearingNav";
 import { saleHearing } from "@/lib/sale-hearing";
 import { tryLoadUpcomingHearings } from "@/lib/upcoming-hearings.server";
 import { siteOrigin } from "@/lib/site-url";
@@ -171,7 +172,7 @@ export default async function Page({ params }: PageProps) {
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
-        hearing={hearing}
+        hearingNav={hearing ? <SaleHearingNav hearing={hearing} /> : null}
         nextSalePrices={publicNextSalePricesText()}
       />
     </>

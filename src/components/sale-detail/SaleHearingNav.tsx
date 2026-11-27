@@ -1,6 +1,3 @@
-"use client";
-
-import { createContext, useContext, type ReactNode } from "react";
 import Link from "next/link";
 import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left.js";
 import ChevronRight from "lucide-react/dist/esm/icons/chevron-right.js";
@@ -8,23 +5,6 @@ import { formatStartingPrice, formatWeekdayDate, propertyTypeLabel } from "@/lib
 import { saleDetailPath } from "@/lib/navigation";
 import type { SaleHearing, SaleHearingEntry } from "@/lib/sale-hearing";
 import { tribunalCodePagePath } from "@/lib/tribunal-code-path";
-
-const SaleHearingContext = createContext<SaleHearing | null>(null);
-
-/**
- * Les ventes de la même audience, lues par le serveur au rendu de la fiche. Un contexte plutôt
- * qu'une propriété : la fiche publique et les trois vues connectées l'affichent au même endroit,
- * sans que chaque vue ait à la faire suivre.
- */
-export function SaleHearingProvider({
-  hearing,
-  children,
-}: {
-  hearing: SaleHearing | null;
-  children: ReactNode;
-}) {
-  return <SaleHearingContext.Provider value={hearing}>{children}</SaleHearingContext.Provider>;
-}
 
 function entryLabel(entry: SaleHearingEntry): string {
   return `${propertyTypeLabel(entry.propertyType)} · ${entry.city || "Commune à confirmer"}`;
@@ -61,19 +41,18 @@ function StepLink({
 
 /**
  * Bandeau « Audience du … · N ventes » : la position de la vente dans son audience, la vente
- * précédente et la suivante, et la liste des ventes du même tribunal ce jour-là. Rien sans audience
- * partagée (`SaleHearingProvider` absent ou `null`).
+ * précédente et la suivante, et la liste des ventes du même tribunal ce jour-là. Rendu par le
+ * serveur avec la page de la fiche (aucun état, aucun JavaScript propre dans le navigateur) et posé
+ * dans les vues par `SaleHearingSlot`.
  */
-export function SaleHearingNav({ className = "" }: { className?: string }) {
-  const hearing = useContext(SaleHearingContext);
-  if (!hearing) return null;
+export function SaleHearingNav({ hearing }: { hearing: SaleHearing }) {
   const { sales, index } = hearing;
   const day = formatWeekdayDate(hearing.dayKey);
   return (
     <nav
       aria-label="Ventes de la même audience"
       data-testid="sale-hearing-nav"
-      className={`rounded-lg border border-line bg-white p-4 ${className}`}
+      className="rounded-lg border border-line bg-white p-4"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 text-sm leading-relaxed">

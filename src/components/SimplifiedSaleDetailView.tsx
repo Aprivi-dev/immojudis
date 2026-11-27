@@ -88,7 +88,7 @@ import {
   getSaleSurface,
 } from "@/lib/surface";
 import { PriceScale } from "@/components/sale-detail/PriceScale";
-import { SaleHearingNav } from "@/components/sale-detail/SaleHearingNav";
+import { SaleHearingSlot } from "@/components/sale-detail/SaleHearingSlot";
 import { useUsualAuctionRange } from "@/components/sale-detail/use-usual-auction-range";
 import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
@@ -918,7 +918,7 @@ function SaleDetailWorkspace({
             publicDemo={publicDemo}
             showFavorite={dossierInPanel && isPersistedSale(sale)}
           />
-          <SaleHearingNav className="mb-4" />
+          <SaleHearingSlot className="mb-4" />
           <SaleDetailHeading
             sale={displaySale}
             publicDemo={publicDemo}

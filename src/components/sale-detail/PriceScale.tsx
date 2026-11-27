@@ -128,7 +128,6 @@ export function PriceScale({
       </figcaption>
       {usual ? (
         <p className={styles.usualNote} data-testid="price-scale-usual-note">
-          <i className={styles.usualSwatch} aria-hidden />
           <span>
             Hachures : la moitié des ventes comparables{" "}
             {usual.scope === "court" && usual.courtName
