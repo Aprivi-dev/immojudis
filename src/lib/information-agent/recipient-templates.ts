@@ -31,6 +31,16 @@ const STATE_SERVICE_REPLY_INSTRUCTIONS =
 
 const REPLY_BY_EMAIL = "Un simple retour à cet email suffit ; aucun compte n’est nécessaire.";
 
+/**
+ * Introduction du notaire et du service de l'État : la réponse d'un autre destinataire que l'avocat poursuivant
+ * n'est jamais publiée automatiquement (motif `recipient_not_lawyer` de `auto-publication-policy.ts`), elle passe
+ * toujours par la relecture de l'équipe. Le modèle des professionnels, lu par l'avocat poursuivant, annonce au
+ * contraire la reprise automatique (révision 12, décision du propriétaire du 27/11/2026) : les deux textes changent
+ * avec cette règle.
+ */
+const REVIEWED_REQUEST_INTRO =
+  "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.";
+
 function listingFieldTemplate(
   name: string,
   identity: string,
@@ -44,8 +54,7 @@ function listingFieldTemplate(
       block("greeting"),
       { ...block("identity"), content: identity },
       { ...block("sale_details"), content: "Vente concernée : {{sale_reference}}" },
-      // Même introduction que le modèle des professionnels : une seule rédaction à tenir.
-      block("request_intro"),
+      { ...block("request_intro"), content: REVIEWED_REQUEST_INTRO },
       block("questions"),
       {
         ...block("reply_instructions"),

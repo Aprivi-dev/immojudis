@@ -391,6 +391,41 @@ export const PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE = "23 novembre 2026";
  */
 export const PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE = "26 novembre 2026";
 
+/**
+ * Politique de confidentialité 2026-11-27.1 : publication automatique de certaines informations des réponses des
+ * avocats poursuivants, sur décision d'une IA, sans relecture humaine préalable (décision du propriétaire du
+ * 27/11/2026). À publier AVANT la première publication automatique réelle.
+ *
+ * - Section « Professionnels contactés », nouveau paragraphe « Publication automatique de certaines
+ *   informations » : décision prise par un modèle d'IA d'Anthropic (Claude Haiku 5.5), prestataire déjà déclaré
+ *   pour la lecture des réponses ; seule une réponse par email de l'avocat poursuivant contacté, depuis l'adresse
+ *   contactée et authentifiée (DKIM et DMARC), est prise en compte ; liste fermée d'informations ; valeur publiée
+ *   sans modification par l'IA ; pièces jointes, photos, dépôts de l'espace privé et réponses des autres
+ *   professionnels toujours relus ; journal, retrait par un membre de l'équipe, arrêt immédiat ; réponses aux
+ *   messages envoyés avant cette version comprises ; retrait ou correction sur demande sous un mois, opposition
+ *   valant retrait ; article 22 formulé comme une analyse (« selon notre analyse »), sans affirmer de conformité,
+ *   avec réexamen par un membre de l'équipe sur demande.
+ * - Mis en cohérence dans la même section : base du tableau (« Aucune information reçue n'est publiée sans
+ *   vérification humaine » est retirée), données du tableau (décisions prises par un modèle d'IA), lecture des
+ *   réponses par l'IA, affichage sur la fiche, paragraphe de l'envoi automatique (« puis vérifiées par un membre
+ *   de l'équipe avant toute mise à jour d'une fiche » est retiré). « Décisions automatisées et enrichissements » :
+ *   l'exception de la publication automatique et ce que dit le message.
+ * - Livrés à part, dans la même PR : l'introduction du modèle de message (révision 12), les mentions sous la
+ *   signature, la note du dépôt privé et la rubrique « Envoi automatique » du pied des messages du pilote.
+ * - `AUTOPILOT_LEGAL_MIN_PRIVACY_VERSION` ne change pas : elle conditionne l'envoi automatique, que cette version
+ *   ne modifie pas. La publication automatique a ses propres verrous.
+ *
+ * Les conditions décrites (avocat poursuivant, email authentifié, liste fermée, pièces jointes et espace privé
+ * exclus) sont celles de `auto-publication-policy.ts` au 27/11/2026 : le texte change avec elles. La version
+ * 2026-11-26.1 est archivée. Aucun consentement n'est redemandé : la version n'est qu'enregistrée avec
+ * l'acceptation d'une inscription ou d'un achat. En vigueur à la mise en ligne, sans préavis. Date de rédaction ;
+ * à décaler à la date réelle de mise en ligne si elle diffère (elle n'entre pas dans l'empreinte du texte). AIPD :
+ * avenant AIPD-AGENT-INFO-PILOTE v1.2, à verser au dépôt interne à côté de
+ * `docs/rgpd-aipd-agent-information-pilote.md` (`docs/README.md`). Relecture `juridique-rgpd` et d'un avocat à
+ * faire.
+ */
+export const PRIVACY_AUTO_PUBLICATION_EFFECTIVE_DATE = "27 novembre 2026";
+
 export const LEGAL_DOCUMENTS = {
   legal: {
     version: "2026-10-26.2",
@@ -405,9 +440,9 @@ export const LEGAL_DOCUMENTS = {
     path: "/conditions-generales",
   },
   privacy: {
-    version: "2026-11-26.1",
-    sha256: "7942138ad871fb1bc03c0f367ad11beb0088e33c8b2150caa038d49e0278de53",
-    effectiveDate: PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
+    version: "2026-11-27.1",
+    sha256: "8c12783a264eca8856b5cbd37156a43125f4ffc23302f275711a362de8584c1c",
+    effectiveDate: PRIVACY_AUTO_PUBLICATION_EFFECTIVE_DATE,
     path: "/privacy",
   },
 } as const;

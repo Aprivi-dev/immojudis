@@ -114,7 +114,9 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       ).toEqual([]);
       // Les textes du lot C (14/11/2026) sont bien dans le message contrôlé.
       expect(output).toContain("Une fiche exacte évite aux candidats");
-      expect(output).toContain("Rien n’est publié sans relecture par notre équipe.");
+      expect(output).toContain(
+        "Ce qui y est déposé est relu par notre équipe avant toute publication.",
+      );
       expect(output).toContain("Les informations que vous nous transmettez peuvent être affichées");
       // Relecture juridique-rgpd du 14/11/2026.
       expect(output).toContain("cette mention vous rend identifiable");
@@ -149,7 +151,7 @@ describe("aucune mention commerciale dans le message de l'agent (cadrage juridiq
       "Les informations que vous nous transmettez peuvent compléter ou corriger la fiche publique de cette vente, sans votre nom ni votre qualité. Pour les faire retirer : répondez à cet email.",
       "Votre réponse sert à identifier l’avocat poursuivant, à qui nous écrirons ensuite, ou à indiquer aux candidats où consulter le cahier.",
       "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
-      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.example. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.example. Ce lien est propre à ce dossier. Ce qui y est déposé est relu par notre équipe avant toute publication.",
     ];
     for (const text of lotC) {
       expect(

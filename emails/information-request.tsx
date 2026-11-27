@@ -25,7 +25,12 @@ export type InformationRequestEmailProps = {
   legalFooter?: InformationAgentLegalFooter;
 };
 
-export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v14";
+/**
+ * Version du rendu, inscrite avec chaque envoi. v15 (27/11/2026) : les mentions sous la signature et la note du
+ * dépôt privé ne promettent plus de relecture avant toute mise à jour ; elle permet de retrouver les messages
+ * envoyés sous l'ancienne promesse.
+ */
+export const INFORMATION_REQUEST_EMAIL_TEMPLATE_VERSION = "information_request_v15";
 
 /** Aperçu de la messagerie sous l'objet : ce qu'on attend, et que c'est facultatif. */
 export const INFORMATION_REQUEST_PREHEADER =
@@ -104,9 +109,13 @@ export function buildInformationRequestParts(props: InformationRequestEmailProps
   return { html, text };
 }
 
-/** Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. */
+/**
+ * Mentions de transparence du pied (IA, rôle d'Immojudis, pièces). Reprises mot pour mot. Communes à tous les
+ * destinataires : seule la réponse par email de l'avocat poursuivant peut être publiée sans relecture
+ * (`auto-publication-policy.ts`, décision du propriétaire du 27/11/2026), la phrase le dit pour tous.
+ */
 const NOTICE_LINES = [
-  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+  "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses. Certaines informations d’une réponse par email de l’avocat poursuivant peuvent être reprises sur la fiche sans relecture préalable par notre équipe ; les autres sont relues avant toute mise à jour.",
   "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
 ] as const;
 
@@ -199,8 +208,9 @@ function depositHost(contributionUrl: string): string {
 }
 
 const DEPOSIT_LINK_TEXT = "l’espace privé de ce dossier";
+// Le dépôt privé n'est jamais publié automatiquement (motif `not_email_reply` de `auto-publication-policy.ts`).
 const DEPOSIT_NOTE =
-  "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.";
+  "Ce lien est propre à ce dossier. Ce qui y est déposé est relu par notre équipe avant toute publication.";
 
 /** « Vous pouvez aussi répondre dans <lien>, sur immojudis.com », lien et hôte déjà mis en forme. */
 function depositSentence(link: string, host: string): string {
