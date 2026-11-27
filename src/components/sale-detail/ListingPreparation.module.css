@@ -184,6 +184,26 @@
   font-weight: 600;
   text-underline-offset: 3px;
 }
+/* Une preuve d'un point à vérifier : même texte qu'une ligne de la liste, y compris repliée. */
+.proof {
+  display: block;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.moreProofs summary {
+  min-height: 44px;
+  padding: 10px 0;
+  color: var(--gold-text);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.moreProofs .proof + .proof {
+  margin-top: 10px;
+}
+
 /* L'extrait de la pièce qui fonde un point à vérifier. */
 .proofQuote {
   display: block;
