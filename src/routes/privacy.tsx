@@ -182,9 +182,9 @@ const processingRows = [
   {
     purpose:
       "Professionnels contactés par Immojudis (avocats, notaires, commissaires de justice, gestionnaires)",
-    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu) ; date du premier relevé de l’adresse ; pour un envoi automatique, trace de l’envoi (date, contrôles passés, empreinte du texte), sans adresse",
+    data: "Nom, fonction, cabinet, étude ou service, adresse professionnelle, source de l’adresse (type, lien et date de relevé), annonce, questions, messages, réponses, pièces et décisions de validation, prises par un membre de l’équipe ou, pour la publication automatique, par un modèle d’IA ; valeurs transmises et affichées sur la fiche de la vente, sans nom ; pièces transmises publiées sous un libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à part), avec leur contenu tel qu’il a été transmis ; réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu) ; date du premier relevé de l’adresse ; pour un envoi automatique, trace de l’envoi (date, contrôles passés, empreinte du texte), sans adresse",
     basis:
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Aucune information reçue n’est publiée sans vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Certaines informations d’une réponse par email de l’avocat poursuivant peuvent être publiées sur décision d’un modèle d’IA, sans vérification humaine préalable (voir plus bas) ; les autres informations reçues ne sont publiées qu’après vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     retention:
       "Adresse relevée à la collecte de l’annonce et non utilisée pour un envoi : conservée tant que le détail de l’annonce est relu, jamais rafraîchie après la date de la vente, et supprimée au plus tard 28 jours après la dernière consultation de l’annonce (purge hebdomadaire, seuil de 21 jours) ; demande jamais envoyée : 28 jours au plus après sa création ; 12 mois si le professionnel ne répond pas, 24 mois après le dernier échange s’il répond ; adresses invalides (rebond permanent) : 12 mois ; identité signalée comme « mauvais destinataire » : 24 mois ; information affichée sur une fiche : supprimée avec la fiche, ou plus tôt sur demande de retrait ou opposition ; liste d’opposition : au moins 3 ans après l’opposition, puis tant que l’agent d’information est exploité, avec revue annuelle ; journal de l’envoi automatique, sans adresse : 5 ans ; chez Anthropic : 30 jours (voir « Destinataires et sous-traitants »)",
   },
@@ -355,37 +355,40 @@ export function PrivacyPage({
             </p>
             <p className="mt-3">
               Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui
-              aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les
-              noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés
-              automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes
-              sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs
-              métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré. Les réponses
-              aux messages qui nommaient un autre prestataire d’IA sont lues par une personne, sans
-              IA. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait
-              appel à des sous-traitants et la durée de conservation sont indiqués dans «
-              Destinataires et sous-traitants ».
+              aide à les classer et à y repérer les informations sur la vente ; pour certaines de
+              ces informations, il décide aussi de leur publication automatique (voir plus bas).
+              Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses
+              e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom.
+              Les photos jointes sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et
+              privées de leurs métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas
+              filtré. Les réponses aux messages qui nommaient un autre prestataire d’IA sont lues
+              par une personne, sans IA. Le lieu de stockage des données, les conditions dans
+              lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont
+              indiqués dans « Destinataires et sous-traitants ».
             </p>
             <p className="mt-3">
               Les informations qu’un professionnel nous transmet (par exemple la surface, le nombre
               de pièces, l’occupation, la mise à prix ou la date de la vente) peuvent compléter ou
-              corriger la fiche publique de la vente, après relecture. Ces valeurs sont affichées
+              corriger la fiche publique de la vente, après relecture, ou sans relecture préalable
+              dans le cas de la publication automatique décrite plus bas. Ces valeurs sont affichées
               sans votre nom. Pour une information venue de l’avocat poursuivant, la fiche indique
               cette qualité et la date de son message, et rappelle de la vérifier dans le cahier des
               conditions de vente : comme la fiche nomme par ailleurs l’organisateur de la vente,
               l’avocat reste identifiable. Une photo ou une pièce transmise peut aussi être ajoutée
-              à la fiche, après la même relecture : une pièce transmise est publiée sous un libellé
-              neutre (qualité de l’expéditeur et date de réception ; le type de pièce est indiqué à
-              part) ; son contenu est publié tel qu’il a été transmis. Vous pouvez à tout moment,
-              sans motif, demander le retrait de ce que vous nous avez transmis, en répondant à
-              notre message ou en écrivant à {legalValue(publisher.contactEmail)} : nous le retirons
-              alors de la fiche, au plus tard un mois après réception de votre demande. Ce qui est
-              affiché disparaît aussi avec la fiche, en principe 24 heures après la vente. Nos
-              journaux internes gardent la trace de la valeur publiée, de sa date de réception et de
-              la qualité de l’expéditeur (avocat poursuivant ou autre contact), sans votre nom ni
-              votre adresse, pour pouvoir répondre de son origine. Le journal des publications est
-              supprimé avec la fiche ; l’historique des modifications de la fiche est conservé 12
-              mois après chaque modification ; le journal des décisions et la file de relecture
-              n’ont pas encore de durée fixée : nous l’indiquerons ici dès qu’elle le sera.
+              à la fiche, après relecture par l’équipe : une pièce transmise est publiée sous un
+              libellé neutre (qualité de l’expéditeur et date de réception ; le type de pièce est
+              indiqué à part) ; son contenu est publié tel qu’il a été transmis. Vous pouvez à tout
+              moment, sans motif, demander le retrait de ce que vous nous avez transmis, en
+              répondant à notre message ou en écrivant à {legalValue(publisher.contactEmail)} : nous
+              le retirons alors de la fiche, au plus tard un mois après réception de votre demande.
+              Ce qui est affiché disparaît aussi avec la fiche, en principe 24 heures après la
+              vente. Nos journaux internes gardent la trace de la valeur publiée, de sa date de
+              réception et de la qualité de l’expéditeur (avocat poursuivant ou autre contact), sans
+              votre nom ni votre adresse, pour pouvoir répondre de son origine. Le journal des
+              publications est supprimé avec la fiche ; l’historique des modifications de la fiche
+              est conservé 12 mois après chaque modification ; le journal des décisions et la file
+              de relecture n’ont pas encore de durée fixée : nous l’indiquerons ici dès qu’elle le
+              sera.
             </p>
             <p className="mt-3">
               Vous pouvez vous opposer à tout moment, sans motif, par le lien « Ne plus être
@@ -435,9 +438,38 @@ export function PrivacyPage({
               RGPD. Répondre reste facultatif. Si vous nous signalez que vous n’êtes pas l’avocat de
               la vente, l’outil ne vous écrit plus pendant 24 mois et l’envoi automatique est
               suspendu jusqu’à vérification par l’équipe. Vos réponses sont lues avec l’aide d’un
-              outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour d’une
-              fiche. L’opposition, les durées de conservation et les droits décrits ci-dessus
-              s’appliquent de la même façon.
+              outil d’IA ; certaines informations peuvent être publiées sans vérification préalable
+              par un membre de l’équipe (voir ci-dessous). L’opposition, les durées de conservation
+              et les droits décrits ci-dessus s’appliquent de la même façon.
+            </p>
+            <p className="mt-3">
+              Publication automatique de certaines informations. Certaines informations d’une
+              réponse peuvent être publiées sur la fiche de la vente sans relecture préalable par un
+              membre de l’équipe. La décision de les publier est prise par un modèle d’IA
+              d’Anthropic (Claude Haiku 5.5 à la date de cette version), le prestataire qui lit déjà
+              les réponses (voir « Destinataires et sous-traitants »), après des contrôles
+              automatiques. Seule est prise en compte une réponse par email de l’avocat poursuivant
+              à qui nous avons écrit, envoyée depuis l’adresse contactée et dont l’authenticité est
+              vérifiée automatiquement (contrôles DKIM et DMARC). Seules les informations d’une
+              liste fermée peuvent être publiées ainsi, par exemple la surface ou le nombre de
+              pièces ; la valeur publiée est celle de votre message, sans modification par l’IA. Les
+              pièces jointes, les photos, les dépôts dans l’espace privé du dossier et les réponses
+              des autres professionnels ne sont jamais publiés automatiquement : ils restent relus
+              par l’équipe. Chaque décision est enregistrée dans un journal. Un membre de l’équipe
+              peut retirer à tout moment une information publiée, et la publication automatique peut
+              être arrêtée immédiatement. Cela vaut aussi pour les réponses aux messages envoyés
+              avant la version 2026-11-27.1 de cette page, qui annonçaient une relecture par
+              l’équipe avant toute mise à jour de la fiche. L’information publiée s’affiche comme
+              les autres informations transmises : sans votre nom, avec la qualité d’avocat
+              poursuivant et la date de votre message (voir plus haut). Vous pouvez à tout moment,
+              sans motif, en demander le retrait ou la correction, en répondant à notre message ou
+              en écrivant à {legalValue(publisher.contactEmail)} : nous la retirons au plus tard un
+              mois après réception de votre demande. Votre opposition, décrite plus haut, vaut aussi
+              demande de retrait. Cette décision porte sur une information relative au bien vendu,
+              et non sur vous : selon notre analyse, elle ne produit pas d’effet juridique à votre
+              égard et ne vous affecte pas de manière importante au sens de l’article 22 du RGPD. Si
+              vous estimez le contraire, écrivez-nous : un membre de l’équipe réexaminera la
+              publication.
             </p>
             <p className="mt-3">
               Lorsqu’une vente judiciaire n’indique aucune adresse d’avocat, Immojudis peut, après
@@ -708,13 +740,16 @@ export function PrivacyPage({
               l’avocat poursuivant décrits dans la section « Professionnels contactés par Immojudis
               » ; ces envois ne produisent aucun effet juridique à l’égard du destinataire et ne
               l’affectent pas de manière importante (article 22 du RGPD). Aucune demande n’est
-              lancée directement par un utilisateur Analyse. Toute information transmise par un
-              professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ;
-              les valeurs relevées automatiquement dans les pièces publiques des ventes sont
-              affichées sans relecture préalable, avec leur source, et peuvent être signalées. Le
-              message précise qu’une IA aide à lire et classer les réponses et que l’équipe vérifie
-              les informations avant toute mise à jour de la fiche ; il reste purement informatif et
-              ne contient aucune sollicitation commerciale.
+              lancée directement par un utilisateur Analyse. Une information transmise par un
+              professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche,
+              sauf certaines informations d’une réponse par email de l’avocat poursuivant, publiées
+              sur décision d’un modèle d’IA sans relecture préalable (voir « Professionnels
+              contactés par Immojudis ») ; les valeurs relevées automatiquement dans les pièces
+              publiques des ventes sont affichées sans relecture préalable, avec leur source, et
+              peuvent être signalées. Le message précise qu’une IA aide à lire et classer les
+              réponses, et si des informations peuvent être reprises sur la fiche sans relecture
+              préalable ; il reste purement informatif et ne contient aucune sollicitation
+              commerciale.
             </p>
           </PrivacySection>
 

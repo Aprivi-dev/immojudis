@@ -421,7 +421,10 @@ export const INFORMATION_AGENT_AUTOMATIC_SEND_SEARCHED_ADDRESS_MESSAGE =
 
 /**
  * Rubrique « Envoi automatique » du pied d'un message du pilote : texte de la relecture juridique du 23/11/2026
- * (section 2.2), repris mot pour mot. Le pilote n'écrit qu'à l'avocat poursuivant dont l'adresse figure dans
+ * (section 2.2), repris mot pour mot, sauf la cinquième phrase. Celle-ci disait « rien n’est publié
+ * automatiquement » ; depuis la décision du propriétaire du 27/11/2026, certaines informations d'une réponse
+ * authentifiée de l'avocat contacté sont publiées sur décision d'une IA, sans relecture préalable (politique de
+ * confidentialité 2026-11-27.1). Le pilote n'écrit qu'à l'avocat poursuivant dont l'adresse figure dans
  * l'annonce (`autopilot-rules.ts`), avec le gabarit publié ; « mauvais destinataire » d'un expéditeur authentifié
  * exclut l'identité 24 mois et arrête le pilote (`reply-intent.ts`, `wrong-recipient.ts`).
  */
@@ -430,7 +433,7 @@ const INFORMATION_AGENT_AUTOMATIC_SEND_STATEMENT = [
   "L’outil n’écrit qu’à l’avocat dont l’adresse figure dans l’annonce publique de la vente, et ne pose que des questions d’une liste fixe sur les informations absentes de l’annonce.",
   "Le texte est un modèle fixe : il n’est pas rédigé par une IA.",
   "Cet envoi ne produit aucun effet juridique à votre égard et ne vous affecte d’aucune autre manière importante : ce n’est pas une décision prise à votre sujet au sens de l’article 22 du RGPD. Répondre est facultatif ; ne pas répondre n’a aucune conséquence pour vous.",
-  "Vos réponses sont lues avec l’aide d’un outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour de la fiche : rien n’est publié automatiquement.",
+  "Vos réponses sont lues avec l’aide d’un outil d’IA. Certaines informations d’une réponse par email (par exemple une surface ou un nombre de pièces) peuvent être reprises sur la fiche telles que vous les avez écrites, sur décision de cet outil et sans relecture préalable par un membre de l’équipe ; les autres sont vérifiées par un membre de l’équipe avant toute mise à jour de la fiche. Vous pouvez demander le retrait d’une information à tout moment.",
   "Si ce message ne vous concerne pas, répondez « mauvais destinataire » : l’envoi automatique ne vous écrira plus pendant 24 mois, et il est arrêté jusqu’à vérification.",
 ].join(" ");
 

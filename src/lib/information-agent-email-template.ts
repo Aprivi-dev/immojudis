@@ -142,18 +142,21 @@ const INFORMATION_AGENT_ACCOUNT_INVITATION_LEGACY_TEXT = "Vous publiez d’autre
  * Révision du modèle du code. Un brouillon préparé sous une autre révision n'est pas repris : la
  * préparation et le pilote le régénèrent (`email_content_template_revision` de la mission).
  */
-export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 11;
+export const INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION = 12;
 
 /**
  * Révision minimale d'un modèle publié en base pour qu'il soit utilisé. Un modèle publié avant cette
  * révision (présentation commerciale d'Immojudis, invitation à créer un compte…) est ignoré au profit
  * du modèle du code, sans rien écrire en base ; un nouveau modèle publié depuis l'éditeur reprend la
  * numérotation après cette révision (migration `information_agent_legal_safeguards`). Les révisions 8 à
- * 11 ne changent que la rédaction : le seuil de conformité reste la révision 7. La révision 10 (lot C du
+ * 12 ne changent que la rédaction : le seuil de conformité reste la révision 7. La révision 10 (lot C du
  * 14/11/2026) retire l'invitation à joindre des documents ou des photos et la mention du procès-verbal
  * descriptif ; la révision 11 (relecture juridique-rgpd du même jour) dit qu'il est inutile de joindre des
- * pièces. Un modèle publié depuis l'éditeur avant elles garde l'ancien texte : il se republie (runbook de
- * l'agent, section du lot C).
+ * pièces. La révision 12 (décision du propriétaire du 27/11/2026) remplace « notre équipe la relit avant toute
+ * mise à jour » par la reprise automatique, sans relecture préalable, de certaines informations de la réponse.
+ * Un modèle publié depuis l'éditeur avant elles garde l'ancien texte : il se republie (runbook de l'agent,
+ * section du lot C). Les révisions en base suivent leur propre séquence : relever ce seuil demanderait de
+ * faire avancer cette séquence par une migration.
  */
 export const MIN_COMPLIANT_TEMPLATE_REVISION = 7;
 
@@ -271,7 +274,7 @@ export const informationAgentEmailTemplateContentSchema = z
   });
 
 export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemplateContent = {
-  name: "Demande de précisions sur une vente — version 12",
+  name: "Demande de précisions sur une vente — version 13",
   // Ni « audience » ni date de procédure dans l'objet : un avocat pourrait le lire comme un
   // message de juridiction. La marque en tête dit qui écrit.
   subjectTemplate: "Immojudis – question sur la vente {{sale_subject_title}}",
@@ -300,7 +303,7 @@ export const DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE: InformationAgentEmailTemp
       kind: "fixed",
       label: "Introduction de la demande",
       content:
-        "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.",
+        "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit. Certaines informations de votre réponse peuvent être reprises automatiquement sur la fiche, après une analyse par un outil d’IA et sans relecture préalable par notre équipe ; vous pouvez en demander le retrait à tout moment.",
     },
     {
       id: "questions",
@@ -335,7 +338,7 @@ export const INFORMATION_AGENT_PROTECTED_EMAIL_BLOCKS = [
   {
     title: "Transparence sur l’IA",
     description:
-      "Le destinataire est informé que l’IA aide à lire et classer les réponses et que notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+      "Le destinataire est informé que l’IA aide à lire et classer les réponses, que certaines informations d’une réponse par email de l’avocat poursuivant peuvent être reprises sur la fiche sans relecture préalable par notre équipe, et qu’il peut en demander le retrait.",
   },
   {
     title: "Confidentialité et droits",
