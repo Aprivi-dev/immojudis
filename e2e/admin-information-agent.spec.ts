@@ -208,7 +208,7 @@ test.describe("admin information agent", () => {
     expect(state.unexpectedRequests).toEqual([]);
   });
 
-  test("shows the publication of received information off, with the automatic mode locked", async ({
+  test("shows the publication of received information off, with the automatic mode behind a confirmation", async ({
     page,
   }) => {
     const state = await prepareAdminInformationAgentPage(page);
@@ -219,9 +219,11 @@ test.describe("admin information agent", () => {
     });
     await expect(panel).toBeVisible();
     await expect(panel.getByText("Mode : Arrêt")).toBeVisible();
-    // Le mode automatique est affiché, verrouillé, avec ses conditions.
-    await expect(panel.getByRole("button", { name: "Automatique (verrouillé)" })).toBeDisabled();
-    await expect(panel.getByText("AIPD mise à jour et signée")).toBeVisible();
+    // Le mode automatique (étape 6) n'est proposé qu'après la case de confirmation.
+    const automatic = panel.getByRole("button", { name: "Automatique", exact: true });
+    await expect(automatic).toBeDisabled();
+    await panel.getByRole("checkbox", { name: /Je confirme : en mode automatique/ }).check();
+    await expect(automatic).toBeEnabled();
     // L'arrêt d'urgence est présent ; déjà à l'arrêt, il n'y a rien à arrêter.
     await expect(panel.getByRole("button", { name: "Arrêt d’urgence" })).toBeDisabled();
     await expect(panel.getByRole("button", { name: "Simulation", exact: true })).toBeEnabled();
@@ -1022,8 +1024,8 @@ async function prepareAdminInformationAgentPage(page: Page): Promise<AgentMockSt
       await route.fulfill({ status: 200, json: autopilotFixture(state.pilotMission) });
       return;
     }
-    // Publication automatique des informations reçues (onglet Réglages) : arrêt par défaut, automatique
-    // verrouillé. Une action (changement de mode, arrêt d'urgence) est tracée et rend l'état « Arrêt ».
+    // Publication automatique des informations reçues (onglet Réglages) : arrêt par défaut, automatique derrière une
+    // confirmation. Une action (changement de mode, arrêt d'urgence) est tracée et rend l'état « Arrêt ».
     if (
       path === "/api/admin/information-agent/auto-publication" &&
       (method === "GET" || method === "POST")
@@ -1294,14 +1296,6 @@ function autoPublicationFixture() {
   return {
     mode: "off",
     modeLabel: "Arrêt",
-    autoLocked: true,
-    lockReasons: [
-      "textes juridiques mis à jour et publiés",
-      "AIPD mise à jour et signée",
-      "validation des huit points par un avocat",
-      "jeu d’évaluation à zéro publication fausse",
-      "période de simulation concluante",
-    ],
     eligibleFields: ["surface", "surface du terrain", "nombre de pièces"],
     caps: { daily: 10, perCase: 2 },
     changes: [],

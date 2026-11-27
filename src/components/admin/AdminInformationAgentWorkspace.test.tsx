@@ -61,6 +61,7 @@ vi.mock("@/lib/client-api", () => ({
 }));
 vi.mock("@/lib/client-api/admin-auto-publication", () => ({
   fetchAdminAutoPublication: mocks.autoPublication,
+  fetchAdminRecentAutoPublications: vi.fn(),
   runAdminAutoPublicationActionClient: vi.fn(),
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -94,8 +95,6 @@ beforeEach(() => {
   mocks.autoPublication.mockResolvedValue({
     mode: "off",
     modeLabel: "Arrêt",
-    autoLocked: true,
-    lockReasons: ["textes juridiques mis à jour et publiés"],
     eligibleFields: ["surface"],
     caps: { daily: 10, perCase: 2 },
     changes: [],

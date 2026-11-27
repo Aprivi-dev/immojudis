@@ -1,6 +1,6 @@
 # Agent d’information — guide d’exploitation
 
-Mise à jour : 23 octobre 2026 (renvois et variables) ; 14 novembre 2026 (pilote, lot B). Écran : **Admin › Agent IA** (`/admin/agent-ia`). État de production : l’envoi manuel est ouvert depuis le 2 novembre 2026 (`INFORMATION_AGENT_OUTBOUND_ENABLED=true`, constaté le 14/11), voir « Piloter le pilote » ; à revérifier avant de s’y fier.
+Mise à jour : 23 octobre 2026 (renvois et variables) ; 14 novembre 2026 (pilote, lot B) ; 27 novembre 2026 (publication automatique arbitrée par Claude Haiku, étape 6). Écran : **Admin › Agent IA** (`/admin/agent-ia`). État de production : l’envoi manuel est ouvert depuis le 2 novembre 2026 (`INFORMATION_AGENT_OUTBOUND_ENABLED=true`, constaté le 14/11), voir « Piloter le pilote » ; à revérifier avant de s’y fier.
 
 ## Règle d’exploitation
 
@@ -38,7 +38,7 @@ Mise à jour : 23 octobre 2026 (renvois et variables) ; 14 novembre 2026 (pilote
    - dépôt via le lien privé (`/contribuer/<mission>`) : note, liens, fichiers contrôlés (signature, taille, quota). La page rappelle les questions de l’email. Le quota est de 12 fichiers par dossier ; une réservation expirée sans validation est libérée (objet orphelin supprimé d’abord, 15 minutes après l’expiration du lien) avant toute nouvelle réservation ;
    - réponse reçue hors circuit (téléphone, courrier, autre adresse) : « Consigner une réponse reçue » sur une mission envoyée, enregistrée comme import manuel (expéditeur non vérifié).
 
-   Une demande de ne plus être contacté vaut opposition globale sur chacun des trois canaux : « STOP » ou « Stop, merci » seul sur une ligne, « (merci de / veuillez / je vous demande de) ne plus me contacter, m’écrire, me solliciter, me relancer », « ne m’écrivez plus », « cessez vos envois », « je me désabonne », « je ne souhaite plus recevoir vos messages » ou « être contacté », « je m’oppose au traitement de mes données » (`information-agent-inbound/reply-intent.ts`). Une opposition de trop coûte moins qu’une opposition manquée. Les faits extraits deviennent des candidats `pending` ; la revue affiche leur provenance (e-mail, portail, import manuel, expéditeur différent du contact). Rien n’est publié sans décision humaine ; une pièce ou une photo exige en plus des droits « autorisés », une analyse terminée et le « caviardage vérifié ». Les faits acceptés alimentent `auction_fact_claims` (déclencheur `bridge_accepted_information_agent_fact_claim`).
+   Une demande de ne plus être contacté vaut opposition globale sur chacun des trois canaux : « STOP » ou « Stop, merci » seul sur une ligne, « (merci de / veuillez / je vous demande de) ne plus me contacter, m’écrire, me solliciter, me relancer », « ne m’écrivez plus », « cessez vos envois », « je me désabonne », « je ne souhaite plus recevoir vos messages » ou « être contacté », « je m’oppose au traitement de mes données » (`information-agent-inbound/reply-intent.ts`). Une opposition de trop coûte moins qu’une opposition manquée. Les faits extraits deviennent des candidats `pending` ; la revue affiche leur provenance (e-mail, portail, import manuel, expéditeur différent du contact). Rien n’est publié sans décision humaine, sauf en mode « Automatique » de la publication automatique (surface, terrain, nombre de pièces du corps d’une réponse d’avocat ; étape 6, voir « Publication automatique arbitrée par Claude Haiku ») ; une pièce ou une photo exige en plus des droits « autorisés », une analyse terminée et le « caviardage vérifié ». Les faits acceptés alimentent `auction_fact_claims` (déclencheur `bridge_accepted_information_agent_fact_claim`).
 
 ## File de travail, préparation en deux étapes et suivi (lot 1, 02/11/2026)
 
@@ -302,6 +302,10 @@ barrière : la publication automatique restera contrôlée par ces conditions st
 
 ## Moteur « publier ou relire » : simulation, modes et arrêt d’urgence (étape 3, 10/11/2026)
 
+> **Depuis l’étape 6 (27/11/2026), les verrous décrits ci-dessous sont levés** et le moteur est en version
+> `auto_publication_v2` : voir « Publication automatique arbitrée par Claude Haiku (étape 6) ». Cette section
+> décrit l’étape 3 telle qu’elle a été livrée ; ses règles de mode, d’arrêt d’urgence et de journal restent.
+
 **État à la livraison : mode « Arrêt ». Aucun chemin ne publie.** Le moteur décide, la décision est
 journalisée et affichée, rien n’est écrit sur une fiche. Trois barrières :
 
@@ -431,6 +435,159 @@ La fonction de publication automatique viendra à l’étape 6, qui devra lever 
   n’est écrit, sans erreur). Il suit la vente (seule suppression admise). Migration `20261115100000`, tests
   pgTAP `880`.
 
+## Publication automatique arbitrée par Claude Haiku (étape 6, décision du 27/11/2026)
+
+**Décision du propriétaire du 27/11/2026 (« tout automatique »)**, qui remplace celle du 11/11/2026 (« R9 après R8 »)
+et les conditions de déverrouillage de l’étape 3 (validation des huit points par un avocat, jeu d’évaluation à zéro
+publication fausse, textes et AIPD, simulation concluante) : une information extraite d’une réponse d’avocat est
+publiée sur la fiche **sans relecture humaine** quand les conditions structurelles sont remplies et que Claude Haiku
+la confirme. Elle vaut aussi pour les réponses à des messages envoyés avant la décision. Le propriétaire a vu, avant
+de décider, le chiffre du banc du 11/11 et le fait que les règles de prudence confiées à Haiku n’ont jamais été
+mesurées sur un vrai verdict. Les textes juridiques et l’AIPD sont traités à part : **aucune version de politique
+n’est exigée par ce code**.
+
+**État à la livraison : mode inchangé (« Arrêt » en production).** La migration `20261211100000` n’écrit pas le
+réglage ; le propriétaire (ou un administrateur) passe en « Automatique » lui-même, voir « Activer » ci-dessous.
+
+### Schéma de décision (moteur `auto_publication_v2`)
+
+1. **Conditions structurelles** (sécurité, authenticité, injection ; `auto-publication-policy.ts`) : champ de la
+   liste fermée (surface, terrain, nombre de pièces) ; fait en attente lu par les règles dans le **corps** du message
+   (jamais une pièce jointe, jamais l’IA seule) ; réponse par e-mail (ni portail, ni import), expéditeur = adresse
+   contactée, DKIM **et** DMARC « pass », reçue moins de 30 jours après l’envoi ; dossier adressé à l’avocat poursuivant
+   (`source_lawyer`), au statut « répondu » ou « en relecture », sans opposition (dossier ni registre des contacts) ;
+   réponse traitée sans autre motif de relecture que le motif générique `candidate_or_attachment_review` (consigne
+   adressée à un modèle, mauvais destinataire, opposition possible, réponse ambiguë, expéditeur différent, lot non
+   nommé : bloquants) ; ni « ne pas publier » ni consigne adressée à un modèle dans l’objet ou le corps ; aucun autre
+   message du dossier, antérieur ou postérieur, en relecture bloquante, opposé ou qui demande de ne pas publier ;
+   aucune autre valeur pour ce champ dans la réponse ni dans une autre information en attente pour la vente ; **aucune
+   analyse du message (pièce jointe, lecture du corps par l’IA) en file, en cours ou en échec avec des essais
+   restants** (`evidence_pending` : un PDF joint « Carrez 58,30 » peut contredire « 62 m² » dans le corps), et **aucune
+   pièce qui ne sera jamais lue en entier** (`attachment_unreadable` : mot de passe, format non pris en charge, échec
+   définitif, analyse bloquée avec ses essais épuisés, ou lecture partielle, `metadata.reading.complete` différent de
+   `true`) : relecture humaine ; champ vide sur la fiche ; valeur plausible pour le type de bien ; **vente à un seul lot** (ni `multi_lot_sale`, ni lot
+   choisi dans l’annonce) ; plafonds de 10 publications par jour (heure de Paris) et 2 par dossier.
+2. **Verdict de Claude Haiku** (dernier verdict du fait, version de prompt courante, pour la valeur du fait) :
+   « publier » (`clear_statement`) ou un motif de la liste fermée (conditionnel ou approximation, autre lot ou autre
+   bien, valeur rapportée ou comparée, correction ou fourchette, autre grandeur, valeur non actuelle, demande de ne
+   pas publier, phrase ambiguë, incohérence avec la fiche, consigne adressée à un modèle, autre). Pas de verdict,
+   verdict d’un autre prompt, verdict invalide ou indisponible, verdict pour une autre valeur : relecture.
+
+**Règles de prudence de la version 1 confiées à Haiku** (elles ne bloquent plus d’elles-mêmes ; leurs codes restent
+lisibles pour les décisions déjà écrites) : accord des règles et de la lecture par l’IA (`semantic_not_confirmed`),
+motifs de la phrase (conditionnel, approximation, valeur rapportée, fourchette, correction, renvoi :
+`statement_review_reason`), nom d’un particulier (`private_person_named` ; seule une valeur est publiée, jamais un
+extrait). Gardées bien que prudentielles, parce qu’elles bornent ce qu’un texte hostile peut faire publier : champ
+vide sur la fiche, plausibilité, délai de 30 jours, vente à un seul lot, plafonds.
+
+### L’arbitre (worker Python)
+
+`services/data-pipeline/src/information_agent_auto_publication_arbiter.py`, appelé à la fin de chaque exécution du
+worker de l’analyse (workflow `information-agent-evidence.yml`). Ce workflow est déclenché par la passe des réponses
+dès qu’une analyse attend (au plus une fois par tranche de 10 minutes) et par l’horaire GitHub (`*/30`, **non
+tenu** : c’est un filet, pas une garantie de cadence) ; à chaque déclenchement, son contrôle préalable ne lance le
+worker que si une analyse attend **ou si un fait attend un verdict** (RPC `list_information_agent_facts_to_arbitrate`).
+Une panne de cette lecture (RPC absente, erreur, réponse inattendue) ne bloque jamais l’analyse des pièces :
+avertissement « Arbitre de la publication automatique » dans le workflow. Les faits à juger sont choisis en base, le
+plus ancien d’abord, et **rien n’est envoyé à Haiku pour une réponse qui ne peut pas être publiée** : champ rempli,
+plusieurs lots, DKIM ou DMARC en échec, expéditeur différent de l’adresse contactée, import manuel ou portail, dossier
+d’un autre destinataire que l’avocat poursuivant, dossier ni répondu ni en relecture, opposition (dossier ou contact),
+message pas lu en entier (analyse en cours, à reprendre, illisible ou partielle) ; un verdict final (`completed`, `skipped`) n’est jamais refait ; un verdict passager
+(`unavailable`, `invalid_output` : délai, 429 ou 5xx, plafond horaire, prestataire différent) est refait au plus 3
+fois, une heure au moins après le précédent. Après 3 erreurs du fournisseur de suite, la passe s’arrête (les faits
+suivants attendent). Fournisseur non configuré (clé absente) : aucun verdict n’est inscrit et l’exécution échoue
+(annotation d’erreur « Arbitre de la publication automatique » du workflow) ; toute autre panne de la passe aussi.
+Une réponse de plus de 12 000 caractères n’est jamais tronquée : verdict « non appelé » (`ARBITER_TEXT_TOO_LONG`),
+relecture humaine. Un verdict « non appelé » (texte trop long, consigne adressée à un modèle) s’affiche « l’IA n’a pas
+été appelée » (`arbiter_skipped`), distinct de « verdict de l’IA indisponible ». Même client (`create_llm_client`), même modèle (Claude Haiku 5.5), mêmes
+garde-fous que la lecture des réponses : plafond horaire `ANTHROPIC_MAX_CALLS_PER_HOUR`, échéance de 25 s, effort
+bas, un seul essai, prestataire identique à celui nommé dans le pied du message envoyé, texte expurgé et délimité
+(`<untrusted-reply>`), aucun appel sur une réponse qui contient une consigne adressée à un modèle. Au plus 20 faits
+par passe, 4 minutes au plus. Il ne tourne qu’en mode « Simulation » ou « Automatique » et si la lecture par l’IA est
+ouverte (`INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED`). Sortie validée strictement (pydantic : `publish` booléen,
+`reason_code` de la liste fermée, `confidence` facultative entre 0 et 1, aucune autre clé ; « publier » seulement avec
+`clear_statement`), puis inscrite par la RPC de service `record_information_agent_auto_publication_arbitration` dans
+`information_agent_auto_publication_arbitrations` (ajout seul, aucun texte libre ; la base refuse un verdict pour une
+autre valeur que celle du fait). Le moteur relit le verdict avec zod. Coût indicatif : un appel par information
+(environ 0,002 USD). **En simulation aussi, Haiku est appelé** (c’est ce qui mesure).
+
+### La publication
+
+En mode « Automatique », la passe des réponses (`/api/cron/information-agent-inbound`, pg_cron toutes les 2 minutes,
+production seulement) appelle pour chaque décision « publier » la RPC de service `publish_information_agent_fact_auto`,
+**seul chemin d’écriture `'auto'`**, depuis le seul module `src/lib/information-agent/auto-publication-store.ts`. Dans
+une seule transaction : mode relu sous verrou partagé (hors « auto », rien), verrou consultatif global (plafonds
+exacts), fait déjà publié rendu `already_published` sans rien réécrire (réponse perdue, second appel), contrôles de
+sécurité redits en base (fait du corps en attente, e-mail authentifié de l’adresse contactée, traité sans motif
+bloquant, reçu moins de 30 jours après l’envoi, analyses du message finies, avocat poursuivant, dossier ouvert et non
+opposé, contact non opposé, aucun autre message entrant du dossier en relecture bloquante, opposé ou mal adressé,
+dernier verdict « publier » de la version courante du prompt pour la valeur, champ vide, vente à un seul lot,
+plafonds ; la demande « ne pas publier » écrite dans un autre message du dossier n’est lue que par le moteur
+TypeScript), puis fait accepté sans relecteur, noyau `apply_information_agent_fact` avec `'auto'`
+(journal des publications), observation du pont (origine `professional_email`, source de provenance
+`immojudis_information_agent_auto_publication`), **décision automatique du registre**
+(`app_private.accept_information_agent_claim_automatically` : auteur « system », mode « auto », version de règle,
+rattachement « un seul lot »), projection de la vente, décision « published » au journal du moteur. Un contrôle qui
+échoue écrit « relecture » avec son motif. Une vente occupée par un import (55P03), un conflit ou une erreur réseau
+(réponse perdue) : reprise à la passe suivante. **Erreur sans code (réseau)** : le premier report est tracé au journal
+(« publication reportée », `publication_deferred`, visible dans l’onglet Réponses) ; si l’erreur dure encore une heure
+après cette trace, le fait passe en relecture humaine (`publication_failed`, jamais retenté) et le cron échoue. Toute autre erreur : relecture (`publication_failed`), jamais
+retentée, et le cron échoue (signalé) ; le journal refuse une décision pour un fait qui n’est plus en attente.
+
+### Activer, arrêter, retirer
+
+- **Activer** : Admin › Agent IA › Réglages › « Publication automatique des informations reçues » : cocher « Je
+  confirme : en mode automatique, les informations confirmées par l’IA sont publiées sur les fiches sans relecture
+  humaine », puis « Automatique ». **Il faut être connecté comme administrateur** : la RPC
+  `set_information_agent_auto_publication_mode` lit l’auteur dans le jeton (`auth.uid()`, `is_admin`), le rôle de
+  service est refusé ; aucun agent ni script ne peut le faire. Le changement est tracé (qui, quand, ancien et nouveau
+  mode). Conseillé : une période en « Simulation » d’abord, pour lire les verdicts dans l’onglet Réponses.
+- **Arrêter** : bouton rouge « Arrêt d’urgence » (inchangé), un geste, effet immédiat : la RPC de publication relit le
+  mode sous verrou et ne publie plus rien, même au milieu d’une passe (statut `stopped` du résumé du cron).
+- **Retirer une publication** : onglet Réponses, bloc « Publiées automatiquement, 30 derniers jours » (total exact ;
+  100 par page, « Afficher les suivantes » pour les autres) : « Ouvrir les observations de cette vente », puis
+  « Retirer » sur l’observation (chemin existant, `withdraw_auction_fact_claim`,
+  jeton de l’administrateur) : la projection rend la valeur de l’annonce. Une opposition de l’avocat se traite comme
+  avant (« Retraits à faire après une opposition »).
+- **Lire** : onglet Réponses, « Publié automatiquement le … » ou « À relire (raisons ; motif de l’IA) » ; résumé du
+  cron des réponses : `published`, `review`, `deferred`, `publishFailed`, `stopped`.
+
+### Verrous levés et invariants (migration `20261211100000`)
+
+Levés, remplacés par des contraintes de forme : `information_agent_auto_publication_settings_auto_locked` (et le refus
+55000 de la RPC de mode), `information_agent_fact_publications_auto_locked` (→ `…_auto_shape`), le refus du pont,
+`auction_fact_claim_decisions_auto_locked` (→ `…_auto_shape` et `…_policy_check`, colonne `policy_version`) et
+`auction_fact_claim_decisions_accepted_by_admin` (→ `…_accepted_by_admin_or_auto`). Invariants : l’invariant
+`information-agent-no-automatic-publication-path` est remplacé par `information-agent-single-automatic-publication-path`
+(un seul appel du noyau avec `'auto'`, dans la RPC de publication ; RPC réservée au serveur, qui relit le mode avant
+toute écriture et ne lit aucun jeton ; un seul module l’appelle, et ni un script, ni une fonction Edge, ni un workflow
+ne la nomme ; le réglage n’est écrit par une migration que dans les deux RPC d’administration ; le journal des
+publications n’est écrit que par le noyau, et une de ses lignes ne change que de vente (fusion de fiches) et ne part
+qu’avec sa vente, déclencheur `information_agent_fact_publications_guard` ; les RPC de service du moteur ne sont
+jamais données au navigateur) ; `registry-rpc-actor-from-jwt` et `field-projection-not-callable-by-api` admettent la seule décision
+automatique, épinglée par empreinte (`AUTO_DECIDE_BODY_SHA256`), avec l’accord explicite du propriétaire du 27/11.
+pgTAP : `924` (nouveau) ; `878`, `880`, `881`, `887` adaptés. Appels simultanés : `npm run
+test:db-auto-publication-concurrency` (trois publications en même temps sur un dossier : deux au plus), dernière étape
+du job base de données de la CI, après les tests pgTAP (ses lignes restent dans le registre, en ajout seul). La
+migration retire puis recrée ses contraintes de forme et retire l’ancienne signature de la RPC : une base qui a vu une
+version antérieure n’en garde rien.
+
+### Ce que mesure le banc (borne pessimiste)
+
+Le banc (`src/lib/information-agent/evaluation/`) joue désormais le moteur v2 avec un arbitre **simulé permissif**
+(Haiku dit « publier » pour tout fait du corps) : il mesure ce que les seules conditions structurelles laissent passer.
+Au 27/11/2026, configuration `suiveur` : 81 publications dont 64 fausses (contre 58 dont 41 avec le moteur v1), et
+autant dans l’état réel (0 avant : le motif générique de la réception bloquait tout). Couverture inchangée (17 sur
+90). Les publications fausses sont dans `known_defects.json` ; le groupe « règles de prudence confiées à l’arbitre »
+(98 entrées) liste les pièges que **seul le verdict de Haiku** doit écarter. Aucun vrai verdict n’a été mesuré.
+
+### Ordre de déploiement et retour arrière
+
+**Migration avant le code** : le code lit la table des verdicts et appelle la RPC de publication. Le mode reste celui
+de la base. Retour arrière : arrêt d’urgence d’abord, puis le code de l’étape 3, puis la migration de retour décrite en
+tête de `20261211100000` (les journaux et les verdicts restent, en ajout seul ; les publications déjà faites se
+retirent une à une).
+
 ## Jeu d’évaluation et essai réel du modèle (étape 4, 11/11/2026)
 
 **À quoi il sert.** Mesurer, sans rien publier, ce que la chaîne entière (réception, règles, lecture par l’IA,
@@ -491,8 +648,8 @@ sa signature complète (configuration, état, cas, champ, valeur, message, prove
 même fait dans l’état réel) : une nouvelle cause sur le même cas fait échouer le test. Résultats du
 11/11/2026, état attendu : `regles_seules` 0 publication ; `modele_ideal` 57 publications dont 40 fausses,
 couverture 17 sur 90 ; `suiveur` 58 publications dont 41 fausses, couverture 17 sur 90 ; toutes les fausses
-sont des défauts connus (trous des règles et des détecteurs, groupés dans `known_defects.json`). Le mode
-automatique reste verrouillé tant qu’ils ne sont pas corrigés.
+sont des défauts connus (trous des règles et des détecteurs, groupés dans `known_defects.json`). Depuis la
+décision du 27/11/2026, le mode automatique est ouvert sans attendre leur correction (voir l’étape 6).
 
 **Bloqué pour la bonne raison.** Pour la configuration qui fait foi, le rapport (`blocage_suiveur`) dit, pour
 chaque champ « ne doit pas être publié » qui n’est pas une publication fausse, quel motif l’a bloqué (motif du

@@ -982,17 +982,19 @@ select throws_ok(
   'P0002', 'sale_not_found', 'a decided claim whose sale was deleted without a kept sale reports the missing sale'
 );
 
--- Publication automatique : toujours verrouillée -----------------------------------------------------------------------
+-- Publication automatique (étape 6) : seule une forme est admise, et ces fonctions n'écrivent que des décisions
+-- manuelles -------------------------------------------------------------------------------------------------------------
 select ok(
-  (select count(*) = 2 from pg_constraint
+  (select count(*) = 3 from pg_constraint
      where conrelid = 'public.auction_fact_claim_decisions'::regclass
-       and conname in ('auction_fact_claim_decisions_auto_locked', 'auction_fact_claim_decisions_accepted_by_admin')
+       and conname in ('auction_fact_claim_decisions_auto_shape', 'auction_fact_claim_decisions_accepted_by_admin_or_auto',
+         'auction_fact_claim_decisions_policy_check')
        and convalidated)
   and not exists (
     select 1 from public.auction_fact_claim_decisions
     where claim_id::text like '88700000-2000-%' and (publication_mode <> 'manual' or actor_kind <> 'admin'
       or actor_id not in ('88700000-0000-4000-8000-0000000000a1', '88700000-0000-4000-8000-0000000000c1'))),
-  'the automatic publication locks are in place, and every decision written here is a manual one of a signed-in administrator'
+  'the automatic publication shape constraints are in place, and every decision written here is a manual one of a signed-in administrator'
 );
 
 -- public.review_auction_fact_claim, retouchée ----------------------------------------------------------------------------
@@ -1077,8 +1079,8 @@ select results_eq(
         and pg_get_functiondef(routine.oid)
           ~* '(insert\s+into|merge\s+into|copy)\s+(only\s+)?("?public"?\.)?"?auction_fact_claim_decisions'
       order by (namespace.nspname::text || '.' || routine.proname::text) collate "C"$$,
-  $$values ('app_private.decide_auction_fact_claim')$$,
-  'one routine only writes into the decision journal (insert, merge or copy): the decision function'
+  $$values ('app_private.accept_information_agent_claim_automatically'), ('app_private.decide_auction_fact_claim')$$,
+  'two routines only write into the decision journal (insert, merge or copy): the decision function of an administrator and, since step 6, the automatic acceptance'
 );
 select is_empty(
   $$select (namespace.nspname::text || '.' || routine.proname::text) collate "default"

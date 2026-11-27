@@ -70,8 +70,8 @@ function mirrorSource(root, overrides) {
 /**
  * Le script lit tout par rapport à son propre emplacement : on le copie dans un dépôt factice dont
  * les migrations sont celles du dépôt, plus les fichiers `extraMigrations`. `extraFiles` ajoute des fichiers
- * (chemin relatif au dépôt) sous `scripts/`, `supabase/repairs/`, `supabase/maintenance/` ou
- * `supabase/functions/`.
+ * (chemin relatif au dépôt) sous `scripts/`, `supabase/repairs/`, `supabase/maintenance/`,
+ * `supabase/functions/` ou `.github/workflows/`.
  */
 export function runInvariants(
   extraMigrations = {},
@@ -83,7 +83,8 @@ export function runInvariants(
   sandboxes.push(root);
   const overridden = Object.keys(sourceOverrides);
   for (const entry of readdirSync(repo)) {
-    if (["scripts", "supabase", "node_modules", ".git", ".claude"].includes(entry)) continue;
+    if (["scripts", "supabase", "node_modules", ".git", ".claude", ".github"].includes(entry))
+      continue;
     if (entry === "src" && overridden.length) continue;
     symlinkSync(join(repo, entry), join(root, entry));
   }
@@ -104,9 +105,15 @@ export function runInvariants(
   for (const [name, sql] of Object.entries(extraMigrations)) {
     writeFileSync(join(root, "supabase/migrations", name), sql);
   }
-  // Rattrapages, maintenance et fonctions Edge : ceux du dépôt, dans des dossiers réels où ajouter des fichiers.
-  for (const directory of ["supabase/repairs", "supabase/maintenance", "supabase/functions"]) {
-    mkdirSync(join(root, directory));
+  // Rattrapages, maintenance, fonctions Edge et workflows : ceux du dépôt, dans des dossiers réels où ajouter des
+  // fichiers (jamais un lien vers le dépôt, où un fichier ajouté serait écrit).
+  for (const directory of [
+    "supabase/repairs",
+    "supabase/maintenance",
+    "supabase/functions",
+    ".github/workflows",
+  ]) {
+    mkdirSync(join(root, directory), { recursive: true });
     for (const entry of readdirSync(join(repo, directory))) {
       symlinkSync(join(repo, directory, entry), join(root, directory, entry));
     }
