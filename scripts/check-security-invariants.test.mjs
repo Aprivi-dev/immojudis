@@ -924,12 +924,67 @@ $$;`;
     [
       "le mode automatique écrit par une migration",
       "update public.information_agent_auto_publication_settings set mode = 'auto' where singleton;",
-      "writes the auto mode of public.information_agent_auto_publication_settings",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le mode composé (concat) écrit par une migration",
+      "update public.information_agent_auto_publication_settings set mode = concat('au', 'to') where singleton;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "une seconde ligne du réglage insérée par une migration",
+      "insert into public.information_agent_auto_publication_settings (singleton, mode) values (true, 'off') on conflict (singleton) do update set mode = excluded.mode;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage fusionné par une migration",
+      "merge into public.information_agent_auto_publication_settings settings using (select true as singleton) source on settings.singleton = source.singleton when matched then update set mode = 'simulation';",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le défaut de la colonne du mode changé",
+      "alter table public.information_agent_auto_publication_settings alter column mode set default 'auto';",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage écrit par une autre fonction",
+      "create or replace function app_private.switch_mode() returns void language plpgsql security definer set search_path = '' as $$ begin update public.information_agent_auto_publication_settings set mode = 'simulation' where singleton; end; $$;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage écrit par du SQL dynamique",
+      "do $$ begin execute 'update public.' || 'information_agent_auto_publication_settings set mode = ' || quote_literal('au' || 'to'); end; $$;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "une seconde source de lignes du journal des publications",
+      "create or replace function app_private.forge_publication(p_fact uuid) returns void language plpgsql security definer set search_path = '' as $$ begin insert into public.information_agent_fact_publications (fact_id, actor_kind, policy_version) values (p_fact, 'auto', 'auto_publication_v2'); end; $$;",
+      "writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (app_private.forge_publication)",
+    ],
+    [
+      "une ligne du journal des publications insérée par une migration",
+      "insert into public.information_agent_fact_publications (fact_id, actor_kind, policy_version) select id, 'auto', 'auto_publication_v2' from public.information_agent_fact_candidates;",
+      "writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (migration body)",
     ],
     [
       "la RPC de publication donnée à un compte du navigateur",
-      "grant execute on function public.publish_information_agent_fact_auto(uuid, text, text) to authenticated;",
+      "grant execute on function public.publish_information_agent_fact_auto(uuid, text, text, text) to authenticated;",
       "grants public.publish_information_agent_fact_auto to a browser role",
+    ],
+    [
+      "la RPC du journal des décisions donnée à un compte du navigateur",
+      "grant execute on function public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text) to authenticated;",
+      "grants public.record_information_agent_auto_publication_decision to a browser role",
+    ],
+    [
+      "la RPC des verdicts donnée à un visiteur",
+      "grant execute on function public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text, text, text) to anon;",
+      "grants public.record_information_agent_auto_publication_arbitration to a browser role",
+    ],
+    [
+      "la liste des faits à juger donnée à un compte du navigateur",
+      "grant execute on function public.list_information_agent_facts_to_arbitrate(text, integer) to public;",
+      "grants public.list_information_agent_facts_to_arbitrate to a browser role",
     ],
     [
       "une fonction qui enveloppe la RPC de publication",
@@ -1020,6 +1075,25 @@ $$;`;
     expect(result.stderr).toContain(
       "src/lib/sneaky-registry.ts names app_private.accept_information_agent_claim_automatically",
     );
+  });
+
+  it.each([
+    ["un script", "scripts/publish-now.mjs", 'await rpc("publish_information_agent_fact_auto");\n'],
+    [
+      "une fonction Edge",
+      "supabase/functions/publish-now/index.ts",
+      'await rpc("accept_information_agent_claim_automatically");\n',
+    ],
+    [
+      "un workflow",
+      ".github/workflows/publish-now.yml",
+      'jobs:\n  run:\n    steps:\n      - run: curl -X POST "$URL/rest/v1/rpc/publish_information_agent_fact_auto"\n',
+    ],
+  ])("refuse %s qui atteint le chemin de publication automatique", (_label, path, content) => {
+    const result = runInvariants({}, [], {}, { [path]: content });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${path} names`);
+    expect(result.stderr).toContain("reach the automatic publication path");
   });
 
   it("refuse un module qui nomme le noyau de publication", () => {

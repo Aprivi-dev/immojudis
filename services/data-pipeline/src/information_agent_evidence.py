@@ -211,13 +211,26 @@ def run_information_agent_evidence_batch(*, limit: int = 5) -> int:
             )
             processed += 1
         # Publication automatique (étape 6) : verdict de Claude Haiku sur les informations du corps des réponses, après
-        # le lot (les faits des règles et la lecture du corps sont alors écrits). Un échec est signalé et n'arrête pas
-        # le worker : un fait sans verdict reste en relecture humaine.
+        # le lot (les faits des règles et la lecture du corps sont alors écrits). Un échec n'annule pas le lot (déjà
+        # écrit) : il est annoncé dans le workflow (annotation d'erreur), puis relevé à la fin pour que l'exécution
+        # échoue visiblement. Un fait sans verdict reste en relecture humaine.
+        arbitration_error: Exception | None = None
         try:
             run_arbitration_pass(client, supabase_url, service_key, settings)
         except Exception as exc:
-            print(f"information_agent.auto_publication_arbiter failed: {type(exc).__name__}", file=sys.stderr)
+            arbitration_error = exc
+            print(
+                "::error title=Arbitre de la publication automatique::passe en échec "
+                f"({type(exc).__name__}) ; les faits sans verdict restent en relecture humaine.",
+                flush=True,
+            )
+    if arbitration_error is not None:
+        raise AutoPublicationArbitrationFailed(type(arbitration_error).__name__) from arbitration_error
     return processed
+
+
+class AutoPublicationArbitrationFailed(RuntimeError):
+    """La passe de l'arbitre a échoué après le lot des pièces (le lot, lui, est écrit)."""
 
 
 def analyze_evidence_bytes(

@@ -42,6 +42,9 @@ jobs:
       # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
       ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
     steps:
+      # Le worker tourne quand une analyse attend, ou quand un fait attend le verdict de l'arbitre de la publication
+      # automatique (étape 6 : RPC list_information_agent_facts_to_arbitrate, vide hors des modes simulation et
+      # automatique ; même version du prompt que ARBITER_PROMPT_VERSION, test de concordance pytest).
       - name: Check for queued evidence
         id: preflight
         env:
@@ -57,7 +60,13 @@ jobs:
             --data-urlencode "status=in.(queued,failed,processing)" \
             --data-urlencode "attempts=lt.3" \
             --data-urlencode "limit=1")"
-          if [ "$(jq 'length' <<< "$response")" -gt 0 ]; then
+          facts="$(curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/list_information_agent_facts_to_arbitrate" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data '{"p_prompt_version": "auto_publication_arbiter_v1", "p_limit": 1}')"
+          if [ "$(jq 'length' <<< "$response")" -gt 0 ] || [ "$(jq 'length' <<< "$facts")" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"

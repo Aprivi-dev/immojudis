@@ -195,7 +195,7 @@ export async function listAdminInformationAgentReview(
 }
 
 /** Une liste de tâches du registre, ou nul si sa lecture échoue (journalisé, sans rien relayer du message). */
-async function registryTaskList<T>(list: string, read: () => Promise<T[]>): Promise<T[] | null> {
+async function registryTaskList<T>(list: string, read: () => Promise<T>): Promise<T | null> {
   try {
     return await read();
   } catch (error) {

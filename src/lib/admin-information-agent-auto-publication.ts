@@ -208,7 +208,11 @@ function staticReview(reason: AutoPublicationReason): AutoPublicationReviewDecis
   };
 }
 
-/** Fenêtre et plafond de la liste « Publiées automatiquement » de l'onglet Réponses. */
+/**
+ * Fenêtre et nombre de lignes affichées de la liste « Publiées automatiquement » de l'onglet Réponses. Le plafond
+ * de 10 publications par jour en permet jusqu'à 310 sur la fenêtre : le total exact est lu et l'écran dit quand la
+ * liste est tronquée.
+ */
 const RECENT_AUTO_PUBLICATION_DAYS = 30;
 const RECENT_AUTO_PUBLICATION_LIMIT = 100;
 
@@ -221,6 +225,13 @@ export type RecentAutoPublication = {
   publishedAt: string;
 };
 
+export type RecentAutoPublications = {
+  /** Les plus récentes d'abord, au plus `RECENT_AUTO_PUBLICATION_LIMIT`. */
+  items: RecentAutoPublication[];
+  /** Nombre exact de publications de la fenêtre (supérieur à `items.length` quand la liste est tronquée). */
+  total: number;
+};
+
 /**
  * Publications automatiques des 30 derniers jours (journal du moteur, issue « published »), la plus récente
  * d'abord : l'onglet Réponses les liste pour qu'un administrateur puisse les retirer par le chemin existant
@@ -228,18 +239,20 @@ export type RecentAutoPublication = {
  */
 export async function listRecentAutoPublications(
   now = new Date(),
-): Promise<RecentAutoPublication[]> {
+): Promise<RecentAutoPublications> {
   const since = new Date(now.getTime() - RECENT_AUTO_PUBLICATION_DAYS * 24 * 60 * 60 * 1000);
-  const { data, error } = await supabaseAdmin
+  const { data, error, count } = await supabaseAdmin
     .from("information_agent_auto_publication_decisions")
-    .select("fact_id,fact_key,sale_id,decided_at")
+    .select("fact_id,fact_key,sale_id,decided_at", { count: "exact" })
     .eq("outcome", "published")
     .gte("decided_at", since.toISOString())
     .order("decided_at", { ascending: false })
     .limit(RECENT_AUTO_PUBLICATION_LIMIT);
   if (error) throw error;
   const rows = data ?? [];
-  if (!rows.length) return [];
+  // Total inconnu : la liste ne peut pas dire si elle est complète, elle est donc indisponible.
+  if (typeof count !== "number") throw new Error("Auto-publication total missing");
+  if (!rows.length) return { items: [], total: count };
   const { data: facts, error: factsError } = await supabaseAdmin
     .from("information_agent_fact_candidates")
     .select("id,display_value")
@@ -249,11 +262,14 @@ export async function listRecentAutoPublications(
     );
   if (factsError) throw factsError;
   const values = new Map((facts ?? []).map((fact) => [fact.id, fact.display_value]));
-  return rows.map((row) => ({
-    factId: row.fact_id,
-    factKey: row.fact_key,
-    displayValue: values.get(row.fact_id) ?? null,
-    saleId: row.sale_id,
-    publishedAt: row.decided_at,
-  }));
+  return {
+    items: rows.map((row) => ({
+      factId: row.fact_id,
+      factKey: row.fact_key,
+      displayValue: values.get(row.fact_id) ?? null,
+      saleId: row.sale_id,
+      publishedAt: row.decided_at,
+    })),
+    total: Math.max(count, rows.length),
+  };
 }

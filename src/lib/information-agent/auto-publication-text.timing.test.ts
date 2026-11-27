@@ -6,6 +6,7 @@ import {
   type AutoPublicationInput,
 } from "./auto-publication-policy";
 import { mentionsDoNotPublish, namesPrivatePerson } from "./auto-publication-text";
+import { detectPossiblePromptInjection } from "@/lib/information-agent-inbound/prompt-injection";
 
 /**
  * Durée des détecteurs sur des entrées hostiles de 100 000 caractères (le texte vient du corps d'un email
@@ -34,6 +35,11 @@ const HOSTILE: Array<[string, string]> = [
   ["rôle et qualificatifs répétés", fill("saisi saisi : ")],
   ["« garder » répété", fill("garder ")],
   ["séparateurs mêlés après un rôle", `occupant${fill(" ,\t:", "x").slice(8)}`],
+  ["retours à la ligne", fill("\n", "x")],
+  ["retours à la ligne et espaces", fill("\n ", "x")],
+  ["« ne » répété", fill("ne ")],
+  ["« ignore » suivi d'espaces", `ignore${fill(" ", "x").slice(6)}`],
+  ["« system » suivi d'espaces", `system${fill(" ", "x").slice(6)}`],
 ];
 
 function elapsed(run: () => unknown): number {
@@ -50,6 +56,10 @@ describe("détecteurs de texte : durée linéaire sur des entrées hostiles", ()
 
   it.each(HOSTILE)("nom de particulier : %s", (_label, text) => {
     expect(elapsed(() => namesPrivatePerson(text))).toBeLessThan(LIMIT_MS);
+  });
+
+  it.each(HOSTILE)("consigne adressée à un modèle : %s", (_label, text) => {
+    expect(elapsed(() => detectPossiblePromptInjection(text))).toBeLessThan(LIMIT_MS);
   });
 });
 
@@ -99,6 +109,7 @@ describe("plafond de taille du texte analysé", () => {
     otherValuesForSale: 0,
     otherMessages: [],
     fieldFilledInSimulation: false,
+    messageAnalysisPending: false,
     arbitration: {
       found: true,
       row: {

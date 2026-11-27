@@ -2615,19 +2615,27 @@ function functionSignature(schema, name, argumentText) {
 // 3. Aucun code de l'application ni du pipeline ne nomme le noyau ni la décision automatique du registre ; seul
 //    `src/lib/admin-information-agent.ts` appelle `review_information_agent_fact_candidate` ; seul
 //    `src/lib/information-agent/auto-publication-store.ts` nomme `publish_information_agent_fact_auto` (types
-//    générés exceptés). Un dossier de code illisible est une erreur, pas un dossier sauté.
+//    générés exceptés). Ni les scripts (`scripts/`, hors ce contrôle et ses tests), ni les fonctions Edge
+//    (`supabase/functions/`), ni les workflows (`.github/workflows/`) ne nomment le noyau, la décision automatique
+//    du registre ni la RPC de publication. Un dossier de code illisible est une erreur, pas un dossier sauté.
 // 4. Les verrous de l'étape 3 ne sont retirés que par la migration de l'étape 6 ; les contraintes de forme qui les
 //    remplacent existent avec leur définition exacte et ne sont ni retirées, ni renommées, ni emportées par la
 //    suppression ou le renommage de leur table. Les autres verrous du registre restent.
-// 5. Le mode « auto » n'est jamais écrit par une migration (ni UPDATE, ni INSERT du réglage avec 'auto') : seul un
-//    administrateur, avec son jeton, le pose (set_information_agent_auto_publication_mode exige is_admin et
-//    auth.uid, et n'est donné ni à anon ni à public).
+// 5. Le réglage n'est écrit par une migration que dans les corps de `public.set_information_agent_auto_publication_
+//    mode` et `public.stop_information_agent_auto_publication` (ni UPDATE, INSERT, MERGE, COPY, défaut de colonne,
+//    ni SQL dynamique qui le nomme, quelle que soit la valeur, même composée), hors la création de la ligne unique
+//    de 20261115100000 : seul un administrateur, avec son jeton, pose le mode (set_information_agent_auto_publication_
+//    mode exige is_admin et auth.uid, et n'est donné ni à anon ni à public).
 // 6. Une insertion dans le journal des décisions du registre ne nomme publication_mode que pour y écrire 'manual',
 //    sauf dans la décision automatique du registre (`app_private.accept_information_agent_claim_automatically`,
 //    seule autorisée à écrire 'auto') ; le défaut de la colonne ne change pas.
 // 7. Les tables du réglage, de la trace des modes, du journal des décisions et des verdicts de Haiku sont réservées
 //    au serveur en lecture seule : RLS, aucune politique, tout retiré aux rôles de l'API, SELECT seul pour
-//    service_role.
+//    service_role. Les RPC de service du moteur (journal des décisions, verdicts, faits à juger) ne sont jamais
+//    données à un rôle du navigateur.
+// 8. Le journal des publications de l'agent (`information_agent_fact_publications`) n'est écrit, dans une
+//    migration, que par le noyau `app_private.apply_information_agent_fact` (aucune autre instruction INSERT, ni SQL
+//    dynamique qui le nomme) : aucune seconde source de lignes 'auto'.
 {
   const PUBLISH_RPC = "public.publish_information_agent_fact_auto";
   const AUTO_ACCEPT = "app_private.accept_information_agent_claim_automatically";
@@ -2782,10 +2790,10 @@ function functionSignature(schema, name, argumentText) {
       );
     }
     if (
-      !/revoke\s+all\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*;/i.test(
+      !/revoke\s+all\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*,\s*text\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*;/i.test(
         allSql,
       ) ||
-      !/grant\s+execute\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*\)\s+to\s+service_role\s*;/i.test(
+      !/grant\s+execute\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*,\s*text\s*\)\s+to\s+service_role\s*;/i.test(
         allSql,
       )
     ) {
@@ -2793,17 +2801,24 @@ function functionSignature(schema, name, argumentText) {
         `${PUBLISH_RPC} is not revoked from the browser roles and granted to service_role`,
       );
     }
-    for (const [name, sql] of all) {
-      for (const statement of sql.split(";")) {
-        if (
-          /^\s*grant\s/i.test(statement) &&
-          /publish_information_agent_fact_auto/i.test(statement) &&
-          /\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(
-            statement.replace(/^[\s\S]*?\bto\b/i, " to "),
-          )
-        ) {
-          failures.push(`${name} grants ${PUBLISH_RPC} to a browser role (service_role only)`);
-        }
+  }
+  // RPC de service du moteur : jamais données à un rôle du navigateur.
+  for (const [name, sql] of all) {
+    for (const statement of sql.split(";")) {
+      if (!/^\s*grant\s/i.test(statement)) continue;
+      const rpc =
+        /(publish_information_agent_fact_auto|record_information_agent_auto_publication_decision|record_information_agent_auto_publication_arbitration|list_information_agent_facts_to_arbitrate)\b/i.exec(
+          statement,
+        );
+      if (
+        rpc &&
+        /\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(
+          statement.replace(/^[\s\S]*?\bto\b/i, " to "),
+        )
+      ) {
+        failures.push(
+          `${name} grants public.${rpc[1].toLowerCase()} to a browser role (service_role only)`,
+        );
       }
     }
   }
@@ -2884,6 +2899,52 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
+  // Scripts, fonctions Edge et workflows : aucun ne nomme le noyau, la décision automatique ni la RPC de publication.
+  const otherRoots = [
+    { url: "../scripts/", path: "scripts/", pattern: /\.(?:ts|tsx|mjs|cjs|js|py|sh)$/ },
+    {
+      url: "../supabase/functions/",
+      path: "supabase/functions/",
+      pattern: /\.(?:ts|tsx|mjs|cjs|js)$/,
+    },
+    { url: "../.github/workflows/", path: ".github/workflows/", pattern: /\.ya?ml$/ },
+  ];
+  // Ce contrôle et le module qu'il importe nomment ces fonctions pour les surveiller.
+  const INVARIANT_SCRIPTS = [
+    "scripts/check-security-invariants.mjs",
+    "scripts/check-security-invariants-fact-registry.mjs",
+  ];
+  for (const root of otherRoots) {
+    let entries;
+    try {
+      entries = (await readdir(new URL(root.url, import.meta.url), { recursive: true })).map(
+        String,
+      );
+    } catch (error) {
+      failures.push(
+        `${root.path} cannot be read to check the automatic publication path (${error.code ?? "error"})`,
+      );
+      continue;
+    }
+    for (const name of entries) {
+      if (!root.pattern.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+      const relative = `${root.path}${name}`;
+      if (INVARIANT_SCRIPTS.includes(relative)) continue;
+      const source = (
+        await readFile(new URL(`${root.url}${name}`, import.meta.url), "utf8")
+      ).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|(?:^|\s)#[^\n]*/g, "");
+      const named =
+        /apply_information_agent_(?!identity_opposition\b)|accept_information_agent_claim_automatically|publish_information_agent_fact_auto/i.exec(
+          source,
+        );
+      if (named) {
+        failures.push(
+          `${relative} names ${named[0]}: only the database RPCs and src/lib/information-agent/auto-publication-store.ts reach the automatic publication path`,
+        );
+      }
+    }
+  }
+
   // 4. Verrous levés par la seule migration de l'étape 6, contraintes de forme gardées.
   const liftedLocks = [
     "information_agent_auto_publication_settings_auto_locked",
@@ -2910,7 +2971,7 @@ function functionSignature(schema, name, argumentText) {
       name: "information_agent_fact_publications_auto_shape",
       table: "information_agent_fact_publications",
       definition:
-        "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s+or\\s+\\(\\s*actor_id\\s+is\\s+null\\s+and\\s+policy_version\\s*~\\s*'\\^auto_publication_v\\[0-9\\]\\{1,4\\}\\$'\\s*\\)\\s*\\)",
+        "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s+or\\s+\\(\\s*actor_id\\s+is\\s+null\\s+and\\s+policy_version\\s*~\\s*'\\^auto_publication_v\\[0-9\\]\\{1,4\\}\\$'\\s+and\\s+recipient_kind\\s*=\\s*'source_lawyer'\\s*\\)\\s*\\)",
     },
     {
       name: "auction_fact_claim_decisions_policy_check",
@@ -2981,19 +3042,34 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
-  // 5. Le mode « auto » n'est posé que par un administrateur, avec son jeton.
+  // 5. Le réglage n'est écrit que par les deux RPC d'administration (le mode « auto » n'est posé que par un
+  //    administrateur, avec son jeton), hors la création de sa ligne unique.
+  const SETTINGS_WRITERS = [
+    "public.set_information_agent_auto_publication_mode",
+    "public.stop_information_agent_auto_publication",
+  ];
+  const settingsSeed =
+    /^insert\s+into\s+public\.information_agent_auto_publication_settings\s*\(\s*singleton\s*\)\s+values\s*\(\s*true\s*\)\s+on\s+conflict\s*\(\s*singleton\s*\)\s+do\s+nothing$/i;
+  const settingsWrite =
+    /\b(?:update\s+(?:only\s+)?|insert\s+into\s+|merge\s+into\s+|copy\s+)(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?[^;]*\balter\s+(?:column\s+)?"?mode"?\b|\bexecute\b[^;]*auto_publication_settings/gi;
   for (const [name, sql] of all) {
-    for (const statement of sql.split(";")) {
+    for (const match of sql.matchAll(settingsWrite)) {
+      const owner = enclosingFunction(sql, match.index);
+      if (owner && SETTINGS_WRITERS.includes(owner.name) && !/^execute\b/i.test(match[0])) continue;
+      const statement = sql
+        .slice(match.index, sql.indexOf(";", match.index))
+        .replace(/\s+/g, " ")
+        .trim();
       if (
-        /\b(?:update|insert\s+into|merge\s+into)\s+(?:only\s+)?(?:public\.)?information_agent_auto_publication_settings\b/i.test(
-          statement,
-        ) &&
-        /'auto'/i.test(statement)
+        !owner &&
+        name === "20261115100000_information_agent_auto_publication_simulation.sql" &&
+        settingsSeed.test(statement)
       ) {
-        failures.push(
-          `${name} writes the auto mode of public.information_agent_auto_publication_settings: only an administrator sets it, through set_information_agent_auto_publication_mode`,
-        );
+        continue;
       }
+      failures.push(
+        `${name} writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode and stop_information_agent_auto_publication: only an administrator sets the mode`,
+      );
     }
   }
   const setMode = lastDefinition("public.set_information_agent_auto_publication_mode");
@@ -3048,6 +3124,20 @@ function functionSignature(schema, name, argumentText) {
     ) {
       failures.push(
         `${name} changes the default publication_mode of public.auction_fact_claim_decisions (it must stay 'manual')`,
+      );
+    }
+  }
+
+  // 8. Journal des publications de l'agent : écrit par le seul noyau (aucune seconde source de lignes 'auto').
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(
+      /\binsert\s+into\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\b(?:copy|merge\s+into)\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\bexecute\b[^;]*information_agent_fact_publications/gi,
+    )) {
+      const owner = enclosingFunction(sql, match.index);
+      if (owner?.name === "app_private.apply_information_agent_fact" && /^insert\b/i.test(match[0]))
+        continue;
+      failures.push(
+        `${name} writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (${owner?.name ?? "migration body"}): only the publication core writes the publication journal`,
       );
     }
   }

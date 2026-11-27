@@ -221,18 +221,24 @@ export function AdminInformationAgentReviewPanel() {
         <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
           Informations publiées automatiquement : liste indisponible.
         </p>
-      ) : autoPublished?.length ? (
+      ) : autoPublished?.items.length ? (
         <section aria-labelledby="auto-published-title" className="border-b px-5 py-4">
           <h3 id="auto-published-title" className="text-sm font-semibold">
-            Publiées automatiquement, 30 derniers jours ({autoPublished.length})
+            Publiées automatiquement, 30 derniers jours ({autoPublished.total})
           </h3>
+          {autoPublished.total > autoPublished.items.length ? (
+            <p role="status" className="mt-1 text-xs font-medium text-warning">
+              Seules les {autoPublished.items.length} plus récentes sont affichées sur{" "}
+              {autoPublished.total}. Les autres se retrouvent dans les observations de leur vente.
+            </p>
+          ) : null}
           <p className="mt-1 text-xs text-brand-navy/70">
             Publiées sans relecture humaine, après les contrôles de sécurité et la confirmation de
             l’IA. Pour en retirer une : « Ouvrir les observations de cette vente », puis « Retirer
             ».
           </p>
           <ul className="mt-2 space-y-1 text-xs">
-            {autoPublished.map((item) => (
+            {autoPublished.items.map((item) => (
               <li key={item.factId}>
                 {factLabel(item.factKey)} : {item.displayValue ?? "valeur purgée"} · vente{" "}
                 <Link href={saleDetailPath(item.saleId)} className="underline">

@@ -460,7 +460,9 @@ réglage ; le propriétaire (ou un administrateur) passe en « Automatique » lu
    adressée à un modèle, mauvais destinataire, opposition possible, réponse ambiguë, expéditeur différent, lot non
    nommé : bloquants) ; ni « ne pas publier » ni consigne adressée à un modèle dans l’objet ou le corps ; aucun autre
    message du dossier, antérieur ou postérieur, en relecture bloquante, opposé ou qui demande de ne pas publier ;
-   aucune autre valeur pour ce champ dans la réponse ni dans une autre information en attente pour la vente ; champ
+   aucune autre valeur pour ce champ dans la réponse ni dans une autre information en attente pour la vente ; **aucune
+   analyse du message (pièce jointe, lecture du corps par l’IA) en file, en cours ou en échec avec des essais
+   restants** (`evidence_pending` : un PDF joint « Carrez 58,30 » peut contredire « 62 m² » dans le corps) ; champ
    vide sur la fiche ; valeur plausible pour le type de bien ; **vente à un seul lot** (ni `multi_lot_sale`, ni lot
    choisi dans l’annonce) ; plafonds de 10 publications par jour (heure de Paris) et 2 par dossier.
 2. **Verdict de Claude Haiku** (dernier verdict du fait, version de prompt courante, pour la valeur du fait) :
@@ -478,9 +480,20 @@ vide sur la fiche, plausibilité, délai de 30 jours, vente à un seul lot, plaf
 
 ### L’arbitre (worker Python)
 
-`services/data-pipeline/src/information_agent_auto_publication_arbiter.py`, appelé à la fin de chaque lot du worker
-de l’analyse (workflow `information-agent-evidence.yml`, déclenché par la passe des réponses dès qu’une analyse
-attend, et toutes les 30 minutes). Même client (`create_llm_client`), même modèle (Claude Haiku 5.5), mêmes
+`services/data-pipeline/src/information_agent_auto_publication_arbiter.py`, appelé à la fin de chaque exécution du
+worker de l’analyse (workflow `information-agent-evidence.yml`). Ce workflow est déclenché par la passe des réponses
+dès qu’une analyse attend (au plus une fois par tranche de 10 minutes) et par l’horaire GitHub (`*/30`, **non
+tenu** : c’est un filet, pas une garantie de cadence) ; à chaque déclenchement, son contrôle préalable ne lance le
+worker que si une analyse attend **ou si un fait attend un verdict** (RPC `list_information_agent_facts_to_arbitrate`).
+Les faits à juger sont choisis en base, le plus ancien d’abord : aucun appel pour un fait que les conditions
+structurelles écartent déjà (champ rempli, plusieurs lots, DKIM ou DMARC en échec) ni pour un fait dont une analyse
+du message n’est pas finie ; un verdict final (`completed`, `skipped`) n’est jamais refait ; un verdict passager
+(`unavailable`, `invalid_output` : délai, 429 ou 5xx, plafond horaire, prestataire différent) est refait au plus 3
+fois, une heure au moins après le précédent. Après 3 erreurs du fournisseur de suite, la passe s’arrête (les faits
+suivants attendent). Fournisseur non configuré (clé absente) : aucun verdict n’est inscrit et l’exécution échoue
+(annotation d’erreur « Arbitre de la publication automatique » du workflow) ; toute autre panne de la passe aussi.
+Une réponse de plus de 12 000 caractères n’est jamais tronquée : verdict « non appelé » (`ARBITER_TEXT_TOO_LONG`),
+relecture humaine. Même client (`create_llm_client`), même modèle (Claude Haiku 5.5), mêmes
 garde-fous que la lecture des réponses : plafond horaire `ANTHROPIC_MAX_CALLS_PER_HOUR`, échéance de 25 s, effort
 bas, un seul essai, prestataire identique à celui nommé dans le pied du message envoyé, texte expurgé et délimité
 (`<untrusted-reply>`), aucun appel sur une réponse qui contient une consigne adressée à un modèle. Au plus 20 faits
@@ -498,15 +511,20 @@ En mode « Automatique », la passe des réponses (`/api/cron/information-agent-
 production seulement) appelle pour chaque décision « publier » la RPC de service `publish_information_agent_fact_auto`,
 **seul chemin d’écriture `'auto'`**, depuis le seul module `src/lib/information-agent/auto-publication-store.ts`. Dans
 une seule transaction : mode relu sous verrou partagé (hors « auto », rien), verrou consultatif global (plafonds
-exacts), contrôles de sécurité redits en base (fait du corps en attente, e-mail authentifié de l’adresse contactée,
-avocat poursuivant, dossier ouvert et non opposé, contact non opposé, verdict « publier » pour la valeur, champ vide,
-vente à un seul lot, plafonds), puis fait accepté sans relecteur, noyau `apply_information_agent_fact` avec `'auto'`
+exacts), fait déjà publié rendu `already_published` sans rien réécrire (réponse perdue, second appel), contrôles de
+sécurité redits en base (fait du corps en attente, e-mail authentifié de l’adresse contactée, traité sans motif
+bloquant, reçu moins de 30 jours après l’envoi, analyses du message finies, avocat poursuivant, dossier ouvert et non
+opposé, contact non opposé, aucun autre message entrant du dossier en relecture bloquante, opposé ou mal adressé,
+dernier verdict « publier » de la version courante du prompt pour la valeur, champ vide, vente à un seul lot,
+plafonds ; la demande « ne pas publier » écrite dans un autre message du dossier n’est lue que par le moteur
+TypeScript), puis fait accepté sans relecteur, noyau `apply_information_agent_fact` avec `'auto'`
 (journal des publications), observation du pont (origine `professional_email`, source de provenance
 `immojudis_information_agent_auto_publication`), **décision automatique du registre**
 (`app_private.accept_information_agent_claim_automatically` : auteur « system », mode « auto », version de règle,
 rattachement « un seul lot »), projection de la vente, décision « published » au journal du moteur. Un contrôle qui
-échoue écrit « relecture » avec son motif. Une vente occupée par un import (55P03) ou un conflit : reprise à la passe
-suivante. Toute autre erreur : relecture (`publication_failed`), jamais retentée, et le cron échoue (signalé).
+échoue écrit « relecture » avec son motif. Une vente occupée par un import (55P03), un conflit ou une erreur réseau
+(réponse perdue) : reprise à la passe suivante. Toute autre erreur : relecture (`publication_failed`), jamais
+retentée, et le cron échoue (signalé) ; le journal refuse une décision pour un fait qui n’est plus en attente.
 
 ### Activer, arrêter, retirer
 
@@ -518,8 +536,9 @@ suivante. Toute autre erreur : relecture (`publication_failed`), jamais retenté
   mode). Conseillé : une période en « Simulation » d’abord, pour lire les verdicts dans l’onglet Réponses.
 - **Arrêter** : bouton rouge « Arrêt d’urgence » (inchangé), un geste, effet immédiat : la RPC de publication relit le
   mode sous verrou et ne publie plus rien, même au milieu d’une passe (statut `stopped` du résumé du cron).
-- **Retirer une publication** : onglet Réponses, bloc « Publiées automatiquement, 30 derniers jours » : « Ouvrir les
-  observations de cette vente », puis « Retirer » sur l’observation (chemin existant, `withdraw_auction_fact_claim`,
+- **Retirer une publication** : onglet Réponses, bloc « Publiées automatiquement, 30 derniers jours » (total exact ;
+  au-delà de 100, l’écran le dit et n’affiche que les plus récentes) : « Ouvrir les observations de cette vente », puis
+  « Retirer » sur l’observation (chemin existant, `withdraw_auction_fact_claim`,
   jeton de l’administrateur) : la projection rend la valeur de l’annonce. Une opposition de l’avocat se traite comme
   avant (« Retraits à faire après une opposition »).
 - **Lire** : onglet Réponses, « Publié automatiquement le … » ou « À relire (raisons ; motif de l’IA) » ; résumé du
@@ -533,8 +552,9 @@ Levés, remplacés par des contraintes de forme : `information_agent_auto_public
 `auction_fact_claim_decisions_accepted_by_admin` (→ `…_accepted_by_admin_or_auto`). Invariants : l’invariant
 `information-agent-no-automatic-publication-path` est remplacé par `information-agent-single-automatic-publication-path`
 (un seul appel du noyau avec `'auto'`, dans la RPC de publication ; RPC réservée au serveur, qui relit le mode avant
-toute écriture et ne lit aucun jeton ; un seul module l’appelle ; le mode « auto » n’est jamais écrit par une
-migration) ; `registry-rpc-actor-from-jwt` et `field-projection-not-callable-by-api` admettent la seule décision
+toute écriture et ne lit aucun jeton ; un seul module l’appelle, et ni un script, ni une fonction Edge, ni un workflow
+ne la nomme ; le réglage n’est écrit par une migration que dans les deux RPC d’administration ; le journal des
+publications n’est écrit que par le noyau ; les RPC de service du moteur ne sont jamais données au navigateur) ; `registry-rpc-actor-from-jwt` et `field-projection-not-callable-by-api` admettent la seule décision
 automatique, épinglée par empreinte (`AUTO_DECIDE_BODY_SHA256`), avec l’accord explicite du propriétaire du 27/11.
 pgTAP : `924` (nouveau) ; `878`, `880`, `881`, `887` adaptés.
 

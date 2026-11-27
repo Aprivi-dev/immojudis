@@ -19,7 +19,8 @@ set local statement_timeout = '60s';
 --   1. Verrous levés, remplacés par des contraintes de FORME (une ligne automatique a une forme unique) :
 --        * information_agent_auto_publication_settings_auto_locked : supprimée (le mode « auto » s'enregistre) ;
 --        * information_agent_fact_publications_auto_locked : remplacée par
---          information_agent_fact_publications_auto_shape (auto : ni personne, une version de règle) ;
+--          information_agent_fact_publications_auto_shape (auto : ni personne, une version de règle, avocat
+--          poursuivant) ;
 --        * auction_fact_claim_decisions_auto_locked : remplacée par auction_fact_claim_decisions_auto_shape
 --          (auto : acceptation seulement, auteur « system » sans identifiant, fait de l'agent nommé, première
 --          décision de l'observation, version de règle) ;
@@ -36,11 +37,15 @@ set local statement_timeout = '60s';
 --      confiance, modèle, version du prompt, code d'erreur. Écrits par la seule RPC de service
 --      record_information_agent_auto_publication_arbitration, en mode simulation ou automatique, pour un fait en
 --      attente du corps du message et de la liste fermée, et seulement pour sa propre valeur (Haiku ne peut pas
---      changer la valeur).
+--      changer la valeur). Les faits à juger sont choisis en base par la RPC de service
+--      list_information_agent_facts_to_arbitrate (aussi lue par le contrôle préalable du workflow) : aucun appel
+--      pour un fait que les conditions structurelles écartent déjà ou dont une analyse du message n'est pas finie ;
+--      un verdict passager (unavailable, invalid_output) est refait au plus 3 fois, une heure au moins après.
 --   4. Journal des décisions : mode « auto » admis, issue « published » (mode auto seulement) à côté de
 --      « would_publish » (simulation seulement) et « review », nouveaux codes de motifs (moteur
 --      auto_publication_v2). record_information_agent_auto_publication_decision écrit en simulation et en
---      automatique (jamais « published » ni « would_publish » en automatique).
+--      automatique (jamais « published » ni « would_publish » en automatique), et rien pour un fait qui n'est plus
+--      en attente.
 --   5. app_private.bridge_accepted_information_agent_fact_claim : ne refuse plus « auto ». Une publication
 --      automatique n'est admise que pour un fait du corps du message, sans relecteur, avec une version de règle ;
 --      l'observation porte l'origine professional_email (classée lawyer_email par le registre).
@@ -48,19 +53,25 @@ set local statement_timeout = '60s';
 --      décision automatique du registre. Aucun droit pour aucun rôle de l'API ; appelée seulement par la RPC du
 --      point 7. Elle n'accepte qu'une observation créée par le pont de l'agent (extracteur information_agent,
 --      origine professional_email, fait nommé dans le localisateur, publication 'auto' de même version au
---      journal des publications), jamais décidée auparavant, vente à un seul lot ; puis applique la projection
+--      journal des publications), de la vente et de la valeur du fait, jamais décidée auparavant, vente à un seul
+--      lot ; puis applique la projection
 --      de toute la vente, comme la décision d'un administrateur. Aucune lecture du jeton.
---   7. public.publish_information_agent_fact_auto(fait, clé, version) : LE SEUL chemin d'écriture 'auto'. RPC de
+--   7. public.publish_information_agent_fact_auto(fait, clé, version, version du prompt de l'arbitre) : LE SEUL
+--      chemin d'écriture 'auto'. RPC de
 --      service (service_role seul), appelée par src/lib/information-agent/auto-publication-store.ts. Dans une
 --      seule transaction :
 --        a. relit le mode SOUS VERROU PARTAGÉ : si ce n'est pas « auto », rien n'est écrit (l'arrêt d'urgence,
 --           qui prend le verrou exclusif, attend la fin d'une publication en cours puis bloque les suivantes) ;
 --        b. verrou consultatif global : deux passes simultanées publient l'une après l'autre (plafonds exacts) ;
+--           un fait déjà publié rend « already_published » sans rien écrire (réponse perdue, second appel) ;
 --        c. contrôles de sécurité redits en base (défense en profondeur, le moteur TypeScript les fait aussi) :
 --           fait en attente du corps du message, de la liste fermée ; réponse par e-mail de l'adresse contactée,
---           DKIM et DMARC « pass » ; dossier de l'avocat poursuivant, répondu ou en relecture, sans opposition
---           (dossier ou contact) ; dernier verdict de Haiku « publier » pour cette valeur ; champ vide sur la
---           fiche ; vente à un seul lot ; plafonds de 10 publications par jour (heure de Paris) et 2 par dossier ;
+--           DKIM et DMARC « pass », traitée sans motif de relecture bloquant, reçue moins de 30 jours après
+--           l'envoi ; aucune analyse du message en file, en cours ou à reprendre ; dossier de l'avocat poursuivant,
+--           répondu ou en relecture, sans opposition (dossier ou contact) ; aucun autre message entrant du dossier
+--           en relecture bloquante, opposé ou mal adressé ; dernier verdict de Haiku « publier », de la version
+--           courante du prompt, pour cette valeur ; champ vide sur la fiche ; vente à un seul lot ; plafonds de 10
+--           publications par jour (heure de Paris) et 2 par dossier ;
 --        d. fait accepté sans relecteur, noyau app_private.apply_information_agent_fact avec 'auto' (journal des
 --           publications), pont rendu immédiat (observation), décision automatique du registre (point 6),
 --           décision « published » au journal du moteur.
@@ -79,7 +90,8 @@ set local statement_timeout = '60s';
 -- worker Python n'écrit un verdict qu'en mode simulation ou automatique.
 --
 -- Retour arrière : d'abord l'arrêt d'urgence (mode « off »), puis le code de l'étape 3, puis, dans une
--- transaction : supprimer public.publish_information_agent_fact_auto(uuid, text, text),
+-- transaction : supprimer public.publish_information_agent_fact_auto(uuid, text, text, text),
+-- public.list_information_agent_facts_to_arbitrate(text, integer),
 -- app_private.accept_information_agent_claim_automatically(uuid, text),
 -- public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text,
 -- text, text) ; recréer set_information_agent_auto_publication_mode, record_information_agent_auto_publication_
@@ -92,7 +104,8 @@ set local statement_timeout = '60s';
 alter table public.information_agent_auto_publication_settings
   drop constraint if exists information_agent_auto_publication_settings_auto_locked;
 
--- Journal des publications de l'agent : une ligne 'auto' n'a ni personne ni autre version que celle du moteur.
+-- Journal des publications de l'agent : une ligne 'auto' n'a ni personne ni autre version que celle du moteur, et ne
+-- concerne que l'avocat poursuivant.
 do $$
 begin
   if not exists (
@@ -102,7 +115,10 @@ begin
   ) then
     alter table public.information_agent_fact_publications
       add constraint information_agent_fact_publications_auto_shape check (
-        actor_kind <> 'auto' or (actor_id is null and policy_version ~ '^auto_publication_v[0-9]{1,4}$')
+        actor_kind <> 'auto' or (
+          actor_id is null and policy_version ~ '^auto_publication_v[0-9]{1,4}$'
+          and recipient_kind = 'source_lawyer'
+        )
       );
   end if;
 end;
@@ -232,6 +248,100 @@ as $$
 $$;
 
 revoke all on function app_private.information_agent_auto_publication_value(jsonb)
+  from public, anon, authenticated, service_role;
+
+-- Une analyse du message (pièce jointe, ou corps relu par l'IA) est en file, en cours, ou en échec avec des essais
+-- restants (claim_information_agent_evidence_extractions reprend jusqu'à 3 essais) : ce que le message dit n'est pas
+-- encore tout lu (un PDF joint peut contredire le corps), rien n'est publié ni jugé (motif evidence_pending).
+create or replace function app_private.information_agent_message_analysis_pending(p_message_id uuid)
+returns boolean
+language sql
+stable
+set search_path = ''
+as $$
+  select exists (
+    select 1
+    from public.information_agent_evidence_extractions extraction
+    where extraction.message_id = p_message_id
+      and (
+        extraction.status in ('queued', 'processing')
+        or (extraction.status = 'failed' and extraction.attempts < 3)
+      )
+  );
+$$;
+
+revoke all on function app_private.information_agent_message_analysis_pending(uuid)
+  from public, anon, authenticated, service_role;
+
+-- Message entrant traité sans motif de relecture bloquant : même règle que processedForPublication
+-- (auto-publication-policy.ts). Traité sans motif ; en relecture pour le seul motif générique
+-- candidate_or_attachment_review ; pour un autre message du dossier, une réponse automatique ignorée aussi.
+create or replace function app_private.information_agent_message_processed_for_publication(
+  p_metadata jsonb,
+  p_own_message boolean
+)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(
+    case p_metadata #>> '{inbound_processing,status}'
+      when 'completed' then coalesce(pg_catalog.jsonb_typeof(p_metadata #> '{inbound_processing,reason}'), 'null') = 'null'
+      when 'review' then p_metadata #>> '{inbound_processing,reason}' = 'candidate_or_attachment_review'
+      when 'ignored' then not p_own_message and p_metadata #>> '{inbound_processing,reason}' = 'auto_reply'
+      else false
+    end,
+    false
+  );
+$$;
+
+revoke all on function app_private.information_agent_message_processed_for_publication(jsonb, boolean)
+  from public, anon, authenticated, service_role;
+
+-- Motifs de la vente qui écartent un fait (même règle que le moteur) : vente absente (input_unreadable), champ déjà
+-- renseigné dans une colonne que la fiche peut afficher (field_not_empty), vente à plusieurs lots (multi_lot_sale).
+-- Lue par la RPC de publication et par la liste des faits à juger (aucun appel de Haiku pour un fait déjà écarté).
+create or replace function app_private.information_agent_auto_publication_sale_blocks(
+  p_sale_id uuid,
+  p_fact_key text
+)
+returns text[]
+language plpgsql
+stable
+set search_path = ''
+as $$
+declare
+  v_sale record;
+  v_reasons text[] := '{}'::text[];
+begin
+  select sale.surface_m2, sale.app_surface_m2, sale.habitable_surface_m2, sale.carrez_surface_m2,
+    sale.land_surface_m2, sale.rooms_count,
+    coalesce(sale.quality_flags ? 'multi_lot_sale', false)
+      or coalesce(pg_catalog.jsonb_typeof(sale.raw_payload -> 'source_lot_selection'), 'null') <> 'null'
+      as multi_lot
+  into v_sale
+  from public.auction_sales sale
+  where sale.id = p_sale_id;
+  if not found then
+    return array['input_unreadable']::text[];
+  end if;
+  if (p_fact_key = 'surface_m2' and (
+        v_sale.surface_m2 is not null or v_sale.app_surface_m2 is not null
+        or v_sale.habitable_surface_m2 is not null or v_sale.carrez_surface_m2 is not null))
+    or (p_fact_key = 'land_surface_m2' and v_sale.land_surface_m2 is not null)
+    or (p_fact_key = 'rooms_count' and v_sale.rooms_count is not null)
+  then
+    v_reasons := v_reasons || 'field_not_empty'::text;
+  end if;
+  if v_sale.multi_lot then
+    v_reasons := v_reasons || 'multi_lot_sale'::text;
+  end if;
+  return v_reasons;
+end;
+$$;
+
+revoke all on function app_private.information_agent_auto_publication_sale_blocks(uuid, text)
   from public, anon, authenticated, service_role;
 
 -- 3. Verdicts de Claude Haiku ---------------------------------------------------------------------------------------
@@ -367,6 +477,87 @@ grant execute on function public.record_information_agent_auto_publication_arbit
   uuid, numeric, text, boolean, text, numeric, text, text, text
 ) to service_role;
 
+-- Faits à juger par Haiku (worker Python, et contrôle préalable du workflow information-agent-evidence.yml), le plus
+-- ancien d'abord, filtrés en base (pas de famine derrière des faits déjà jugés) : mode simulation ou automatique ;
+-- fait en attente, du corps du message, de la liste fermée, reçu depuis 45 jours, valeur lisible ; message
+-- authentifié (DKIM et DMARC « pass »), champ vide sur la fiche et vente à un seul lot (aucun appel pour un fait que
+-- les conditions structurelles écartent déjà) ; aucune analyse du message en cours ou à reprendre ; aucun verdict
+-- final (completed, skipped) de cette version du prompt pour cette valeur ; un verdict passager (unavailable,
+-- invalid_output) est refait au plus 3 fois en tout, une heure au moins après le précédent.
+create or replace function public.list_information_agent_facts_to_arbitrate(
+  p_prompt_version text,
+  p_limit integer
+)
+returns table (
+  fact_id uuid,
+  case_id uuid,
+  message_id uuid,
+  sale_id uuid,
+  fact_key text,
+  value numeric
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  v_mode text;
+begin
+  if p_prompt_version is null or p_prompt_version !~ '^auto_publication_arbiter_v[0-9]{1,4}$' then
+    raise exception using errcode = '22023', message = 'Invalid prompt version.';
+  end if;
+  if p_limit is null or p_limit < 1 or p_limit > 200 then
+    raise exception using errcode = '22023', message = 'The limit must be between 1 and 200.';
+  end if;
+  select settings.mode into v_mode
+  from public.information_agent_auto_publication_settings settings
+  where settings.singleton;
+  if v_mode is null or v_mode not in ('simulation', 'auto') then
+    return;
+  end if;
+
+  return query
+  select fact.id, fact.case_id, fact.message_id, fact.sale_id, fact.fact_key, candidate.value
+  from public.information_agent_fact_candidates fact
+  cross join lateral (
+    select app_private.information_agent_auto_publication_value(fact.proposed_value) as value
+  ) candidate
+  join public.information_agent_messages message on message.id = fact.message_id
+  where fact.status = 'pending'
+    and fact.reviewed_by is null
+    and fact.evidence_asset_id is null
+    and fact.fact_key in ('surface_m2', 'land_surface_m2', 'rooms_count')
+    and fact.created_at >= pg_catalog.statement_timestamp() - interval '45 days'
+    and candidate.value is not null
+    and (message.metadata #>> '{sender_authentication,dkim}') = 'pass'
+    and (message.metadata #>> '{sender_authentication,dmarc}') = 'pass'
+    and cardinality(app_private.information_agent_auto_publication_sale_blocks(fact.sale_id, fact.fact_key)) = 0
+    and not app_private.information_agent_message_analysis_pending(fact.message_id)
+    and not exists (
+      select 1 from public.information_agent_auto_publication_arbitrations verdict
+      where verdict.fact_id = fact.id and verdict.prompt_version = p_prompt_version
+        and verdict.value = candidate.value
+        and (
+          verdict.status in ('completed', 'skipped')
+          or verdict.recorded_at > pg_catalog.statement_timestamp() - interval '1 hour'
+        )
+    )
+    and (
+      select count(*) from public.information_agent_auto_publication_arbitrations verdict
+      where verdict.fact_id = fact.id and verdict.prompt_version = p_prompt_version
+        and verdict.value = candidate.value
+    ) < 3
+  order by fact.created_at asc, fact.id asc
+  limit p_limit;
+end;
+$$;
+
+revoke all on function public.list_information_agent_facts_to_arbitrate(text, integer)
+  from public, anon, authenticated;
+grant execute on function public.list_information_agent_facts_to_arbitrate(text, integer)
+  to service_role;
+
 -- 4. Journal des décisions du moteur : mode « auto », issue « published », motifs du moteur v2 ---------------------
 alter table public.information_agent_auto_publication_decisions
   drop constraint if exists information_agent_auto_publication_decisions_mode_check;
@@ -414,7 +605,8 @@ alter table public.information_agent_auto_publication_decisions
       'do_not_publish_requested', 'private_person_named', 'field_not_empty',
       'field_already_filled_in_simulation', 'implausible_value', 'daily_cap_reached',
       'case_cap_reached', 'other_message_in_case', 'contact_opposed', 'multi_lot_sale', 'arbiter_pending',
-      'arbiter_unavailable', 'arbiter_declined', 'arbiter_value_mismatch', 'publication_failed'
+      'arbiter_unavailable', 'arbiter_declined', 'arbiter_value_mismatch', 'publication_failed',
+      'evidence_pending'
     ]::text[]
   );
 
@@ -484,7 +676,8 @@ revoke all on function app_private.write_information_agent_auto_publication_deci
 
 -- Écriture d'une décision du moteur (serveur). Définition de 20261115100000, étendue au mode automatique : le mode
 -- est relu sous verrou partagé ; en automatique, seule une relecture s'écrit ici (une publication passe par
--- publish_information_agent_fact_auto, qui écrit sa propre décision dans la même transaction que la fiche).
+-- publish_information_agent_fact_auto, qui écrit sa propre décision dans la même transaction que la fiche). Un fait
+-- qui n'est plus en attente n'en reçoit plus (rend false, rien d'écrit).
 create or replace function public.record_information_agent_auto_publication_decision(
   p_fact_id uuid,
   p_fact_key text,
@@ -516,15 +709,22 @@ begin
       message = 'This outcome cannot be recorded in the current mode.';
   end if;
 
+  -- Verrou partagé : une publication en cours (verrou exclusif du fait) se termine avant cette lecture.
   select * into v_fact
   from public.information_agent_fact_candidates fact
-  where fact.id = p_fact_id;
+  where fact.id = p_fact_id
+  for share;
   if v_fact.id is null then
     -- Fait purgé ou supprimé avec sa vente depuis la lecture : rien à écrire.
     return false;
   end if;
   if v_fact.fact_key is distinct from p_fact_key then
     raise exception using errcode = '22023', message = 'The decision does not match the fact key.';
+  end if;
+  -- Un fait qui n'est plus en attente (publié entre-temps, réponse de la publication perdue, ou relu) : aucune
+  -- décision ne s'écrit après coup.
+  if v_fact.status <> 'pending' or v_fact.reviewed_by is not null then
+    return false;
   end if;
 
   return app_private.write_information_agent_auto_publication_decision(
@@ -847,6 +1047,7 @@ as $$
 declare
   v_claim record;
   v_fact_id uuid;
+  v_fact record;
   v_publication record;
   v_sale record;
   v_decision_id uuid;
@@ -883,6 +1084,20 @@ begin
     raise exception using errcode = '55000', message = 'origin_not_automatic';
   end if;
   v_fact_id := (v_claim.evidence_locator ->> 'information_agent_fact_id')::uuid;
+
+  -- L'observation porte la vente et la valeur du fait (jamais une autre).
+  select fact.sale_id, app_private.information_agent_auto_publication_value(fact.proposed_value) as value
+  into v_fact
+  from public.information_agent_fact_candidates fact
+  where fact.id = v_fact_id;
+  if not found
+    or v_fact.sale_id is distinct from v_claim.auction_sale_id
+    or pg_catalog.jsonb_typeof(v_claim.value_jsonb) is distinct from 'number'
+    or v_fact.value is null
+    or (v_claim.value_jsonb #>> '{}')::numeric <> v_fact.value
+  then
+    raise exception using errcode = '55000', message = 'claim_does_not_match_fact';
+  end if;
 
   -- Le fait a été publié automatiquement, avec cette version, pour l'avocat poursuivant.
   select publication.recipient_kind, publication.response_received_at
@@ -979,7 +1194,8 @@ revoke all on function app_private.accept_information_agent_claim_automatically(
 create or replace function public.publish_information_agent_fact_auto(
   p_fact_id uuid,
   p_fact_key text,
-  p_policy_version text
+  p_policy_version text,
+  p_arbiter_version text
 )
 returns jsonb
 language plpgsql
@@ -994,7 +1210,6 @@ declare
   v_message record;
   v_case record;
   v_arbitration record;
-  v_sale record;
   v_value numeric;
   v_reasons text[] := '{}'::text[];
   v_day_start timestamptz;
@@ -1003,6 +1218,9 @@ declare
 begin
   if p_policy_version is null or p_policy_version !~ '^auto_publication_v[0-9]{1,4}$' then
     raise exception using errcode = '22023', message = 'Invalid policy version.';
+  end if;
+  if p_arbiter_version is null or p_arbiter_version !~ '^auto_publication_arbiter_v[0-9]{1,4}$' then
+    raise exception using errcode = '22023', message = 'Invalid arbiter version.';
   end if;
 
   -- a. Mode relu sous verrou partagé : l'arrêt d'urgence (verrou exclusif) attend cette publication, puis bloque
@@ -1031,6 +1249,14 @@ begin
     raise exception using errcode = '22023', message = 'The publication does not match the fact key.';
   end if;
 
+  -- Déjà publié (second appel après une réponse perdue, ou deux passes) : rien n'est réécrit.
+  if v_fact.status = 'accepted' and exists (
+    select 1 from public.information_agent_auto_publication_decisions decision
+    where decision.fact_id = v_fact.id and decision.outcome = 'published'
+  ) then
+    return pg_catalog.jsonb_build_object('status', 'already_published', 'fact_id', v_fact.id);
+  end if;
+
   -- c. Contrôles de sécurité, redits en base.
   if v_fact.status <> 'pending' or v_fact.reviewed_by is not null then
     v_reasons := v_reasons || 'candidate_not_pending'::text;
@@ -1042,7 +1268,7 @@ begin
     v_reasons := v_reasons || 'attachment_source'::text;
   end if;
 
-  select message.direction, message.metadata into v_message
+  select message.direction, message.metadata, message.received_at into v_message
   from public.information_agent_messages message
   where message.id = v_fact.message_id;
   if not found or pg_catalog.jsonb_typeof(v_message.metadata) is distinct from 'object' then
@@ -1062,9 +1288,20 @@ begin
     then
       v_reasons := v_reasons || 'sender_not_authenticated'::text;
     end if;
+    -- La réponse elle-même est traitée, sans autre motif de relecture que le motif générique.
+    if not app_private.information_agent_message_processed_for_publication(v_message.metadata, true) then
+      v_reasons := v_reasons || 'reply_in_review'::text;
+    end if;
   end if;
 
-  select case_row.recipient_kind, case_row.status, case_row.metadata, case_row.normalized_recipient_email
+  -- Toutes les analyses du message sont finies : une pièce jointe ou la lecture du corps encore en file, en cours
+  -- ou à reprendre peut contredire la valeur.
+  if app_private.information_agent_message_analysis_pending(v_fact.message_id) then
+    v_reasons := v_reasons || 'evidence_pending'::text;
+  end if;
+
+  select case_row.recipient_kind, case_row.status, case_row.metadata, case_row.normalized_recipient_email,
+    case_row.sent_at
   into v_case
   from public.information_agent_cases case_row
   where case_row.id = v_fact.case_id;
@@ -1086,16 +1323,40 @@ begin
     ) then
       v_reasons := v_reasons || 'contact_opposed'::text;
     end if;
+    -- Réponse reçue moins de 30 jours après l'envoi (même délai que le moteur).
+    if v_case.sent_at is null or v_message.received_at is null then
+      v_reasons := v_reasons || 'input_unreadable'::text;
+    elsif v_message.received_at < v_case.sent_at
+      or v_message.received_at - v_case.sent_at >= interval '30 days'
+    then
+      v_reasons := v_reasons || 'reply_outside_window'::text;
+    end if;
   end if;
 
-  -- Dernier verdict de Haiku : « publier », pour la valeur du fait.
+  -- Aucun autre message entrant du dossier en relecture bloquante, en cours de traitement, opposé ou adressé à un
+  -- autre destinataire (la demande « ne pas publier » écrite dans un autre message est lue par le moteur).
+  if exists (
+    select 1 from public.information_agent_messages other
+    where other.case_id = v_fact.case_id
+      and other.id <> v_fact.message_id
+      and other.direction = 'inbound'
+      and (
+        not app_private.information_agent_message_processed_for_publication(other.metadata, false)
+        or coalesce(other.metadata ->> 'admin_handled_action', '') in ('record_opposition', 'wrong_recipient')
+      )
+  ) then
+    v_reasons := v_reasons || 'other_message_in_case'::text;
+  end if;
+
+  -- Dernier verdict de Haiku : « publier », de la version courante du prompt, pour la valeur du fait.
   v_value := app_private.information_agent_auto_publication_value(v_fact.proposed_value);
-  select arbitration.status, arbitration.publish, arbitration.value into v_arbitration
+  select arbitration.status, arbitration.publish, arbitration.value, arbitration.prompt_version
+  into v_arbitration
   from public.information_agent_auto_publication_arbitrations arbitration
   where arbitration.fact_id = v_fact.id
   order by arbitration.recorded_at desc, arbitration.id desc
   limit 1;
-  if not found then
+  if not found or v_arbitration.prompt_version is distinct from p_arbiter_version then
     v_reasons := v_reasons || 'arbiter_pending'::text;
   elsif v_arbitration.status <> 'completed' then
     v_reasons := v_reasons || 'arbiter_unavailable'::text;
@@ -1106,29 +1367,7 @@ begin
   end if;
 
   -- Champ vide sur la fiche (toute colonne que la fiche peut afficher) et vente à un seul lot.
-  select sale.surface_m2, sale.app_surface_m2, sale.habitable_surface_m2, sale.carrez_surface_m2,
-    sale.land_surface_m2, sale.rooms_count,
-    coalesce(sale.quality_flags ? 'multi_lot_sale', false)
-      or coalesce(pg_catalog.jsonb_typeof(sale.raw_payload -> 'source_lot_selection'), 'null') <> 'null'
-      as multi_lot
-  into v_sale
-  from public.auction_sales sale
-  where sale.id = v_fact.sale_id;
-  if not found then
-    v_reasons := v_reasons || 'input_unreadable'::text;
-  else
-    if (v_fact.fact_key = 'surface_m2' and (
-          v_sale.surface_m2 is not null or v_sale.app_surface_m2 is not null
-          or v_sale.habitable_surface_m2 is not null or v_sale.carrez_surface_m2 is not null))
-      or (v_fact.fact_key = 'land_surface_m2' and v_sale.land_surface_m2 is not null)
-      or (v_fact.fact_key = 'rooms_count' and v_sale.rooms_count is not null)
-    then
-      v_reasons := v_reasons || 'field_not_empty'::text;
-    end if;
-    if v_sale.multi_lot then
-      v_reasons := v_reasons || 'multi_lot_sale'::text;
-    end if;
-  end if;
+  v_reasons := v_reasons || app_private.information_agent_auto_publication_sale_blocks(v_fact.sale_id, v_fact.fact_key);
 
   -- Plafonds : 10 publications par jour de Paris, 2 par dossier.
   if cardinality(v_reasons) = 0 then
@@ -1172,9 +1411,12 @@ begin
   set constraints public.information_agent_fact_claim_bridge immediate;
   set constraints public.information_agent_fact_claim_bridge deferred;
 
+  -- L'observation du pont pour ce fait et cette vente (la plus récente, ordre déterministe).
   select claim.id into v_claim_id
   from public.auction_fact_claims claim
   where claim.evidence_locator ->> 'information_agent_fact_id' = v_fact.id::text
+    and claim.auction_sale_id = v_fact.sale_id
+  order by claim.created_at desc, claim.id desc
   limit 1;
   if v_claim_id is null then
     raise exception using errcode = '55000', message = 'The automatic publication has no fact claim.';
@@ -1197,12 +1439,12 @@ begin
 end;
 $$;
 
-comment on function public.publish_information_agent_fact_auto(uuid, text, text) is
-  'Agent d''information, étape 6 : seul chemin de publication automatique (auteur auto). Mode relu sous verrou partagé (rien hors du mode auto), contrôles de sécurité redits en base, plafonds exacts (10 par jour, 2 par dossier), puis fait accepté, noyau, observation, décision automatique du registre et décision « published », dans une seule transaction. Service_role seul ; appelée par src/lib/information-agent/auto-publication-store.ts.';
+comment on function public.publish_information_agent_fact_auto(uuid, text, text, text) is
+  'Agent d''information, étape 6 : seul chemin de publication automatique (auteur auto). Mode relu sous verrou partagé (rien hors du mode auto), fait déjà publié rendu sans écriture, contrôles de sécurité redits en base (dont analyses du message finies, délai de 30 jours, autres messages du dossier, verdict de la version courante du prompt), plafonds exacts (10 par jour, 2 par dossier), puis fait accepté, noyau, observation, décision automatique du registre et décision « published », dans une seule transaction. Service_role seul ; appelée par src/lib/information-agent/auto-publication-store.ts.';
 
-revoke all on function public.publish_information_agent_fact_auto(uuid, text, text)
+revoke all on function public.publish_information_agent_fact_auto(uuid, text, text, text)
   from public, anon, authenticated;
-grant execute on function public.publish_information_agent_fact_auto(uuid, text, text)
+grant execute on function public.publish_information_agent_fact_auto(uuid, text, text, text)
   to service_role;
 
 notify pgrst, 'reload schema';

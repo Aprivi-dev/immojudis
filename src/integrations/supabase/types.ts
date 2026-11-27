@@ -16897,6 +16897,17 @@ export type Database = {
         }[];
       };
       is_admin: { Args: never; Returns: boolean };
+      list_information_agent_facts_to_arbitrate: {
+        Args: { p_limit: number; p_prompt_version: string };
+        Returns: {
+          case_id: string;
+          fact_id: string;
+          fact_key: string;
+          message_id: string;
+          sale_id: string;
+          value: number;
+        }[];
+      };
       list_public_pepite_flood_exposed_ids: { Args: never; Returns: string[] };
       list_public_pepite_sale_ids: { Args: never; Returns: string[] };
       list_public_sale_ids_under_market_range: {
@@ -16977,7 +16988,12 @@ export type Database = {
       postgis_version: { Args: never; Returns: string };
       postgis_wagyu_version: { Args: never; Returns: string };
       publish_information_agent_fact_auto: {
-        Args: { p_fact_id: string; p_fact_key: string; p_policy_version: string };
+        Args: {
+          p_arbiter_version: string;
+          p_fact_id: string;
+          p_fact_key: string;
+          p_policy_version: string;
+        };
         Returns: Json;
       };
       publish_information_agent_email_template: {

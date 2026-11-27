@@ -277,6 +277,7 @@ describe("annotations de l'onglet Réponses", () => {
 describe("publications automatiques récentes (onglet Réponses)", () => {
   it("liste les publications des 30 derniers jours, avec la valeur du fait quand elle est encore là", async () => {
     const filters: string[] = [];
+    let total: number | null = 2;
     mocks.from.mockImplementation((table: string) => {
       const query: Record<string, unknown> = {};
       for (const name of ["select", "order", "limit"]) query[name] = () => query;
@@ -307,7 +308,11 @@ describe("publications automatiques récentes (onglet Réponses)", () => {
             ]
           : [{ id: "fact-1", display_value: "54 m²" }];
       query.then = (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data, error: null }).then(resolve);
+        Promise.resolve({
+          data,
+          error: null,
+          count: table === "information_agent_auto_publication_decisions" ? total : null,
+        }).then(resolve);
       return query;
     });
     const list = await listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"));
@@ -315,21 +320,35 @@ describe("publications automatiques récentes (onglet Réponses)", () => {
     expect(filters).toContain(
       "information_agent_auto_publication_decisions:decided_at>=2026-10-28T12:00:00.000Z",
     );
-    expect(list).toEqual([
-      {
-        factId: "fact-1",
-        factKey: "surface_m2",
-        displayValue: "54 m²",
-        saleId: "sale-1",
-        publishedAt: "2026-11-27T09:00:00.000Z",
-      },
-      {
-        factId: "fact-2",
-        factKey: "rooms_count",
-        displayValue: null,
-        saleId: "sale-2",
-        publishedAt: "2026-11-26T09:00:00.000Z",
-      },
-    ]);
+    expect(list).toEqual({
+      items: [
+        {
+          factId: "fact-1",
+          factKey: "surface_m2",
+          displayValue: "54 m²",
+          saleId: "sale-1",
+          publishedAt: "2026-11-27T09:00:00.000Z",
+        },
+        {
+          factId: "fact-2",
+          factKey: "rooms_count",
+          displayValue: null,
+          saleId: "sale-2",
+          publishedAt: "2026-11-26T09:00:00.000Z",
+        },
+      ],
+      total: 2,
+    });
+
+    // Jusqu'à 310 publications possibles sur la fenêtre : le total exact dit que la liste est tronquée.
+    total = 300;
+    expect((await listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"))).total).toBe(
+      300,
+    );
+    // Total inconnu : la liste est indisponible, jamais présentée comme complète.
+    total = null;
+    await expect(listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"))).rejects.toThrow(
+      "Auto-publication total missing",
+    );
   });
 });

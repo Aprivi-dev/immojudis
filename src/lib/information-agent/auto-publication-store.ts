@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
+  AUTO_PUBLICATION_ARBITER_VERSION,
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   AUTO_PUBLICATION_MODES,
   AUTO_PUBLICATION_POLICY_VERSION,
@@ -38,6 +39,11 @@ const AUTO_PUBLICATION_REQUEST_ROWS = 1000;
 const PASS_TIME_BUDGET_MS = 60_000;
 /** La boucle d'écriture s'arrête après ce nombre d'échecs consécutifs du même code. */
 const MAX_SAME_ERROR_STREAK = 3;
+/**
+ * Essais d'une analyse de pièce : `claim_information_agent_evidence_extractions` reprend une analyse tant que
+ * `attempts < 3` (même borne que `app_private.information_agent_message_analysis_pending`, migration 20261211100000).
+ */
+const EVIDENCE_MAX_ATTEMPTS = 3;
 
 /** Échec d'une lecture d'état global : la passe s'arrête sans rien écrire (code seul, sans détail). */
 export class AutoPublicationPassError extends Error {
@@ -69,13 +75,16 @@ export type AutoPublicationPassResult =
       /** Faits déjà « publiés » en simulation un jour antérieur : sortis du lot. */
       frozen: number;
       recorded: number;
-      /** Décision identique à la dernière du journal : aucun appel. */
+      /** Décision identique à la dernière du journal, ou fait déjà publié : rien d'écrit. */
       unchanged: number;
       wouldPublish: number;
       /** Mode automatique : faits publiés par la RPC dans cette passe. */
       published: number;
       review: number;
-      /** Mode automatique : publication remise à la passe suivante (vente occupée par un import, conflit). */
+      /**
+       * Mode automatique : publication remise à la passe suivante (vente occupée par un import, conflit, erreur
+       * réseau).
+       */
       deferred: number;
       /** Mode automatique : publication en échec, laissée en relecture humaine (motif `publication_failed`). */
       publishFailed: number;
@@ -346,7 +355,8 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
   const assetIds = plan.flatMap((row) => (row.evidence_asset_id ? [row.evidence_asset_id] : []));
   const eligible = [...AUTO_PUBLICATION_ELIGIBLE_FIELDS];
   const factIds = plan.map((row) => row.id);
-  const [messages, cases, sales, related, assets, arbitrations] = await Promise.all([
+  const messageIds = plan.map((row) => row.message_id);
+  const [messages, cases, sales, related, assets, arbitrations, analyses] = await Promise.all([
     readInChunks<MessageRow>("messages", caseIds, (ids) =>
       supabaseAdmin
         .from("information_agent_messages")
@@ -412,7 +422,28 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
         .order("id", { ascending: false })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
+    // Analyses des messages des faits encore en file, en cours ou en échec (pièces jointes, lecture du corps).
+    readInChunks("analyses", messageIds, (ids) =>
+      supabaseAdmin
+        .from("information_agent_evidence_extractions")
+        .select("id,message_id,status,attempts", { count: "exact" })
+        .in("message_id", ids)
+        .in("status", ["queued", "processing", "failed"])
+        .order("id", { ascending: true })
+        .limit(AUTO_PUBLICATION_REQUEST_ROWS),
+    ),
   ]);
+  // Messages dont une analyse est en file, en cours ou en échec avec des essais restants.
+  const pendingAnalysisMessages = new Set(
+    (analyses ?? [])
+      .filter(
+        (row) =>
+          row.status === "queued" ||
+          row.status === "processing" ||
+          (row.status === "failed" && row.attempts < EVIDENCE_MAX_ATTEMPTS),
+      )
+      .map((row) => row.message_id),
+  );
   // Opposition du destinataire (registre des contacts, toute portée), lue après le dossier.
   const recipients = (cases ?? []).flatMap((row) =>
     row.normalized_recipient_email ? [row.normalized_recipient_email] : [],
@@ -544,8 +575,16 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
           : null,
         // Calculé par le plan à partir des compteurs.
         fieldFilledInSimulation: false,
+        messageAnalysisPending: analyses ? pendingAnalysisMessages.has(row.message_id) : null,
         readFailed:
-          !messages || !cases || !sales || !related || !assets || !arbitrations || !opposed,
+          !messages ||
+          !cases ||
+          !sales ||
+          !related ||
+          !assets ||
+          !arbitrations ||
+          !opposed ||
+          !analyses,
       },
     };
   });
@@ -565,12 +604,16 @@ function sameDecision(
   );
 }
 
-/** Codes d'erreur d'une publication à reprendre à la passe suivante : vente tenue par un import, conflit. */
-const TRANSIENT_PUBLISH_CODES = new Set(["55P03", "40001", "40P01"]);
+/**
+ * Codes d'erreur d'une publication à reprendre à la passe suivante : vente tenue par un import, conflit, et erreur
+ * réseau ou sans code (réponse perdue : la publication a pu être faite ; la RPC rend alors « already_published »
+ * sans rien réécrire).
+ */
+const TRANSIENT_PUBLISH_CODES = new Set(["55P03", "40001", "40P01", "", "unknown"]);
 
 /** Réponse de la RPC de publication, validée : une forme inconnue est un échec de publication. */
 const publishResultSchema = z.object({
-  status: z.enum(["published", "review", "inactive", "missing"]),
+  status: z.enum(["published", "already_published", "review", "inactive", "missing"]),
 });
 
 /**
@@ -578,8 +621,9 @@ const publishResultSchema = z.object({
  * liste fermée reçu depuis 45 jours. Simulation : la décision est inscrite au journal quand elle change.
  * Automatique : une relecture est inscrite au journal ; « publier » appelle `publish_information_agent_fact_auto`,
  * qui relit le mode sous verrou et publie (ou écrit lui-même la relecture). Une publication en échec est laissée en
- * relecture (motif `publication_failed`) et n'est plus retentée ; un verrou d'import ou un conflit la remet à la
- * passe suivante. Hors de ces deux modes, rien n'est lu ni calculé. Une lecture du contexte d'un fait qui échoue ou
+ * relecture (motif `publication_failed`) et n'est plus retentée ; un verrou d'import, un conflit ou une erreur réseau
+ * la remet à la passe suivante (un fait déjà publié n'est jamais republié). Le budget de temps est vérifié avant le
+ * calcul de chaque décision. Hors de ces deux modes, rien n'est lu ni calculé. Une lecture du contexte d'un fait qui échoue ou
  * est tronquée donne « relecture » (motif `input_unreadable`). Une lecture d'état global (mode, liste des faits,
  * dernières décisions, compteurs) qui échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE.
  */
@@ -676,7 +720,17 @@ export async function runAutoPublicationPass({
     return true;
   };
 
-  for (const { item, decision } of planAutoPublicationDecisions(items, counters)) {
+  const planned = planAutoPublicationDecisions(items, counters);
+  for (;;) {
+    // Budget vérifié AVANT le calcul de la décision suivante (les détecteurs de texte lisent tout le message).
+    if (clock() - started > timeBudgetMs) {
+      result.timedOut = true;
+      result.status = "time_limit_reached";
+      break;
+    }
+    const next = planned.next();
+    if (next.done) break;
+    const { item, decision } = next.value;
     if ((decision.reasons as readonly string[]).includes("input_unreadable")) {
       result.unreadable += 1;
     }
@@ -686,11 +740,6 @@ export async function runAutoPublicationPass({
       else result.review += 1;
       result.unchanged += 1;
       continue;
-    }
-    if (clock() - started > timeBudgetMs) {
-      result.timedOut = true;
-      result.status = "time_limit_reached";
-      break;
     }
     if (!publishNow) {
       if (decision.outcome === "would_publish") result.wouldPublish += 1;
@@ -702,6 +751,7 @@ export async function runAutoPublicationPass({
         p_fact_id: item.factId,
         p_fact_key: item.factKey,
         p_policy_version: AUTO_PUBLICATION_POLICY_VERSION,
+        p_arbiter_version: AUTO_PUBLICATION_ARBITER_VERSION,
       });
       const parsed = error ? null : publishResultSchema.safeParse(data);
       if (parsed?.success) {
@@ -713,6 +763,7 @@ export async function runAutoPublicationPass({
           break;
         }
         if (parsed.data.status === "published") result.published += 1;
+        else if (parsed.data.status === "already_published") result.unchanged += 1;
         else if (parsed.data.status === "review") result.review += 1;
         continue;
       }

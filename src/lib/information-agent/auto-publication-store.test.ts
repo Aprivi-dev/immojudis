@@ -205,6 +205,7 @@ beforeEach(() => {
     information_agent_auto_publication_decisions: [],
     information_agent_auto_publication_arbitrations: [],
     information_agent_contacts: [],
+    information_agent_evidence_extractions: [],
   };
   mocks.from.mockImplementation(query);
   mocks.rpc.mockImplementation((name: string) =>
@@ -492,6 +493,25 @@ describe("passe de simulation : écriture bornée", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(3);
   });
 
+  it("le budget de temps est vérifié avant de calculer la moindre décision", async () => {
+    for (let index = 0; index < 3; index += 1) seedCleanFact();
+    let ticks = 0;
+    const result = await runAutoPublicationPass({
+      now: NOW,
+      timeBudgetMs: 10,
+      // Départ à 0, puis le budget est déjà épuisé quand la première décision serait calculée.
+      clock: () => (ticks++ < 1 ? 0 : 1_000),
+    });
+    expect(result).toMatchObject({
+      status: "time_limit_reached",
+      examined: 3,
+      wouldPublish: 0,
+      review: 0,
+      unchanged: 0,
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it("s'arrête quand le temps de la passe est épuisé, avec un statut explicite", async () => {
     for (let index = 0; index < 3; index += 1) seedCleanFact();
     let ticks = 0;
@@ -761,6 +781,65 @@ describe("passe du moteur v2 : verdict de Haiku et contrôles structurels", () =
   });
 });
 
+describe("passe du moteur v2 : analyses du message", () => {
+  function analysis(messageId: string, status: string, attempts: number) {
+    db.information_agent_evidence_extractions!.push({
+      id: uuid("extraction"),
+      message_id: messageId,
+      status,
+      attempts,
+    });
+  }
+
+  it.each([
+    ["en file", "queued", 0],
+    ["en cours", "processing", 1],
+    ["en échec avec des essais restants", "failed", 2],
+  ])(
+    "une analyse %s du message : relecture « analyse en cours »",
+    async (_label, status, attempts) => {
+      const { factId, messageId } = seedCleanFact();
+      analysis(messageId, status, attempts);
+      await runAutoPublicationPass({ now: NOW });
+      expect(recorded()).toEqual([
+        expect.objectContaining({
+          p_fact_id: factId,
+          p_outcome: "review",
+          p_reasons: ["evidence_pending"],
+        }),
+      ]);
+    },
+  );
+
+  it("en mode automatique, une analyse en file n'appelle pas la RPC de publication", async () => {
+    db.information_agent_auto_publication_settings = [{ singleton: true, mode: "auto" }];
+    const { messageId } = seedCleanFact();
+    analysis(messageId, "queued", 0);
+    await runAutoPublicationPass({ now: NOW });
+    expect(published()).toEqual([]);
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_outcome: "review", p_reasons: ["evidence_pending"] }),
+    ]);
+  });
+
+  it("une analyse en échec définitif (3 essais) ou finie ne retient pas la publication", async () => {
+    const { messageId } = seedCleanFact();
+    analysis(messageId, "failed", 3);
+    analysis(messageId, "completed", 1);
+    await runAutoPublicationPass({ now: NOW });
+    expect(recorded()).toEqual([expect.objectContaining({ p_outcome: "would_publish" })]);
+  });
+
+  it("analyses illisibles : relecture, motif « données illisibles »", async () => {
+    seedCleanFact();
+    failures.information_agent_evidence_extractions = { code: "PGRST301" };
+    await runAutoPublicationPass({ now: NOW });
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_reasons: expect.arrayContaining(["input_unreadable"]) }),
+    ]);
+  });
+});
+
 describe("passe du moteur v2 : mode automatique", () => {
   beforeEach(() => {
     db.information_agent_auto_publication_settings = [{ singleton: true, mode: "auto" }];
@@ -771,7 +850,12 @@ describe("passe du moteur v2 : mode automatique", () => {
     const result = await runAutoPublicationPass({ now: NOW });
     expect(result).toMatchObject({ status: "done", mode: "auto", published: 1, recorded: 0 });
     expect(published()).toEqual([
-      { p_fact_id: factId, p_fact_key: "surface_m2", p_policy_version: "auto_publication_v2" },
+      {
+        p_fact_id: factId,
+        p_fact_key: "surface_m2",
+        p_policy_version: "auto_publication_v2",
+        p_arbiter_version: "auto_publication_arbiter_v1",
+      },
     ]);
     expect(recorded()).toEqual([]);
   });
@@ -832,6 +916,40 @@ describe("passe du moteur v2 : mode automatique", () => {
     expect(again).toMatchObject({ frozen: 1 });
     expect(published()).toEqual([]);
   });
+
+  it("fait déjà publié (réponse précédente perdue) : rien n'est écrit, rien n'est compté comme publié", async () => {
+    seedCleanFact();
+    mocks.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "publish_information_agent_fact_auto"
+          ? { data: { status: "already_published" }, error: null }
+          : { data: true, error: null },
+      ),
+    );
+    const result = await runAutoPublicationPass({ now: NOW });
+    expect(result).toMatchObject({ published: 0, publishFailed: 0, unchanged: 1 });
+    expect(recorded()).toEqual([]);
+  });
+
+  it.each([
+    ["sans code (réseau)", { message: "fetch failed", code: "" }],
+    ["sans champ code", { message: "fetch failed" }],
+  ])(
+    "erreur passagère %s : remise à la passe suivante, jamais « publication_failed »",
+    async (_label, error) => {
+      seedCleanFact();
+      mocks.rpc.mockImplementation((name: string) =>
+        Promise.resolve(
+          name === "publish_information_agent_fact_auto"
+            ? { data: null, error }
+            : { data: true, error: null },
+        ),
+      );
+      const result = await runAutoPublicationPass({ now: NOW });
+      expect(result).toMatchObject({ deferred: 1, publishFailed: 0 });
+      expect(recorded()).toEqual([]);
+    },
+  );
 
   it("une réponse inattendue de la RPC est un échec de publication, pas une publication", async () => {
     seedCleanFact();

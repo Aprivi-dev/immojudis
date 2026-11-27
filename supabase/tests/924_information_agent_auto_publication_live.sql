@@ -10,7 +10,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(45);
+select plan(67);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_auto_publication_arbitrations', 'the verdict table exists');
@@ -37,13 +37,23 @@ select is(
 );
 
 select ok(
-  has_function_privilege('service_role', 'public.publish_information_agent_fact_auto(uuid, text, text)', 'execute')
-  and not has_function_privilege('authenticated', 'public.publish_information_agent_fact_auto(uuid, text, text)', 'execute')
-  and not has_function_privilege('anon', 'public.publish_information_agent_fact_auto(uuid, text, text)', 'execute')
+  has_function_privilege('service_role', 'public.publish_information_agent_fact_auto(uuid, text, text, text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.publish_information_agent_fact_auto(uuid, text, text, text)', 'execute')
+  and not has_function_privilege('anon', 'public.publish_information_agent_fact_auto(uuid, text, text, text)', 'execute')
   and has_function_privilege('service_role', 'public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text, text, text)', 'execute')
   and not has_function_privilege('authenticated', 'public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text, text, text)', 'execute')
   and not has_function_privilege('anon', 'public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text, text, text)', 'execute'),
   'the publication and verdict RPCs are open to the server only'
+);
+
+select ok(
+  has_function_privilege('service_role', 'public.list_information_agent_facts_to_arbitrate(text, integer)', 'execute')
+  and not has_function_privilege('authenticated', 'public.list_information_agent_facts_to_arbitrate(text, integer)', 'execute')
+  and not has_function_privilege('anon', 'public.list_information_agent_facts_to_arbitrate(text, integer)', 'execute')
+  and has_function_privilege('service_role', 'public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text)', 'execute')
+  and not has_function_privilege('authenticated', 'public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text)', 'execute')
+  and not has_function_privilege('anon', 'public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text)', 'execute'),
+  'the list of facts to judge and the decision journal RPC are open to the server only (never to authenticated)'
 );
 
 select ok(
@@ -99,7 +109,10 @@ insert into public.auction_sales (
    '{}'::jsonb, '{}'::jsonb, 'tribunal', '[]'::jsonb),
   ('92400000-1000-4000-8000-000000000002', 'licitor', 'https://example.test/924/sale-2', 'upcoming',
    current_timestamp + interval '20 days', 'Alphaville', 'apartment', 90000,
-   '{}'::jsonb, '{}'::jsonb, 'tribunal', '["multi_lot_sale"]'::jsonb);
+   '{}'::jsonb, '{}'::jsonb, 'tribunal', '["multi_lot_sale"]'::jsonb),
+  ('92400000-1000-4000-8000-000000000003', 'licitor', 'https://example.test/924/sale-3', 'upcoming',
+   current_timestamp + interval '20 days', 'Alphaville', 'house', 90000,
+   '{}'::jsonb, '{}'::jsonb, 'tribunal', '[]'::jsonb);
 
 insert into public.information_agent_cases (
   id, sale_id, created_by, status, recipient_kind, recipient_email, normalized_recipient_email, subject,
@@ -112,6 +125,10 @@ insert into public.information_agent_cases (
   ('92400000-3000-4000-8000-000000000002', '92400000-1000-4000-8000-000000000002',
    '92400000-0000-4000-8000-0000000000a1', 'review', 'source_lawyer', 'avocat-924b@example.test',
    'avocat-924b@example.test', 'Demande d''informations', 'Merci de nous transmettre la surface.',
+   array['surface'], array['surface'], now() - interval '3 days', now() - interval '2 days'),
+  ('92400000-3000-4000-8000-000000000003', '92400000-1000-4000-8000-000000000003',
+   '92400000-0000-4000-8000-0000000000a1', 'review', 'source_lawyer', 'avocat-924c@example.test',
+   'avocat-924c@example.test', 'Demande d''informations', 'Merci de nous transmettre la surface.',
    array['surface'], array['surface'], now() - interval '3 days', now() - interval '2 days');
 
 insert into public.information_agent_missions (
@@ -125,6 +142,10 @@ insert into public.information_agent_missions (
   ('92400000-2000-4000-8000-000000000002', '92400000-0000-4000-8000-0000000000a1',
    '92400000-1000-4000-8000-000000000002', '92400000-3000-4000-8000-000000000002', 'sent',
    'avocat-924b@example.test', 'Demande d''informations', 'Merci de nous transmettre la surface.',
+   array['surface'], array['surface'], '924-pgtap'),
+  ('92400000-2000-4000-8000-000000000003', '92400000-0000-4000-8000-0000000000a1',
+   '92400000-1000-4000-8000-000000000003', '92400000-3000-4000-8000-000000000003', 'sent',
+   'avocat-924c@example.test', 'Demande d''informations', 'Merci de nous transmettre la surface.',
    array['surface'], array['surface'], '924-pgtap');
 
 insert into public.information_agent_messages (
@@ -142,12 +163,17 @@ insert into public.information_agent_messages (
    '92400000-3000-4000-8000-000000000001', '92400000-0000-4000-8000-0000000000a1',
    'inbound', 'reply', 'received', 'Re: Demande d''informations', 'Précision : 120 m².',
    now() - interval '1 day', 'auto-publication-provider-924-2',
-   '{"imported_manually": false, "sender_matches_recipient": true, "sender_authentication": {"status": "fail", "dkim": "fail", "dmarc": "pass"}}'::jsonb),
+   '{"imported_manually": false, "sender_matches_recipient": true, "sender_authentication": {"status": "fail", "dkim": "fail", "dmarc": "pass"}, "inbound_processing": {"status": "completed"}}'::jsonb),
   ('92400000-4000-4000-8000-000000000003', '92400000-2000-4000-8000-000000000002',
    '92400000-3000-4000-8000-000000000002', '92400000-0000-4000-8000-0000000000a1',
    'inbound', 'reply', 'received', 'Re: Demande d''informations', 'Le lot fait 40 m².',
    now() - interval '2 days', 'auto-publication-provider-924-3',
-   '{"imported_manually": false, "sender_matches_recipient": true, "sender_authentication": {"status": "pass", "dkim": "pass", "dmarc": "pass"}}'::jsonb);
+   '{"imported_manually": false, "sender_matches_recipient": true, "sender_authentication": {"status": "pass", "dkim": "pass", "dmarc": "pass"}}'::jsonb),
+  ('92400000-4000-4000-8000-000000000004', '92400000-2000-4000-8000-000000000003',
+   '92400000-3000-4000-8000-000000000003', '92400000-0000-4000-8000-0000000000a1',
+   'inbound', 'reply', 'received', 'Re: Demande d''informations', 'La maison fait 95 m² et compte 4 pièces.',
+   now() - interval '2 days', 'auto-publication-provider-924-4',
+   '{"imported_manually": false, "sender_matches_recipient": true, "sender_authentication": {"status": "pass", "dkim": "pass", "dmarc": "pass"}, "inbound_processing": {"status": "completed"}}'::jsonb);
 
 insert into public.information_agent_fact_candidates (
   id, case_id, message_id, sale_id, fact_key, proposed_value, display_value, evidence_excerpt, confidence,
@@ -167,12 +193,18 @@ insert into public.information_agent_fact_candidates (
    '{"value": 120}'::jsonb, '120 m²', 'Précision : 120 m²', 0.9, 'pending'),
   ('92400000-5000-4000-8000-000000000005', '92400000-3000-4000-8000-000000000002',
    '92400000-4000-4000-8000-000000000003', '92400000-1000-4000-8000-000000000002', 'surface_m2',
-   '{"value": 40}'::jsonb, '40 m²', 'Le lot fait 40 m²', 0.9, 'pending');
+   '{"value": 40}'::jsonb, '40 m²', 'Le lot fait 40 m²', 0.9, 'pending'),
+  ('92400000-5000-4000-8000-000000000006', '92400000-3000-4000-8000-000000000003',
+   '92400000-4000-4000-8000-000000000004', '92400000-1000-4000-8000-000000000003', 'surface_m2',
+   '{"value": 95}'::jsonb, '95 m²', 'La maison fait 95 m²', 0.9, 'pending'),
+  ('92400000-5000-4000-8000-000000000007', '92400000-3000-4000-8000-000000000003',
+   '92400000-4000-4000-8000-000000000004', '92400000-1000-4000-8000-000000000003', 'rooms_count',
+   '{"value": 4}'::jsonb, '4 pièces', '4 pièces', 0.9, 'pending');
 
 -- Mode « off » : rien n'est écrit ----------------------------------------------------------------------------------
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2') ->> 'status',
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') ->> 'status',
   'inactive',
   'in off mode the publication RPC writes nothing'
 );
@@ -206,6 +238,14 @@ select throws_ok(
 );
 reset role;
 
+-- Faits à juger : filtrés en base (aucun appel de Haiku pour un fait que les conditions structurelles écartent) ------
+select is(
+  (select array_agg(right(fact_id::text, 1) order by fact_id)
+   from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50)),
+  array['1', '2', '3', '6', '7'],
+  'the facts to judge exclude a message without DKIM (4) and a multi-lot sale (5)'
+);
+
 -- Verdicts ------------------------------------------------------------------------------------------------------
 select throws_ok(
   $$select public.record_information_agent_auto_publication_arbitration(
@@ -232,7 +272,7 @@ select throws_ok(
 -- Sans verdict : relecture, rien de publié --------------------------------------------------------------------------
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2') -> 'reasons',
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
   '["arbiter_pending"]'::jsonb,
   'without a verdict the fact goes to review'
 );
@@ -276,10 +316,122 @@ select throws_ok(
   '55000', null, 'the verdicts are append-only'
 );
 
+-- Verdicts passagers refaits au plus 3 fois, une heure au moins après ; verdict final jamais refait -------------------
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000006', 95, 'unavailable', false, null, null,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', 'ARBITER_PROVIDER_ERROR');
+insert into public.information_agent_auto_publication_arbitrations (
+  fact_id, case_id, message_id, sale_id, fact_key, value, status, model, prompt_version, error_code, recorded_at
+) values (
+  '92400000-5000-4000-8000-000000000007', '92400000-3000-4000-8000-000000000003',
+  '92400000-4000-4000-8000-000000000004', '92400000-1000-4000-8000-000000000003', 'rooms_count', 4,
+  'unavailable', 'claude-haiku-5-5', 'auto_publication_arbiter_v1', 'ARBITER_PROVIDER_ERROR', now() - interval '2 hours'
+);
+select is(
+  (select array_agg(right(fact_id::text, 1) order by fact_id)
+   from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50)),
+  array['7'],
+  'judged facts are not judged again; a provider error is retried after an hour, not before'
+);
+insert into public.information_agent_auto_publication_arbitrations (
+  fact_id, case_id, message_id, sale_id, fact_key, value, status, model, prompt_version, error_code, recorded_at
+) select '92400000-5000-4000-8000-000000000007', '92400000-3000-4000-8000-000000000003',
+  '92400000-4000-4000-8000-000000000004', '92400000-1000-4000-8000-000000000003', 'rooms_count', 4,
+  'invalid_output', 'claude-haiku-5-5', 'auto_publication_arbiter_v1', 'ARBITER_OUTPUT_INVALID',
+  now() - interval '3 hours' * step
+from generate_series(1, 2) as steps(step);
+select is(
+  (select count(*) from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50)),
+  0::bigint,
+  'after three transient verdicts the fact is not judged again (human review)'
+);
+select is(
+  (select array_agg(right(fact_id::text, 1) order by fact_id)
+   from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v2', 50)),
+  array['1', '2', '3', '6', '7'],
+  'a new prompt version judges every fact again'
+);
+
+-- Analyses du message pas finies : rien n'est publié (une pièce jointe peut contredire le corps) -------------------------
+insert into public.information_agent_evidence_assets (
+  id, case_id, message_id, sale_id, storage_path, original_filename, mime_type, size_bytes, sha256
+) values (
+  '92400000-6000-4000-8000-000000000001', '92400000-3000-4000-8000-000000000001',
+  '92400000-4000-4000-8000-000000000001', '92400000-1000-4000-8000-000000000001',
+  '92400000-3000-4000-8000-000000000001/92400000-4000-4000-8000-000000000001/att-1/carrez.pdf',
+  'carrez.pdf', 'application/pdf', 4096,
+  'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
+);
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["evidence_pending"]'::jsonb,
+  'a queued attachment analysis of the message keeps the fact in review'
+);
+update public.information_agent_evidence_extractions
+set status = 'failed', attempts = 1
+where asset_id = '92400000-6000-4000-8000-000000000001';
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["evidence_pending"]'::jsonb,
+  'a failed analysis with attempts left still keeps the fact in review'
+);
+select ok(
+  not exists (
+    select 1 from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v2', 50)
+    where message_id = '92400000-4000-4000-8000-000000000001'
+  ),
+  'Haiku is not called for a fact whose message analysis is not finished'
+);
+update public.information_agent_evidence_extractions
+set status = 'failed', attempts = 3
+where asset_id = '92400000-6000-4000-8000-000000000001';
+
+-- Autres contrôles redits en base ---------------------------------------------------------------------------------------
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v2') -> 'reasons',
+  '["arbiter_pending"]'::jsonb,
+  'a verdict of another prompt version than the current one does not publish'
+);
+update public.information_agent_cases set sent_at = now() - interval '40 days'
+where id = '92400000-3000-4000-8000-000000000001';
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["reply_outside_window"]'::jsonb,
+  'a reply received 30 days or more after the request is not published'
+);
+update public.information_agent_cases set sent_at = now() - interval '3 days'
+where id = '92400000-3000-4000-8000-000000000001';
+update public.information_agent_messages
+set metadata = jsonb_set(metadata, '{inbound_processing}', '{"status": "review", "reason": "possible_opposition"}')
+where id = '92400000-4000-4000-8000-000000000002';
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["other_message_in_case"]'::jsonb,
+  'another reply of the case in review for a possible opposition blocks the publication'
+);
+update public.information_agent_messages
+set metadata = jsonb_set(metadata, '{inbound_processing}', '{"status": "completed"}')
+  || '{"admin_handled_action": "record_opposition"}'::jsonb
+where id = '92400000-4000-4000-8000-000000000002';
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["other_message_in_case"]'::jsonb,
+  'another reply of the case handled as an opposition blocks the publication'
+);
+update public.information_agent_messages
+set metadata = metadata - 'admin_handled_action'
+where id = '92400000-4000-4000-8000-000000000002';
+
 -- Publication -----------------------------------------------------------------------------------------------------
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2') ->> 'status',
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') ->> 'status',
   'published',
   'a clean body fact with a publish verdict is published'
 );
@@ -329,16 +481,43 @@ select ok(
   'the engine journal records the publication'
 );
 
+-- Second appel (réponse perdue) : rien n'est réécrit ; le journal refuse une relecture après coup ------------------------
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') ->> 'status',
+  'already_published',
+  'a second call after the publication says already published'
+);
+select is(
+  public.record_information_agent_auto_publication_decision(
+    '92400000-5000-4000-8000-000000000001', 'surface_m2', 'review', '{publication_failed}', 'auto_publication_v2'),
+  false,
+  'no review is recorded for a fact that is no longer pending'
+);
+select is(
+  (select array_agg(outcome order by decided_at desc, id desc)
+   from public.information_agent_auto_publication_decisions
+   where fact_id = '92400000-5000-4000-8000-000000000001' and outcome <> 'review'),
+  array['published'],
+  'the fact keeps a single publication and nothing after it'
+);
+select is(
+  (select count(*) from public.auction_fact_claim_decisions
+   where information_agent_fact_id = '92400000-5000-4000-8000-000000000001'),
+  1::bigint,
+  'the registry holds a single automatic decision'
+);
+
 -- Contrôles de sécurité redits en base ---------------------------------------------------------------------------------
 select ok(
   (public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000004', 'surface_m2', 'auto_publication_v2') -> 'reasons')
+    '92400000-5000-4000-8000-000000000004', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons')
     ?& array['sender_not_authenticated', 'field_not_empty'],
   'a message without DKIM is never published, and the field is no longer empty'
 );
 select ok(
   (public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000005', 'surface_m2', 'auto_publication_v2') -> 'reasons')
+    '92400000-5000-4000-8000-000000000005', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons')
     ? 'multi_lot_sale',
   'a multi-lot sale is never published automatically'
 );
@@ -346,13 +525,13 @@ select ok(
 -- Plafond de 2 par dossier -----------------------------------------------------------------------------------------
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000002', 'rooms_count', 'auto_publication_v2') ->> 'status',
+    '92400000-5000-4000-8000-000000000002', 'rooms_count', 'auto_publication_v2', 'auto_publication_arbiter_v1') ->> 'status',
   'published',
   'a second fact of the case is published'
 );
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2') -> 'reasons',
+    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
   '["case_cap_reached"]'::jsonb,
   'the third fact of the same case waits for review (2 per case)'
 );
@@ -399,12 +578,77 @@ select throws_ok(
   '22023', null, 'the core still refuses an automatic publication that names a person'
 );
 
+-- Refus de Haiku, refus après un accord, autre valeur, plafond du jour -----------------------------------------------------
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000006', 95, 'completed', false, 'conditional_or_approximate', 0.8,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', null);
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000006', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["arbiter_declined"]'::jsonb,
+  'a refusal of Haiku is never published'
+);
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000007', 4, 'completed', true, 'clear_statement', 0.9,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', null);
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000007', 4, 'completed', false, 'unclear_or_ambiguous', 0.6,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', null);
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000007', 'rooms_count', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["arbiter_declined"]'::jsonb,
+  'the latest verdict wins: a refusal after an agreement is not published'
+);
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000006', 95, 'completed', true, 'clear_statement', 0.9,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', null);
+update public.information_agent_fact_candidates set proposed_value = '{"value": 96}'::jsonb
+where id = '92400000-5000-4000-8000-000000000006';
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000006', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["arbiter_value_mismatch"]'::jsonb,
+  'a verdict given for another value never publishes the current one'
+);
+update public.information_agent_fact_candidates set proposed_value = '{"value": 95}'::jsonb
+where id = '92400000-5000-4000-8000-000000000006';
+-- Dix publications déjà faites aujourd'hui (heure de Paris), dans d'autres dossiers.
+insert into public.information_agent_auto_publication_decisions (
+  mode, policy_version, fact_id, case_id, sale_id, fact_key, outcome, reasons
+) select 'auto', 'auto_publication_v2', gen_random_uuid(), gen_random_uuid(),
+  '92400000-1000-4000-8000-000000000002', 'surface_m2', 'published', '{}'::text[]
+from generate_series(1, 10);
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000006', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["daily_cap_reached"]'::jsonb,
+  'the eleventh publication of the day waits for review (10 per day)'
+);
+select is(
+  (select status from public.information_agent_fact_candidates where id = '92400000-5000-4000-8000-000000000006'),
+  'pending',
+  'the fact over the daily cap stays pending'
+);
+
+-- L'observation automatique porte la vente et la valeur du fait ------------------------------------------------------------
+update public.information_agent_fact_candidates set proposed_value = '{"value": "6"}'::jsonb
+where id = '92400000-5000-4000-8000-000000000002';
+select throws_ok(
+  $$select app_private.accept_information_agent_claim_automatically(claim.id, 'auto_publication_v2')
+      from public.auction_fact_claims claim
+      where claim.evidence_locator ->> 'information_agent_fact_id' = '92400000-5000-4000-8000-000000000002'$$,
+  '55000', 'claim_does_not_match_fact', 'the automatic decision refuses a claim whose value is not the fact one'
+);
+update public.information_agent_fact_candidates set proposed_value = '{"value": "5"}'::jsonb
+where id = '92400000-5000-4000-8000-000000000002';
+
 -- Opposition du contact -----------------------------------------------------------------------------------------------
 insert into public.information_agent_contacts (email, opposition_status, opposed_at)
 values ('avocat-924@example.test', 'opposed', now());
 select ok(
   (public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2') -> 'reasons')
+    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons')
     ? 'contact_opposed',
   'an opposed contact is never published'
 );
@@ -446,7 +690,7 @@ select set_config('request.jwt.claims', '', true);
 delete from public.information_agent_contacts where normalized_email = 'avocat-924@example.test';
 select is(
   public.publish_information_agent_fact_auto(
-    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2') ->> 'status',
+    '92400000-5000-4000-8000-000000000003', 'land_surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') ->> 'status',
   'inactive',
   'after the emergency stop nothing is published'
 );
@@ -460,7 +704,7 @@ select is(
 select ok(
   (select prosrc ~* 'information_agent_auto_publication_settings settings\s+where settings\.singleton\s+for share'
           and position('for share' in prosrc) < position('apply_information_agent_fact' in prosrc)
-     from pg_proc where oid = 'public.publish_information_agent_fact_auto(uuid, text, text)'::regprocedure),
+     from pg_proc where oid = 'public.publish_information_agent_fact_auto(uuid, text, text, text)'::regprocedure),
   'the publication reads the mode under a shared lock before the core'
 );
 

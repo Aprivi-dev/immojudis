@@ -82,6 +82,7 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
     otherValuesForSale: 0,
     otherMessages: [],
     fieldFilledInSimulation: false,
+    messageAnalysisPending: false,
     arbitration: { found: true, row: PUBLISH_VERDICT },
     ...overrides,
   };
@@ -343,6 +344,11 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       cleanInput({ fieldFilledInSimulation: true }),
       "field_already_filled_in_simulation",
     ],
+    [
+      "analyse du message (pièce jointe, lecture du corps) pas finie",
+      cleanInput({ messageAnalysisPending: true }),
+      "evidence_pending",
+    ],
     // Surface affichée par la fiche : surface retenue, habitable ou Carrez (règle getRecordedSurface).
     ["surface habitable connue", withSale({ habitableSurfaceM2: 52 }), "field_not_empty"],
     ["surface Carrez connue", withSale({ carrezSurfaceM2: 51.5 }), "field_not_empty"],
@@ -504,11 +510,18 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
       withCandidate({ evidenceAssetId: "asset-1", evidenceKind: null }),
     ],
     ["journal illisible", cleanInput({ fieldFilledInSimulation: null })],
+    ["analyses du message illisibles", cleanInput({ messageAnalysisPending: null })],
     ["lecture annexe en échec", cleanInput({ readFailed: true })],
   ])("%s : relecture, motif input_unreadable", (_label, input) => {
     const decision = decideAutoPublication(input);
     expect(decision.outcome).toBe("review");
     expect(decision.reasons).toContain("input_unreadable");
+  });
+
+  it("le libellé du champ déjà rempli vaut pour la simulation comme pour le mode automatique", () => {
+    expect(AUTO_PUBLICATION_REASON_LABELS.field_already_filled_in_simulation).not.toMatch(
+      /simulation/u,
+    );
   });
 
   it("des motifs de relecture de la phrase ne sont plus lus (Haiku juge la phrase), même illisibles", () => {
@@ -654,11 +667,13 @@ describe("plafonds, appliqués dès la simulation", () => {
     const items = Array.from({ length: AUTO_PUBLICATION_DAILY_CAP + 2 }, (_, index) =>
       planItem(index),
     );
-    const decisions = planAutoPublicationDecisions(items, {
-      today: 0,
-      byCase: new Map(),
-      filled: new Set(),
-    }).map(({ decision }) => decision);
+    const decisions = [
+      ...planAutoPublicationDecisions(items, {
+        today: 0,
+        byCase: new Map(),
+        filled: new Set(),
+      }),
+    ].map(({ decision }) => decision);
     expect(decisions.filter((decision) => decision.outcome === "would_publish")).toHaveLength(
       AUTO_PUBLICATION_DAILY_CAP,
     );
@@ -695,11 +710,13 @@ describe("plafonds, appliqués dès la simulation", () => {
         }),
       }),
     );
-    const decisions = planAutoPublicationDecisions(items, {
-      today: 0,
-      byCase: new Map(),
-      filled: new Set(),
-    }).map(({ decision }) => decision);
+    const decisions = [
+      ...planAutoPublicationDecisions(items, {
+        today: 0,
+        byCase: new Map(),
+        filled: new Set(),
+      }),
+    ].map(({ decision }) => decision);
     expect(decisions.map((decision) => decision.outcome)).toEqual([
       "would_publish",
       "would_publish",
@@ -709,12 +726,30 @@ describe("plafonds, appliqués dès la simulation", () => {
   });
 
   it("un champ rempli en simulation ne l'est pas une seconde fois", () => {
-    const decisions = planAutoPublicationDecisions(
-      [planItem(1, { saleId: "sale-1", caseId: "case-1" }), planItem(2, { saleId: "sale-1" })],
-      { today: 0, byCase: new Map(), filled: new Set() },
-    ).map(({ decision }) => decision);
+    const decisions = [
+      ...planAutoPublicationDecisions(
+        [planItem(1, { saleId: "sale-1", caseId: "case-1" }), planItem(2, { saleId: "sale-1" })],
+        { today: 0, byCase: new Map(), filled: new Set() },
+      ),
+    ].map(({ decision }) => decision);
     expect(decisions[0]!.outcome).toBe("would_publish");
     expect(decisions[1]!.reasons).toContain("field_already_filled_in_simulation");
+  });
+
+  it("chaque décision n'est calculée qu'à la demande (le budget de temps est vérifié avant)", () => {
+    const unread = { ...planItem(2) } as AutoPublicationPlanItem;
+    Object.defineProperty(unread, "input", {
+      get: () => {
+        throw new Error("décision calculée sans être demandée");
+      },
+    });
+    const planned = planAutoPublicationDecisions([planItem(1), unread], {
+      today: 0,
+      byCase: new Map(),
+      filled: new Set(),
+    });
+    expect(planned.next().value).toMatchObject({ decision: { outcome: "would_publish" } });
+    expect(() => planned.next()).toThrow("décision calculée sans être demandée");
   });
 
   it("sans compteurs lisibles, tout part en relecture", () => {

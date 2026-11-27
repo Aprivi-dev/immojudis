@@ -18,7 +18,8 @@ import { getDisplaySurface, getRecordedSurface } from "@/lib/surface";
  * poursuivant, répondu ou en relecture, sans opposition (dossier ou contact) ; réponse traitée sans autre motif de
  * relecture que le motif générique `candidate_or_attachment_review` ; information du corps du message lue par
  * les règles (jamais d'une pièce jointe, jamais de l'IA seule) ; aucune autre valeur pour ce champ ni dans la
- * réponse ni dans une autre information en attente pour la vente ; aucun autre message du dossier en relecture
+ * réponse ni dans une autre information en attente pour la vente ; aucune analyse du message (pièce jointe, lecture
+ * du corps) en file, en cours ou à reprendre ; aucun autre message du dossier en relecture
  * bloquante, opposé ou qui demande de ne pas publier ; ni « ne pas publier » ni consigne adressée à un modèle
  * (objet et corps) ; champ de la liste fermée, vide sur la fiche, valeur plausible pour le type de bien ; vente à
  * un seul lot ; plafonds par jour et par dossier. Puis : dernier verdict de Haiku « publier » pour cette valeur,
@@ -141,7 +142,7 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   do_not_publish_requested: "la réponse demande de ne pas publier",
   private_person_named: "la réponse nomme un particulier",
   field_not_empty: "le champ est déjà renseigné sur la fiche",
-  field_already_filled_in_simulation: "une autre information a déjà rempli ce champ en simulation",
+  field_already_filled_in_simulation: "une autre information a déjà rempli ce champ",
   implausible_value: "valeur invraisemblable pour ce type de bien, ou type de bien inconnu",
   daily_cap_reached: `plafond atteint : ${AUTO_PUBLICATION_DAILY_CAP} informations par jour`,
   case_cap_reached: `plafond atteint : ${AUTO_PUBLICATION_CASE_CAP} informations par dossier`,
@@ -154,6 +155,8 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   arbiter_declined: "l’IA (Claude Haiku) ne confirme pas la publication",
   arbiter_value_mismatch: "le verdict de l’IA porte sur une autre valeur",
   publication_failed: "la publication a échoué : relecture humaine",
+  evidence_pending:
+    "une analyse du message (pièce jointe ou lecture du corps) est en cours ou à reprendre",
 } as const satisfies Record<string, string>;
 
 export type AutoPublicationReason = keyof typeof AUTO_PUBLICATION_REASON_LABELS;
@@ -235,8 +238,13 @@ export type AutoPublicationInput = {
   otherMessages: AutoPublicationOtherMessage[] | null;
   /** Dernier verdict de Haiku pour ce fait : `{ found: false }` s'il n'y en a pas ; null si illisible. */
   arbitration: { found: false } | { found: true; row: unknown } | null;
-  /** Un autre fait a déjà « rempli » ce champ de la vente dans la simulation. */
+  /** Un autre fait a déjà « rempli » ce champ de la vente (simulé ou publié). */
   fieldFilledInSimulation: boolean | null;
+  /**
+   * Une analyse du message (pièce jointe, ou corps relu par l'IA) est en file, en cours ou en échec avec des essais
+   * restants : ce que dit le message n'est pas encore tout lu. Null si illisible.
+   */
+  messageAnalysisPending: boolean | null;
   /** Une lecture annexe a échoué (journal, vente…) : relecture, motif `input_unreadable`. */
   readFailed?: boolean;
 };
@@ -487,6 +495,9 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     else reasons.add("attachment_source");
   }
   if (!record(candidate.metadata)) reasons.add("input_unreadable");
+  // Toutes les analyses du message sont finies : une pièce jointe encore à lire peut contredire le corps.
+  if (input.messageAnalysisPending === null) reasons.add("input_unreadable");
+  else if (input.messageAnalysisPending) reasons.add("evidence_pending");
 
   // 3. Aucune autre valeur pour ce champ, ni dans la réponse ni pour la vente.
   if (input.otherCandidatesForKey === null) reasons.add("input_unreadable");
@@ -572,16 +583,21 @@ export type AutoPublicationCounters = {
 /**
  * Décisions d'un lot de faits, dans l'ordre donné (le plus ancien d'abord), avec les plafonds : un fait qui
  * passerait toutes les conditions devient « relecture » si le plafond du jour ou du dossier est atteint.
- * Les compteurs et les champs remplis avancent au fil du lot.
+ * Les compteurs et les champs remplis avancent au fil du lot. Chaque décision n'est calculée qu'à la demande
+ * (générateur) : l'appelant vérifie son budget de temps avant de demander la suivante.
  */
-export function planAutoPublicationDecisions(
+export function* planAutoPublicationDecisions(
   items: AutoPublicationPlanItem[],
   counters: AutoPublicationCounters | null,
-): Array<{ item: AutoPublicationPlanItem; decision: AutoPublicationDecision }> {
+): Generator<
+  { item: AutoPublicationPlanItem; decision: AutoPublicationDecision },
+  void,
+  undefined
+> {
   let today = counters?.today ?? 0;
   const byCase = new Map(counters?.byCase ?? []);
   const filled = new Set(counters?.filled ?? []);
-  return items.map((item) => {
+  for (const item of items) {
     const fieldKey = `${item.saleId}:${item.factKey}`;
     const base = decideAutoPublication({
       ...item.input,
@@ -589,18 +605,24 @@ export function planAutoPublicationDecisions(
       fieldFilledInSimulation:
         item.input.fieldFilledInSimulation === null ? null : filled.has(fieldKey),
     });
-    if (base.outcome !== "would_publish") return { item, decision: base };
+    if (base.outcome !== "would_publish") {
+      yield { item, decision: base };
+      continue;
+    }
     const reasons: AutoPublicationReason[] = [];
     if (today >= AUTO_PUBLICATION_DAILY_CAP) reasons.push("daily_cap_reached");
     if ((byCase.get(item.caseId) ?? 0) >= AUTO_PUBLICATION_CASE_CAP) {
       reasons.push("case_cap_reached");
     }
-    if (reasons.length) return { item, decision: { outcome: "review", reasons } };
+    if (reasons.length) {
+      yield { item, decision: { outcome: "review", reasons } };
+      continue;
+    }
     today += 1;
     byCase.set(item.caseId, (byCase.get(item.caseId) ?? 0) + 1);
     filled.add(fieldKey);
-    return { item, decision: base };
-  });
+    yield { item, decision: base };
+  }
 }
 
 /** Libellés lisibles des motifs ; un code inconnu reste signalé. */

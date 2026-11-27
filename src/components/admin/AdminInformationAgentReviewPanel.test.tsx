@@ -185,15 +185,18 @@ describe("AdminInformationAgentReviewPanel", () => {
       limit: 50,
       total: 0,
       autoPublication: { mode: "auto", decisions: {} },
-      autoPublished: [
-        {
-          factId: "44444444-4444-4444-8444-444444444449",
-          factKey: "surface_m2",
-          displayValue: "54 m²",
-          saleId: "11111111-1111-4111-8111-111111111111",
-          publishedAt: "2026-11-27T09:00:00.000Z",
-        },
-      ],
+      autoPublished: {
+        items: [
+          {
+            factId: "44444444-4444-4444-8444-444444444449",
+            factKey: "surface_m2",
+            displayValue: "54 m²",
+            saleId: "11111111-1111-4111-8111-111111111111",
+            publishedAt: "2026-11-27T09:00:00.000Z",
+          },
+        ],
+        total: 1,
+      },
     });
     render(
       <QueryClientProvider
@@ -208,6 +211,46 @@ describe("AdminInformationAgentReviewPanel", () => {
     expect(
       screen.getAllByRole("link", { name: "Ouvrir les observations de cette vente" }).length,
     ).toBe(1);
+    expect(screen.queryByText(/plus récentes sont affichées/)).toBeNull();
+  });
+
+  it("says when the list of automatic publications is truncated, with the exact total", async () => {
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      messages: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      offset: 0,
+      limit: 50,
+      total: 0,
+      autoPublication: { mode: "auto", decisions: {} },
+      autoPublished: {
+        items: [
+          {
+            factId: "44444444-4444-4444-8444-444444444449",
+            factKey: "surface_m2",
+            displayValue: "54 m²",
+            saleId: "11111111-1111-4111-8111-111111111111",
+            publishedAt: "2026-11-27T09:00:00.000Z",
+          },
+        ],
+        total: 250,
+      },
+    });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+    expect(
+      await screen.findByText("Publiées automatiquement, 30 derniers jours (250)"),
+    ).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain(
+      "Seules les 1 plus récentes sont affichées sur 250.",
+    );
   });
 
   it("shows where each fact comes from (email, portal or manual import)", async () => {

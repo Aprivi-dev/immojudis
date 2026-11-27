@@ -2340,9 +2340,12 @@ def test_a_worker_error_at_the_last_attempt_leaves_an_exact_summary(monkeypatch)
     assert "seront proposées" not in row["summary"]
 
 
-def test_the_batch_ends_with_the_auto_publication_arbitration_and_survives_its_failure(monkeypatch) -> None:
+def test_the_batch_ends_with_the_auto_publication_arbitration_and_fails_visibly_on_its_failure(
+    monkeypatch, capsys
+) -> None:
     # Étape 6 : après le lot des pièces, la passe de l'arbitre (Claude Haiku) juge les faits du corps des réponses.
-    # Son échec est signalé et n'arrête pas le worker (un fait sans verdict reste en relecture humaine).
+    # Son échec n'annule pas le lot, mais il est annoncé (annotation d'erreur du workflow) puis relevé : l'exécution
+    # échoue visiblement au lieu d'un simple message (un fait sans verdict reste en relecture humaine).
     settings = {"supabase_url": "https://local.example.test", "supabase_service_role_key": "fixture-key"}
     monkeypatch.setattr(evidence, "load_settings", lambda: settings)
     monkeypatch.setattr(evidence, "claim_jobs", lambda *args: [])
@@ -2355,4 +2358,9 @@ def test_the_batch_ends_with_the_auto_publication_arbitration_and_survives_its_f
         raise RuntimeError("panne")
 
     monkeypatch.setattr(evidence, "run_arbitration_pass", failing)
-    assert evidence.run_information_agent_evidence_batch(limit=5) == 0
+    capsys.readouterr()
+    with pytest.raises(evidence.AutoPublicationArbitrationFailed, match="RuntimeError"):
+        evidence.run_information_agent_evidence_batch(limit=5)
+    assert "::error title=Arbitre de la publication automatique::passe en échec (RuntimeError)" in (
+        capsys.readouterr().out
+    )

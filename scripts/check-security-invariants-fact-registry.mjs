@@ -244,7 +244,7 @@ const DECIDE_BODY_SHA256 = "889cccd7fff80bcffe5a357889257aae87844fe7d23a91357ac9
 const AUTO_DECIDE_FUNCTION = "app_private.accept_information_agent_claim_automatically";
 const AUTO_PUBLISH_RPC = "public.publish_information_agent_fact_auto";
 const AUTO_DECISION_MIGRATION = "20261211100000_information_agent_auto_publication_live.sql";
-const AUTO_DECIDE_BODY_SHA256 = "60c4e213abef0453481d18f02705b8ec41663401e3200625fa129f2b0593f9aa";
+const AUTO_DECIDE_BODY_SHA256 = "b0af6179cecd72e7b1b2c7ddc5f0dbd19efdeb8bd95182a8a35c5e5c1e6c9582";
 // Première migration du lot R2b. Depuis elle, un EXECUTE ne prend qu'un littéral.
 const R2B_MIGRATION = "20261118100000";
 // Seules migrations qui nomment la fonction de décision et ses quatre fonctions publiques, et qui écrivent le

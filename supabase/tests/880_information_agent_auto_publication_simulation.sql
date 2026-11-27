@@ -89,7 +89,7 @@ select is(
   (select pg_get_constraintdef(oid) from pg_constraint
    where conrelid = 'public.information_agent_fact_publications'::regclass
      and conname = 'information_agent_fact_publications_auto_shape'),
-  'CHECK (((actor_kind <> ''auto''::text) OR ((actor_id IS NULL) AND (policy_version ~ ''^auto_publication_v[0-9]{1,4}$''::text))))',
+  'CHECK (((actor_kind <> ''auto''::text) OR ((actor_id IS NULL) AND (policy_version ~ ''^auto_publication_v[0-9]{1,4}$''::text) AND (recipient_kind = ''source_lawyer''::text))))',
   'the publication shape constraint has its exact definition'
 );
 

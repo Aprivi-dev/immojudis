@@ -16,6 +16,14 @@ inscrit, jamais « publier », et l'information reste en relecture humaine. Aucu
 Même client, même modèle et mêmes garde-fous que la lecture des réponses (``create_llm_client`` : Claude Haiku 5.5
 par défaut, plafond horaire des appels, échéance de 25 s, effort bas). La passe ne tourne qu'en mode « simulation »
 ou « automatique », et seulement si la lecture par l'IA est ouverte (``information_agent_evidence_semantic_enabled``).
+
+Les faits à juger sont choisis EN BASE (RPC ``list_information_agent_facts_to_arbitrate``, aussi lue par le contrôle
+préalable du workflow) : aucun appel pour un fait que les conditions structurelles écartent déjà (champ rempli,
+plusieurs lots, DKIM ou DMARC en échec) ; un verdict final (``completed``, ``skipped``) n'est jamais refait ; un
+verdict passager (``unavailable``, ``invalid_output``) est refait au plus 3 fois, une heure au moins après le
+précédent. Juste avant l'appel, une analyse du message encore en file, en cours ou à reprendre (pièce jointe, lecture
+du corps) fait passer le fait sans appel ni verdict : il sera jugé quand tout le message aura été lu. Fournisseur non
+configuré : aucun verdict n'est inscrit, la passe échoue (erreur visible dans le workflow).
 """
 
 from __future__ import annotations
@@ -24,7 +32,6 @@ import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import httpx
@@ -63,12 +70,18 @@ ARBITER_REASON_CODES = (
 )
 ARBITER_FIELDS = ("surface_m2", "land_surface_m2", "rooms_count")
 ARBITER_TIMEOUT_SECONDS = 25
+# Texte de la réponse (objet et corps, après expurgation) que l'arbitre lit EN ENTIER. Au-delà, rien n'est tronqué :
+# aucun appel, verdict « non appelé » (ARBITER_TEXT_TOO_LONG), le fait reste en relecture humaine.
 MAX_ARBITER_TEXT_CHARS = 12_000
-# Faits examinés par passe, fenêtre des faits (au-delà, la réponse est hors du délai de 30 jours du moteur) et temps
-# total de la passe, après le lot des pièces (le workflow dure au plus 25 minutes, le lot 14).
+# Faits examinés par passe et temps total de la passe, après le lot des pièces (le workflow dure au plus 25 minutes,
+# le lot 14). La passe s'arrête après ce nombre d'erreurs consécutives du fournisseur (plafond horaire, délai, 429,
+# 5xx) : les faits suivants attendent la passe suivante au lieu d'user leurs essais.
 MAX_ARBITRATIONS_PER_PASS = 20
-ARBITER_WINDOW_DAYS = 45
 ARBITER_PASS_SECONDS = 4 * 60
+MAX_CONSECUTIVE_PROVIDER_ERRORS = 3
+# Essais d'une analyse de pièce : claim_information_agent_evidence_extractions reprend une analyse tant que
+# attempts < 3 (même borne que app_private.information_agent_message_analysis_pending).
+EVIDENCE_MAX_ATTEMPTS = 3
 
 FIELD_LABELS = {
     "surface_m2": "surface habitable du logement (m²)",
@@ -137,23 +150,29 @@ def validate_arbiter_output(payload: object) -> ArbiterVerdict:
     return ArbiterVerdict("completed", output.publish, output.reason_code, confidence)
 
 
-def proposed_number(proposed_value: object) -> float | None:
-    """Valeur du fait (``{"value": 54}`` ou ``{"value": "54,5"}``) : même lecture que le moteur et la base."""
-    value = proposed_value.get("value") if isinstance(proposed_value, Mapping) else None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int | float):
-        return float(value)
-    if isinstance(value, str):
-        text = value.strip()
-        head, _, tail = text.replace(",", ".").partition(".")
-        if head.isdigit() and 1 <= len(head) <= 9 and (not tail or (tail.isdigit() and len(tail) <= 4)):
-            return float(text.replace(",", "."))
-    return None
+class ArbiterProviderUnavailable(RuntimeError):
+    """Fournisseur du modèle non configuré (clé absente, client inconnu) : la passe échoue sans inscrire de verdict."""
 
 
 def _display_number(value: float) -> str:
     return str(int(value)) if value.is_integer() else str(value)
+
+
+def reply_text_of(subject: object, body_text: object) -> str:
+    """Objet et corps de la réponse, tels que lus par les détecteurs."""
+    return "\n".join(str(part) for part in (subject, body_text) if part)
+
+
+def reply_for_model(subject: object, body_text: object) -> str | None:
+    """Texte expurgé et neutralisé remis au modèle, ou ``None`` s'il dépasse ce que l'arbitre lit en entier (jamais
+    tronqué en silence)."""
+    raw = reply_text_of(subject, body_text)
+    if len(raw) > MAX_ARBITER_TEXT_CHARS:
+        return None
+    reply = redact_text_for_model(raw)
+    if len(reply) > MAX_ARBITER_TEXT_CHARS:
+        return None
+    return reply.replace("<", "‹").replace(">", "›")
 
 
 def build_arbiter_user_prompt(
@@ -165,9 +184,11 @@ def build_arbiter_user_prompt(
     subject: object,
     body_text: object,
 ) -> str:
-    """Le fait, la fiche et la réponse délimitée ; le texte du tiers est expurgé comme pour la lecture des réponses."""
-    reply = redact_text_for_model("\n".join(str(part) for part in (subject, body_text) if part))
-    reply = reply[:MAX_ARBITER_TEXT_CHARS].replace("<", "‹").replace(">", "›")
+    """Le fait, la fiche et la réponse délimitée ; le texte du tiers est expurgé comme pour la lecture des réponses.
+    Une réponse plus longue que ``MAX_ARBITER_TEXT_CHARS`` lève ``ValueError`` (voir ``reply_for_model``)."""
+    reply = reply_for_model(subject, body_text)
+    if reply is None:
+        raise ValueError("ARBITER_TEXT_TOO_LONG")
     record = "\n".join(
         f"- {FIELD_LABELS[key]} : {'vide' if current_values.get(key) is None else current_values.get(key)}"
         for key in ARBITER_FIELDS
@@ -188,7 +209,10 @@ def arbitrate(
     generate_json: Callable[[str, str], Mapping[str, object]] | None,
 ) -> ArbiterVerdict:
     """Un appel au modèle, borné par l'échéance de l'agent. ``generate_json`` est injecté (les tests n'appellent
-    aucun fournisseur). Une consigne adressée à un modèle dans la réponse : aucun appel."""
+    aucun fournisseur). Une réponse trop longue pour être lue en entier, ou une consigne adressée à un modèle : aucun
+    appel."""
+    if len(reply_text) > MAX_ARBITER_TEXT_CHARS:
+        return ArbiterVerdict("skipped", error_code="ARBITER_TEXT_TOO_LONG")
     if contains_prompt_injection(reply_text):
         return ArbiterVerdict("skipped", error_code="PROMPT_INJECTION_SUSPECTED")
     if generate_json is None:
@@ -204,11 +228,14 @@ def arbitrate(
 
 
 def configured_generate_json() -> tuple[Callable[[str, str], Mapping[str, object]] | None, str]:
-    """Le client du fournisseur configuré, réglé comme la lecture des réponses (un seul essai, effort bas)."""
+    """Le client du fournisseur configuré, réglé comme la lecture des réponses (un seul essai, effort bas) ; ``None``
+    si le fournisseur n'est pas configuré (clé absente)."""
     from src.enrichment.anthropic_reader import AnthropicTextClient
     from src.enrichment.llm_client import create_llm_client
 
     client = create_llm_client()
+    if not client.is_available():
+        return None, str(client.model or "unknown").lower()
     if isinstance(client, AnthropicTextClient):
         _bound_claude_for_agent(client)
     else:
@@ -230,61 +257,45 @@ def _in_list(values: Sequence[str]) -> str:
     return "in.(" + ",".join(values) + ")"
 
 
-def facts_to_arbitrate(
-    client: httpx.Client, base_url: str, key: str, *, now: datetime, limit: int
-) -> list[dict[str, Any]]:
-    """Faits en attente du corps du message, de la liste fermée, reçus depuis 45 jours, sans verdict de la version
-    courante pour leur valeur (le plus ancien d'abord)."""
-    since = (now - timedelta(days=ARBITER_WINDOW_DAYS)).isoformat()
-    facts = _get(
+def facts_to_arbitrate(client: httpx.Client, base_url: str, key: str, *, limit: int) -> list[dict[str, Any]]:
+    """Faits à juger, choisis et filtrés en base (le plus ancien d'abord) : voir l'en-tête du module."""
+    response = client.post(
+        f"{base_url}/rest/v1/rpc/list_information_agent_facts_to_arbitrate",
+        headers=rest_headers(key),
+        json={"p_prompt_version": ARBITER_PROMPT_VERSION, "p_limit": limit},
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        raise RuntimeError("Unexpected PostgREST response for list_information_agent_facts_to_arbitrate")
+    facts: list[dict[str, Any]] = []
+    for row in rows:
+        value = row.get("value") if isinstance(row, dict) else None
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        facts.append({**row, "value": value})
+    return facts
+
+
+def message_analysis_pending(client: httpx.Client, base_url: str, key: str, message_id: str) -> bool:
+    """Une analyse du message (pièce jointe, lecture du corps) est en file, en cours ou en échec avec des essais
+    restants : ce que dit le message n'est pas encore tout lu."""
+    rows = _get(
         client,
         base_url,
         key,
-        "information_agent_fact_candidates",
+        "information_agent_evidence_extractions",
         {
-            "select": "id,case_id,message_id,sale_id,fact_key,proposed_value",
-            "status": "eq.pending",
-            "reviewed_by": "is.null",
-            "evidence_asset_id": "is.null",
-            "fact_key": _in_list(ARBITER_FIELDS),
-            "created_at": f"gte.{since}",
-            "order": "created_at.asc,id.asc",
-            "limit": "200",
+            "select": "id,status,attempts",
+            "message_id": f"eq.{message_id}",
+            "status": _in_list(["queued", "processing", "failed"]),
         },
     )
-    if not facts:
-        return []
-    verdicts = _get(
-        client,
-        base_url,
-        key,
-        "information_agent_auto_publication_arbitrations",
-        {
-            "select": "fact_id,value,prompt_version,recorded_at",
-            "fact_id": _in_list([str(fact["id"]) for fact in facts]),
-            "order": "recorded_at.desc,id.desc",
-            "limit": "1000",
-        },
+    return any(
+        row.get("status") in {"queued", "processing"}
+        or (row.get("status") == "failed" and int(row.get("attempts") or 0) < EVIDENCE_MAX_ATTEMPTS)
+        for row in rows
     )
-    latest: dict[str, dict[str, Any]] = {}
-    for verdict in verdicts:
-        latest.setdefault(str(verdict.get("fact_id")), verdict)
-    selected: list[dict[str, Any]] = []
-    for fact in facts:
-        value = proposed_number(fact.get("proposed_value"))
-        if value is None:
-            continue
-        previous = latest.get(str(fact["id"]))
-        if (
-            previous is not None
-            and previous.get("prompt_version") == ARBITER_PROMPT_VERSION
-            and proposed_number({"value": previous.get("value")}) == value
-        ):
-            continue
-        selected.append({**fact, "value": value})
-        if len(selected) >= limit:
-            break
-    return selected
 
 
 def auto_publication_mode(client: httpx.Client, base_url: str, key: str) -> str:
@@ -299,7 +310,14 @@ def auto_publication_mode(client: httpx.Client, base_url: str, key: str) -> str:
 
 
 def record_verdict(
-    client: httpx.Client, base_url: str, key: str, *, fact_id: str, value: float, verdict: ArbiterVerdict, model: str
+    client: httpx.Client,
+    base_url: str,
+    key: str,
+    *,
+    fact_id: str,
+    value: int | float,
+    verdict: ArbiterVerdict,
+    model: str,
 ) -> bool:
     response = client.post(
         f"{base_url}/rest/v1/rpc/record_information_agent_auto_publication_arbitration",
@@ -326,30 +344,38 @@ def run_arbitration_pass(
     key: str,
     settings: Mapping[str, object],
     *,
-    now: datetime | None = None,
     limit: int = MAX_ARBITRATIONS_PER_PASS,
     deadline: float | None = None,
-    client_factory: Callable[[], tuple[Callable[[str, str], Mapping[str, object]] | None, str]] = configured_generate_json,
+    client_factory: Callable[
+        [], tuple[Callable[[str, str], Mapping[str, object]] | None, str]
+    ] = configured_generate_json,
 ) -> int:
-    """Rend le nombre de verdicts inscrits. Hors des modes simulation et automatique, ou IA fermée : rien."""
+    """Rend le nombre de verdicts inscrits. Hors des modes simulation et automatique, ou IA fermée : rien. Fournisseur
+    non configuré : ``ArbiterProviderUnavailable``, sans verdict."""
     if not is_true_value(settings.get("information_agent_evidence_semantic_enabled")):
         return 0
     if auto_publication_mode(client, base_url, key) not in {"simulation", "auto"}:
         return 0
-    facts = facts_to_arbitrate(client, base_url, key, now=now or datetime.now(UTC), limit=limit)
+    facts = facts_to_arbitrate(client, base_url, key, limit=limit)
     if not facts:
         return 0
     stop_at = deadline if deadline is not None else time.monotonic() + ARBITER_PASS_SECONDS
     try:
         generate_json, model = client_factory()
-    except Exception:
-        LOGGER.warning("information_agent.auto_publication_arbiter: provider not configured")
-        generate_json, model = None, "unavailable"
+    except Exception as exc:
+        raise ArbiterProviderUnavailable(type(exc).__name__) from None
+    if generate_json is None:
+        raise ArbiterProviderUnavailable("provider not configured")
     recorded = 0
+    provider_errors = 0
     for fact in facts:
-        if time.monotonic() >= stop_at:
+        if time.monotonic() >= stop_at or provider_errors >= MAX_CONSECUTIVE_PROVIDER_ERRORS:
             break
-        fact_id = str(fact["id"])
+        fact_id = str(fact["fact_id"])
+        # Tout le message doit être lu (un PDF joint peut contredire le corps) : sans appel ni verdict, le fait sera
+        # jugé à une passe suivante.
+        if message_analysis_pending(client, base_url, key, str(fact["message_id"])):
+            continue
         message = _get(
             client,
             base_url,
@@ -372,9 +398,12 @@ def run_arbitration_pass(
             continue
         subject = message[0].get("subject")
         body = message[0].get("body_text")
+        reply_text = reply_text_of(subject, body)
         # La réponse n'est lue par l'IA que par le prestataire nommé dans le pied du message envoyé.
         if fetch_footer_ai_provider(client, base_url, key, str(fact["case_id"])) != llm_provider():
             verdict = ArbiterVerdict("unavailable", error_code="AI_PROVIDER_MISMATCH")
+        elif reply_for_model(subject, body) is None:
+            verdict = ArbiterVerdict("skipped", error_code="ARBITER_TEXT_TOO_LONG")
         else:
             surface = next(
                 (
@@ -396,15 +425,17 @@ def run_arbitration_pass(
                 subject=subject,
                 body_text=body,
             )
-            reply_text = "\n".join(str(part) for part in (subject, body) if part)
             verdict = arbitrate(prompt, reply_text, generate_json=generate_json)
+        provider_errors = provider_errors + 1 if verdict.error_code == "ARBITER_PROVIDER_ERROR" else 0
         # Un verdict refusé par la base (fait traité entre-temps, autre valeur) n'arrête pas la passe : signalé, le
         # fait reste sans verdict, donc en relecture.
         try:
             if record_verdict(
-                client, base_url, key, fact_id=fact_id, value=float(fact["value"]), verdict=verdict, model=model
+                client, base_url, key, fact_id=fact_id, value=fact["value"], verdict=verdict, model=model
             ):
                 recorded += 1
         except httpx.HTTPError as exc:
             LOGGER.warning("information_agent.auto_publication_arbiter: verdict not recorded (%s)", type(exc).__name__)
+    if provider_errors >= MAX_CONSECUTIVE_PROVIDER_ERRORS:
+        LOGGER.warning("information_agent.auto_publication_arbiter: pass stopped after repeated provider errors")
     return recorded
