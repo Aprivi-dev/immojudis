@@ -15,7 +15,8 @@ import {
 } from "@/lib/information-agent-inbound/sender-authentication";
 import { cleanInboundBody, replyTextForExtraction } from "@/lib/information-agent-inbound/text";
 import type { SharedCase } from "@/lib/information-agent-inbound/types";
-import { runAutoPublicationSimulation } from "@/lib/information-agent/auto-publication-store";
+import { runAutoPublicationPass } from "@/lib/information-agent/auto-publication-store";
+import { AUTO_PUBLICATION_ARBITER_VERSION } from "@/lib/information-agent/auto-publication-policy";
 import {
   EVALUATION_FIELDS,
   type EvaluationCase,
@@ -35,8 +36,9 @@ import {
  *    possible, mauvais destinataire, consigne adressée à un modèle), opposition, réponse automatique, puis
  *    faits des règles (`extractInformationAgentFacts`), lot non nommé et enregistrement des candidats par
  *    `persistFactCandidates` dans une base en mémoire ;
- * 2. moteur : la passe de simulation `runAutoPublicationSimulation` lit la table des candidats complétée par
- *    le worker Python et inscrit ses décisions au journal en mémoire.
+ * 2. moteur : la passe du moteur `runAutoPublicationPass`, en mode simulation, lit la table des candidats
+ *    complétée par le worker Python et les verdicts d'un arbitre SIMULÉ (voir `EngineArbiter`), et inscrit ses
+ *    décisions au journal en mémoire.
  * Sont refaits ici, faute d'export : l'ordre des décisions de la réception et le choix de son motif
  * (`processInboundEmail`, mêmes fonctions appelées), le « lot non nommé » (trois lignes) et l'état écrit
  * après traitement (dossier et message en relecture dès qu'une pièce « corps » existe).
@@ -284,6 +286,15 @@ export async function runRulesStage(evaluationCase: EvaluationCase): Promise<Rul
  */
 export type EngineVariant = "hypothese" | "etat_reel";
 
+/**
+ * Arbitre du moteur v2 (étape 6), SIMULÉ : aucun appel à Claude Haiku dans le banc.
+ * - `aucun` : pas de verdict (IA coupée) : rien ne peut être publié ;
+ * - `permissif` : Haiku dit « publier » pour chaque fait du corps lu par les règles. Borne PESSIMISTE : le banc
+ *   mesure alors ce que les seules conditions structurelles laissent passer (règles de prudence de la version 1
+ *   confiées à Haiku, décision du propriétaire du 27/11/2026).
+ */
+export type EngineArbiter = "aucun" | "permissif";
+
 export type FieldDecision = {
   value: number | null;
   role: string;
@@ -310,6 +321,7 @@ export async function runEngineStage(
   stage: RulesStageEntry,
   candidates: StageCandidate[],
   variant: EngineVariant,
+  arbiter: EngineArbiter,
 ): Promise<EngineStageEntry> {
   assertEvaluationClient();
   const ids = evaluationIds(evaluationCase);
@@ -370,7 +382,26 @@ export async function runEngineStage(
     });
   }
 
-  const result = await runAutoPublicationSimulation({ now: EVALUATION_NOW });
+  if (arbiter === "permissif") {
+    for (const candidate of candidates) {
+      if (candidate.evidence_asset_id || candidate.status !== "pending") continue;
+      const raw = (candidate.proposed_value as { value?: unknown } | null)?.value;
+      const value = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
+      if (!Number.isFinite(value)) continue;
+      database.rows("information_agent_auto_publication_arbitrations").push({
+        id: `${candidate.id}-arbitration`,
+        fact_id: candidate.id,
+        status: "completed",
+        publish: true,
+        reason_code: "clear_statement",
+        value,
+        prompt_version: AUTO_PUBLICATION_ARBITER_VERSION,
+        recorded_at: "2026-11-20T11:00:00.000Z",
+      });
+    }
+  }
+
+  const result = await runAutoPublicationPass({ now: EVALUATION_NOW });
   if (result.status !== "done" || result.unreadable || result.recordFailed) {
     throw new Error(`Banc d'évaluation : passe du moteur anormale pour ${evaluationCase.id}`);
   }

@@ -2598,22 +2598,51 @@ function functionSignature(schema, name, argumentText) {
   }
 }
 
-// Agent d'information, étape 3 (20261115100000) : AUCUN chemin ne publie automatiquement.
+// Agent d'information, étape 6 (20261211100000, décision du propriétaire du 27/11/2026) : UN SEUL chemin publie
+// automatiquement, `public.publish_information_agent_fact_auto`, appelé par le seul module serveur
+// `src/lib/information-agent/auto-publication-store.ts`. Remplace l'invariant de l'étape 3
+// (information-agent-no-automatic-publication-path), avec l'accord du propriétaire.
 // Les identifiants entre guillemets (`app_private."apply_information_agent_fact"`) sont ramenés à leur forme
 // simple avant tout contrôle.
-// 1. Tout appel du noyau `app_private.apply_information_agent_fact` dans une migration passe le littéral
-//    'admin' comme type d'auteur (ni 'auto', ni une variable, ni une expression). Aucune instruction `execute`
-//    (SQL dynamique) ne contient le nom du noyau, même partiel (`apply_information_agent_`).
-// 2. Aucun code de l'application ni du pipeline ne nomme le noyau ; seul `src/lib/admin-information-agent.ts`
-//    appelle `review_information_agent_fact_candidate` (et sa variante `_with_path`). Un dossier de code
-//    illisible est une erreur, pas un dossier sauté.
-// 3. Les deux verrous existent avec leur définition exacte et ne sont ni retirés, ni renommés, ni emportés par
-//    la suppression ou le renommage de leur table : `information_agent_auto_publication_settings_auto_locked`
-//    (mode automatique) et `information_agent_fact_publications_auto_locked` (publication 'auto').
-// 4. Les tables du réglage, de la trace des modes et du journal des décisions sont réservées au serveur en
-//    lecture seule : RLS, aucune politique, tout retiré aux rôles de l'API, SELECT seul pour service_role.
-// Ouvrir la publication automatique (étape 6) exige de changer cet invariant, explicitement.
+// 1. Tout appel du noyau `app_private.apply_information_agent_fact` dans une migration passe le littéral 'admin'
+//    comme type d'auteur, sauf UN appel, dans la dernière définition de `public.publish_information_agent_fact_auto`,
+//    qui passe exactement ('auto', null, p_policy_version) (ni une variable, ni une expression, ni une personne).
+//    Aucune instruction `execute` (SQL dynamique) ne contient le nom du noyau, même partiel.
+// 2. La RPC de publication automatique : SECURITY DEFINER à search_path vide, retirée à public, anon et
+//    authenticated, donnée à service_role seul, jamais donnée à un rôle du navigateur ; elle ne lit ni le jeton ni
+//    l'identité d'un compte (aucun auth.uid, auth.jwt, request.jwt) ; elle relit le mode sous verrou partagé et
+//    exige « auto » AVANT l'appel du noyau ; aucune autre fonction ne la nomme.
+// 3. Aucun code de l'application ni du pipeline ne nomme le noyau ni la décision automatique du registre ; seul
+//    `src/lib/admin-information-agent.ts` appelle `review_information_agent_fact_candidate` ; seul
+//    `src/lib/information-agent/auto-publication-store.ts` nomme `publish_information_agent_fact_auto` (types
+//    générés exceptés). Ni les scripts (`scripts/`, hors ce contrôle et ses tests), ni les fonctions Edge
+//    (`supabase/functions/`), ni les workflows (`.github/workflows/`) ne nomment le noyau, la décision automatique
+//    du registre ni la RPC de publication. Un dossier de code illisible est une erreur, pas un dossier sauté.
+// 4. Les verrous de l'étape 3 ne sont retirés que par la migration de l'étape 6 ; les contraintes de forme qui les
+//    remplacent existent avec leur définition exacte et ne sont ni retirées, ni renommées, ni emportées par la
+//    suppression ou le renommage de leur table. Les autres verrous du registre restent.
+// 5. Le réglage n'est écrit par une migration que dans les corps de `public.set_information_agent_auto_publication_
+//    mode` et `public.stop_information_agent_auto_publication` (ni UPDATE, INSERT, MERGE, COPY, défaut de colonne,
+//    ni SQL dynamique qui le nomme, quelle que soit la valeur, même composée), hors la création de la ligne unique
+//    de 20261115100000 : seul un administrateur, avec son jeton, pose le mode (set_information_agent_auto_publication_
+//    mode exige is_admin et auth.uid, et n'est donné ni à anon ni à public).
+// 6. Une insertion dans le journal des décisions du registre ne nomme publication_mode que pour y écrire 'manual',
+//    sauf dans la décision automatique du registre (`app_private.accept_information_agent_claim_automatically`,
+//    seule autorisée à écrire 'auto') ; le défaut de la colonne ne change pas.
+// 7. Les tables du réglage, de la trace des modes, du journal des décisions et des verdicts de Haiku sont réservées
+//    au serveur en lecture seule : RLS, aucune politique, tout retiré aux rôles de l'API, SELECT seul pour
+//    service_role. Les RPC de service du moteur (journal des décisions, verdicts, faits à juger) ne sont jamais
+//    données à un rôle du navigateur.
+// 8. Le journal des publications de l'agent (`information_agent_fact_publications`) n'est écrit, dans une
+//    migration, que par le noyau `app_private.apply_information_agent_fact` (aucune autre instruction INSERT, ni SQL
+//    dynamique qui le nomme) : aucune seconde source de lignes 'auto'.
+// 9. Une ligne de ce journal ne change que de vente et ne part qu'avec elle (déclencheur
+//    `information_agent_fact_publications_guard`, gardé, jamais retiré ni désactivé) ; aucune migration n'y
+//    réécrit une autre colonne que sale_id.
 {
+  const PUBLISH_RPC = "public.publish_information_agent_fact_auto";
+  const AUTO_ACCEPT = "app_private.accept_information_agent_claim_automatically";
+  const STEP6_MIGRATION = "20261211100000_information_agent_auto_publication_live.sql";
   const stripSql = (text) =>
     text
       .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -2658,11 +2687,44 @@ function functionSignature(schema, name, argumentText) {
     return { args: [...args, current.trim()], end: text.length };
   };
 
-  // Appel qualifié (`app_private.`, ou tout autre schéma) ou non qualifié (résolu par le search_path).
+  // Fonction qui contient une position d'un fichier : la dernière en-tête « create function » avant elle, si la
+  // position est avant la fin de son corps entre dollars.
+  const enclosingFunction = (sql, index) => {
+    let found = null;
+    for (const header of sql.matchAll(
+      /create\s+(?:or\s+replace\s+)?function\s+([a-z_][a-z0-9_]*(?:\s*\.\s*[a-z_][a-z0-9_]*)?)\s*\(/gi,
+    )) {
+      if (header.index > index) break;
+      const opening = /\bas\s+(\$[a-z_]*\$)/i.exec(sql.slice(header.index));
+      if (!opening) continue;
+      const bodyStart = header.index + opening.index + opening[0].length;
+      const bodyEnd = sql.indexOf(opening[1], bodyStart);
+      if (index >= bodyStart && (bodyEnd < 0 || index < bodyEnd)) {
+        found = { name: header[1].replace(/\s+/g, "").toLowerCase(), bodyStart, bodyEnd };
+      }
+    }
+    return found;
+  };
+  const lastDefinition = (fn) => {
+    const pattern = new RegExp(
+      `create\\s+or\\s+replace\\s+function\\s+${fn.replace(".", "\\.")}\\s*\\(([\\s\\S]*?)\\$\\$([\\s\\S]*?)\\$\\$;`,
+      "gi",
+    );
+    let last = null;
+    for (const [name, sql] of all) {
+      for (const match of sql.matchAll(pattern))
+        last = { migration: name, head: match[1], body: match[2] };
+    }
+    return last;
+  };
+
+  // 1. Appels du noyau.
   const core =
     /(?:(?<![\w.])[a-z_][a-z0-9_]*\s*\.\s*|(?<![\w.]))apply_information_agent_fact\s*\(/gi;
   // Nom du noyau, même partiel ; seule la fonction d'opposition par identité, sans rapport, partage le préfixe.
   const corePrefix = /apply_information_agent_(?!identity_opposition\b)/i;
+  const publishDefinition = lastDefinition(PUBLISH_RPC);
+  const autoCalls = [];
   for (const [name, sql] of all) {
     for (const match of sql.matchAll(core)) {
       const before = sql.slice(Math.max(0, match.index - 40), match.index);
@@ -2671,11 +2733,20 @@ function functionSignature(schema, name, argumentText) {
       // Signature seule (revoke, comment, regprocedure) : uniquement des types.
       if (args.join(",").replace(/\s+/g, "").toLowerCase() === "uuid,text,uuid,text") continue;
       const actor = args[1];
-      if (actor !== "'admin'") {
-        failures.push(
-          `${name} calls app_private.apply_information_agent_fact with actor ${actor ?? "(none)"}: only the literal 'admin' is allowed (no automatic publication path)`,
-        );
+      if (actor === "'admin'") continue;
+      const owner = enclosingFunction(sql, match.index);
+      if (
+        actor === "'auto'" &&
+        owner?.name === PUBLISH_RPC &&
+        args[2]?.toLowerCase() === "null" &&
+        args[3]?.toLowerCase() === "p_policy_version"
+      ) {
+        autoCalls.push({ name, owner });
+        continue;
       }
+      failures.push(
+        `${name} calls app_private.apply_information_agent_fact with actor ${actor ?? "(none)"}: only the literal 'admin' is allowed, and 'auto' only in ${PUBLISH_RPC} as ('auto', null, p_policy_version)`,
+      );
     }
     // SQL dynamique : tout `execute` d'une chaîne (pas `execute function` d'un déclencheur, pas un droit).
     for (const statement of sql.matchAll(
@@ -2688,11 +2759,98 @@ function functionSignature(schema, name, argumentText) {
       }
     }
   }
+  if (!publishDefinition) {
+    failures.push(`${PUBLISH_RPC} is not created by a migration`);
+  } else {
+    if (
+      autoCalls.filter((call) => call.name === publishDefinition.migration).length !== 1 ||
+      (publishDefinition.body.match(/apply_information_agent_fact\s*\(/gi) ?? []).length !== 1
+    ) {
+      failures.push(
+        `${PUBLISH_RPC} must call app_private.apply_information_agent_fact exactly once, with ('auto', null, p_policy_version)`,
+      );
+    }
 
-  // Dossiers de code, chacun avec son adresse relative au script et son chemin relatif au dépôt (affiché).
+    // 2. Forme de la RPC de publication automatique.
+    const body = publishDefinition.body;
+    const modeRead = body.search(
+      /select\s+settings\.mode\s+into\s+v_mode\s+from\s+public\.information_agent_auto_publication_settings\s+settings\s+where\s+settings\.singleton\s+for\s+share\s*;/i,
+    );
+    const modeGuard = body.search(/if\s+v_mode\s+is\s+distinct\s+from\s+'auto'\s+then\s+return\b/i);
+    const coreCall = body.search(/apply_information_agent_fact\s*\(/i);
+    const firstWrite = body.search(/\b(?:insert\s+into|update\s+public\.|delete\s+from)\b/i);
+    if (
+      !/security\s+definer/i.test(publishDefinition.head) ||
+      !/set\s+search_path\s*=\s*''/i.test(publishDefinition.head) ||
+      modeRead < 0 ||
+      modeGuard < modeRead ||
+      coreCall < modeGuard ||
+      (firstWrite >= 0 && firstWrite < modeGuard) ||
+      /\bauth\s*\.\s*(?:uid|jwt|role|email)\s*\(|request\.jwt|\bis_admin\s*\(/i.test(body)
+    ) {
+      failures.push(
+        `${publishDefinition.migration}: ${PUBLISH_RPC} must be SECURITY DEFINER with an empty search_path, read the mode under a shared lock and require 'auto' before any write and before the core, and never read the token of a client`,
+      );
+    }
+    if (
+      !/revoke\s+all\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*,\s*text\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated\s*;/i.test(
+        allSql,
+      ) ||
+      !/grant\s+execute\s+on\s+function\s+public\.publish_information_agent_fact_auto\s*\(\s*uuid\s*,\s*text\s*,\s*text\s*,\s*text\s*\)\s+to\s+service_role\s*;/i.test(
+        allSql,
+      )
+    ) {
+      failures.push(
+        `${PUBLISH_RPC} is not revoked from the browser roles and granted to service_role`,
+      );
+    }
+  }
+  // RPC de service du moteur : jamais données à un rôle du navigateur.
+  for (const [name, sql] of all) {
+    for (const statement of sql.split(";")) {
+      if (!/^\s*grant\s/i.test(statement)) continue;
+      const rpc =
+        /(publish_information_agent_fact_auto|record_information_agent_auto_publication_decision|record_information_agent_auto_publication_arbitration|list_information_agent_facts_to_arbitrate)\b/i.exec(
+          statement,
+        );
+      if (
+        rpc &&
+        /\bto\b[^;]*\b(?:anon|authenticated|public)\b/i.test(
+          statement.replace(/^[\s\S]*?\bto\b/i, " to "),
+        )
+      ) {
+        failures.push(
+          `${name} grants public.${rpc[1].toLowerCase()} to a browser role (service_role only)`,
+        );
+      }
+    }
+  }
+  // Aucune autre fonction ne nomme la RPC de publication ni la décision automatique du registre (sauf la RPC).
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(
+      /publish_information_agent_fact_auto|accept_information_agent_claim_automatically/gi,
+    )) {
+      const owner = enclosingFunction(sql, match.index);
+      if (!owner) continue;
+      const allowed =
+        owner.name === PUBLISH_RPC &&
+        /accept_information_agent_claim_automatically/i.test(match[0]);
+      if (!allowed) {
+        failures.push(
+          `${name}: ${owner.name} names ${match[0]}: only ${PUBLISH_RPC} calls the automatic registry decision, and no function calls ${PUBLISH_RPC}`,
+        );
+      }
+    }
+  }
+
+  // 3. Code de l'application et du pipeline.
   const codeRoots = [
     { url: "../src/", path: "src/" },
     { url: "../services/data-pipeline/src/", path: "services/data-pipeline/src/" },
+  ];
+  const PUBLISH_CALLERS = [
+    "src/lib/information-agent/auto-publication-store.ts",
+    "src/integrations/supabase/types.ts",
   ];
   for (const root of codeRoots) {
     let entries;
@@ -2715,7 +2873,12 @@ function functionSignature(schema, name, argumentText) {
       );
       if (corePrefix.test(source)) {
         failures.push(
-          `${relative} names app_private.apply_information_agent_fact: only the administrator RPC may call the publication core`,
+          `${relative} names app_private.apply_information_agent_fact: only the database RPCs may call the publication core`,
+        );
+      }
+      if (/accept_information_agent_claim_automatically/.test(source)) {
+        failures.push(
+          `${relative} names ${AUTO_ACCEPT}: only ${PUBLISH_RPC} calls the automatic registry decision`,
         );
       }
       if (
@@ -2728,33 +2891,113 @@ function functionSignature(schema, name, argumentText) {
           `${relative} calls review_information_agent_fact_candidate: only src/lib/admin-information-agent.ts may (administrator review)`,
         );
       }
+      if (
+        /publish_information_agent_fact_auto/.test(source) &&
+        !PUBLISH_CALLERS.includes(relative)
+      ) {
+        failures.push(
+          `${relative} names ${PUBLISH_RPC}: only src/lib/information-agent/auto-publication-store.ts may (single automatic publication path)`,
+        );
+      }
     }
   }
 
+  // Scripts, fonctions Edge et workflows : aucun ne nomme le noyau, la décision automatique ni la RPC de publication.
+  const otherRoots = [
+    { url: "../scripts/", path: "scripts/", pattern: /\.(?:ts|tsx|mjs|cjs|js|py|sh)$/ },
+    {
+      url: "../supabase/functions/",
+      path: "supabase/functions/",
+      pattern: /\.(?:ts|tsx|mjs|cjs|js)$/,
+    },
+    { url: "../.github/workflows/", path: ".github/workflows/", pattern: /\.ya?ml$/ },
+  ];
+  // Ce contrôle et le module qu'il importe nomment ces fonctions pour les surveiller.
+  // Le test d'appels simultanés appelle la RPC sur la base locale jetable de la CI (jamais la production).
+  const INVARIANT_SCRIPTS = [
+    "scripts/check-security-invariants.mjs",
+    "scripts/check-security-invariants-fact-registry.mjs",
+    "scripts/test-information-agent-auto-publication-concurrency.mjs",
+  ];
+  for (const root of otherRoots) {
+    let entries;
+    try {
+      entries = (await readdir(new URL(root.url, import.meta.url), { recursive: true })).map(
+        String,
+      );
+    } catch (error) {
+      failures.push(
+        `${root.path} cannot be read to check the automatic publication path (${error.code ?? "error"})`,
+      );
+      continue;
+    }
+    for (const name of entries) {
+      if (!root.pattern.test(name) || /\.test\.[cm]?[jt]sx?$/.test(name)) continue;
+      const relative = `${root.path}${name}`;
+      if (INVARIANT_SCRIPTS.includes(relative)) continue;
+      const source = (
+        await readFile(new URL(`${root.url}${name}`, import.meta.url), "utf8")
+      ).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\/|(?:^|\s)#[^\n]*/g, "");
+      const named =
+        /apply_information_agent_(?!identity_opposition\b)|accept_information_agent_claim_automatically|publish_information_agent_fact_auto/i.exec(
+          source,
+        );
+      if (named) {
+        failures.push(
+          `${relative} names ${named[0]}: only the database RPCs and src/lib/information-agent/auto-publication-store.ts reach the automatic publication path`,
+        );
+      }
+    }
+  }
+
+  // 4. Verrous levés par la seule migration de l'étape 6, contraintes de forme gardées.
+  const liftedLocks = [
+    "information_agent_auto_publication_settings_auto_locked",
+    "information_agent_fact_publications_auto_locked",
+    "auction_fact_claim_decisions_auto_locked",
+    "auction_fact_claim_decisions_accepted_by_admin",
+  ];
+  for (const [name, sql] of all) {
+    if (name === STEP6_MIGRATION || name < "20261115100000") continue;
+    for (const lock of liftedLocks) {
+      if (
+        new RegExp(`(?:drop|rename)\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock}\\b`, "i").test(
+          sql,
+        )
+      ) {
+        failures.push(
+          `${name} drops or renames ${lock}: the locks of step 3 are lifted by ${STEP6_MIGRATION} only`,
+        );
+      }
+    }
+  }
   const locks = [
     {
-      name: "information_agent_auto_publication_settings_auto_locked",
-      table: "information_agent_auto_publication_settings",
-      definition: "check\\s*\\(\\s*mode\\s*<>\\s*'auto'\\s*\\)",
-    },
-    {
-      name: "information_agent_fact_publications_auto_locked",
+      name: "information_agent_fact_publications_auto_shape",
       table: "information_agent_fact_publications",
-      definition: "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s*\\)",
+      definition:
+        "check\\s*\\(\\s*actor_kind\\s*<>\\s*'auto'\\s+or\\s+\\(\\s*actor_id\\s+is\\s+null\\s+and\\s+policy_version\\s*~\\s*'\\^auto_publication_v\\[0-9\\]\\{1,4\\}\\$'\\s+and\\s+recipient_kind\\s*=\\s*'source_lawyer'\\s*\\)\\s*\\)",
     },
-    // Registre des pièces (20261116100000) : aucune décision du journal n'est automatique, et l'annonce ne
-    // tient jamais un champ (une pièce ne tient que par une décision d'acceptation humaine).
     {
-      name: "auction_fact_claim_decisions_auto_locked",
-      table: "auction_fact_claim_decisions",
-      definition: "check\\s*\\(\\s*publication_mode\\s*<>\\s*'auto'\\s*\\)",
-    },
-    // Tant que la publication automatique est verrouillée, seul un administrateur nommé accepte une pièce.
-    {
-      name: "auction_fact_claim_decisions_accepted_by_admin",
+      name: "auction_fact_claim_decisions_policy_check",
       table: "auction_fact_claim_decisions",
       definition:
-        "check\\s*\\(\\s*decision\\s*<>\\s*'accepted'\\s+or\\s+\\(\\s*actor_kind\\s*=\\s*'admin'\\s+and\\s+actor_id\\s+is\\s+not\\s+null\\s*\\)\\s*\\)",
+        "check\\s*\\(\\s*\\(\\s*publication_mode\\s*=\\s*'auto'\\s*\\)\\s*=\\s*\\(\\s*policy_version\\s+is\\s+not\\s+null\\s*\\)\\s+and\\s+\\(\\s*policy_version\\s+is\\s+null\\s+or\\s+policy_version\\s*~\\s*'\\^auto_publication_v\\[0-9\\]\\{1,4\\}\\$'\\s*\\)\\s*\\)",
+    },
+    // Une décision automatique n'a qu'une forme : acceptation par le système, sans personne, d'un fait de l'agent,
+    // première décision, vente à un seul lot, avocat poursuivant.
+    {
+      name: "auction_fact_claim_decisions_auto_shape",
+      table: "auction_fact_claim_decisions",
+      definition:
+        "check\\s*\\(\\s*publication_mode\\s*<>\\s*'auto'\\s+or\\s+\\(\\s*decision\\s*=\\s*'accepted'\\s+and\\s+actor_kind\\s*=\\s*'system'\\s+and\\s+actor_id\\s+is\\s+null\\s+and\\s+information_agent_fact_id\\s+is\\s+not\\s+null\\s+and\\s+supersedes_decision_id\\s+is\\s+null\\s+and\\s+lot_attachment\\s*=\\s*'single_lot'\\s+and\\s+recipient_kind\\s*=\\s*'source_lawyer'\\s*\\)\\s*\\)",
+    },
+    // Une acceptation vient d'un administrateur nommé, ou de la publication automatique, et de rien d'autre.
+    {
+      name: "auction_fact_claim_decisions_accepted_by_admin_or_auto",
+      table: "auction_fact_claim_decisions",
+      definition:
+        "check\\s*\\(\\s*decision\\s*<>\\s*'accepted'\\s+or\\s+\\(\\s*actor_kind\\s*=\\s*'admin'\\s+and\\s+actor_id\\s+is\\s+not\\s+null\\s*\\)\\s+or\\s+\\(\\s*actor_kind\\s*=\\s*'system'\\s+and\\s+actor_id\\s+is\\s+null\\s+and\\s+publication_mode\\s*=\\s*'auto'\\s*\\)\\s*\\)",
     },
     {
       name: "auction_fact_claim_decisions_admin_actor",
@@ -2781,8 +3024,18 @@ function functionSignature(schema, name, argumentText) {
       failures.push(`the automatic publication lock ${lock.name} is missing`);
     }
     for (const [name, sql] of all) {
-      if (new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock.name}\\b`, "i").test(sql)) {
-        failures.push(`${name} drops the automatic publication lock ${lock.name}`);
+      // La migration de l'étape 6 retire puis recrée aussitôt ses contraintes de forme (aucun reste d'une version
+      // antérieure) : un retrait suivi, dans la même migration, de la recréation exacte est admis.
+      for (const drop of sql.matchAll(
+        new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock.name}\\b`, "gi"),
+      )) {
+        const recreated =
+          name === STEP6_MIGRATION &&
+          new RegExp(
+            `^\\s*;\\s*alter\\s+table\\s+public\\.${lock.table}\\s+add\\s+constraint\\s+${lock.name}\\s+${lock.definition}`,
+            "i",
+          ).test(sql.slice(drop.index + drop[0].length));
+        if (!recreated) failures.push(`${name} drops the automatic publication lock ${lock.name}`);
       }
       if (new RegExp(`rename\\s+constraint\\s+${lock.name}\\b`, "i").test(sql)) {
         failures.push(`${name} renames the automatic publication lock ${lock.name}`);
@@ -2804,8 +3057,53 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
-  // Journal des décisions du registre : une insertion ne nomme publication_mode que pour y écrire le littéral
-  // 'manual' (sinon la valeur par défaut, 'manual', s'applique) ; le défaut de la colonne ne change pas.
+  // 5. Le réglage n'est écrit que par les deux RPC d'administration (le mode « auto » n'est posé que par un
+  //    administrateur, avec son jeton), hors la création de sa ligne unique.
+  const SETTINGS_WRITERS = [
+    "public.set_information_agent_auto_publication_mode",
+    "public.stop_information_agent_auto_publication",
+  ];
+  const settingsSeed =
+    /^insert\s+into\s+public\.information_agent_auto_publication_settings\s*\(\s*singleton\s*\)\s+values\s*\(\s*true\s*\)\s+on\s+conflict\s*\(\s*singleton\s*\)\s+do\s+nothing$/i;
+  const settingsWrite =
+    /\b(?:update\s+(?:only\s+)?|insert\s+into\s+|merge\s+into\s+|copy\s+)(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?[^;]*\balter\s+(?:column\s+)?"?mode"?\b|\bexecute\b(?!\s+(?:function|procedure)\b)[^;]*auto_publication_settings/gi;
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(settingsWrite)) {
+      const owner = enclosingFunction(sql, match.index);
+      if (owner && SETTINGS_WRITERS.includes(owner.name) && !/^execute\b/i.test(match[0])) continue;
+      const statement = sql
+        .slice(match.index, sql.indexOf(";", match.index))
+        .replace(/\s+/g, " ")
+        .trim();
+      if (
+        !owner &&
+        name === "20261115100000_information_agent_auto_publication_simulation.sql" &&
+        settingsSeed.test(statement)
+      ) {
+        continue;
+      }
+      failures.push(
+        `${name} writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode and stop_information_agent_auto_publication: only an administrator sets the mode`,
+      );
+    }
+  }
+  const setMode = lastDefinition("public.set_information_agent_auto_publication_mode");
+  if (
+    !setMode ||
+    !/v_actor\s+uuid\s*:=\s*\(\s*select\s+auth\.uid\s*\(\s*\)\s*\)\s*;/i.test(setMode.body) ||
+    !/if\s+not\s+public\.is_admin\s*\(\s*\)\s+or\s+v_actor\s+is\s+null\s+then\s+raise\s+exception\s+using\s+errcode\s*=\s*'42501'/i.test(
+      setMode.body,
+    ) ||
+    /grant\s+execute\s+on\s+function\s+public\.set_information_agent_auto_publication_mode\s*\([^)]*\)\s+to\s+[^;]*\b(?:anon|public)\b/i.test(
+      allSql,
+    )
+  ) {
+    failures.push(
+      "public.set_information_agent_auto_publication_mode must take the author from (select auth.uid()), require public.is_admin() first, and never be granted to anon or public",
+    );
+  }
+
+  // 6. Journal des décisions du registre : 'manual' partout, sauf la décision automatique du registre.
   for (const [name, sql] of all) {
     if (!sql.includes("auction_fact_claim_decisions")) continue;
     for (const match of sql.matchAll(
@@ -2817,18 +3115,20 @@ function functionSignature(schema, name, argumentText) {
       const rest = sql.slice(match.index + match[0].length + columns.end + 1);
       const statement = rest.slice(0, rest.search(/;|$/));
       const values = /^\s*values\s*\(/i.exec(statement);
-      let manualOnly = Boolean(values);
+      const expected =
+        enclosingFunction(sql, match.index)?.name === AUTO_ACCEPT ? "'auto'" : "'manual'";
+      let literalOnly = Boolean(values);
       let cursor = values ? values[0].length : 0;
-      while (manualOnly) {
+      while (literalOnly) {
         const row = topLevelArgs(statement.slice(cursor));
-        if (row.args[position] !== "'manual'") manualOnly = false;
+        if (row.args[position] !== expected) literalOnly = false;
         const next = /^\s*,\s*\(/.exec(statement.slice(cursor + row.end + 1));
         if (!next) break;
         cursor += row.end + 1 + next[0].length;
       }
-      if (!manualOnly) {
+      if (!literalOnly) {
         failures.push(
-          `${name} inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal 'manual' (no automatic decision)`,
+          `${name} inserts into public.auction_fact_claim_decisions with a publication_mode that is not the literal ${expected} (only ${AUTO_ACCEPT} writes 'auto')`,
         );
       }
     }
@@ -2843,10 +3143,84 @@ function functionSignature(schema, name, argumentText) {
     }
   }
 
+  // 8. Journal des publications de l'agent : écrit par le seul noyau (aucune seconde source de lignes 'auto').
+  for (const [name, sql] of all) {
+    for (const match of sql.matchAll(
+      /\binsert\s+into\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\b(?:copy|merge\s+into)\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\bexecute\b(?!\s+(?:function|procedure)\b)[^;]*information_agent_fact_publications/gi,
+    )) {
+      const owner = enclosingFunction(sql, match.index);
+      if (owner?.name === "app_private.apply_information_agent_fact" && /^insert\b/i.test(match[0]))
+        continue;
+      failures.push(
+        `${name} writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (${owner?.name ?? "migration body"}): only the publication core writes the publication journal`,
+      );
+    }
+  }
+
+  // 9. Journal des publications de l'agent : une ligne ne change que de vente (fusion de fiches) et ne part qu'avec
+  //    sa vente (déclencheur information_agent_fact_publications_guard, 20261211100000) ; aucune migration ne le
+  //    retire, ne le désactive, ni ne réécrit une autre colonne que sale_id.
+  {
+    const guard = lastDefinition("app_private.information_agent_fact_publications_guard");
+    if (
+      !guard ||
+      !/if\s+tg_op\s*=\s*'DELETE'\s+then\s+if\s+not\s+exists\s*\(\s*select\s+1\s+from\s+public\.auction_sales\s+sale\s+where\s+sale\.id\s*=\s*old\.sale_id\s*\)\s+then\s+return\s+old\s*;\s*end\s+if\s*;\s*raise\s+exception/i.test(
+        guard.body,
+      ) ||
+      !/\(\s*pg_catalog\.to_jsonb\s*\(\s*new\s*\)\s*-\s*'sale_id'\s*-\s*'actor_id'\s*\)\s+is\s+distinct\s+from\s+\(\s*pg_catalog\.to_jsonb\s*\(\s*old\s*\)\s*-\s*'sale_id'\s*-\s*'actor_id'\s*\)/i.test(
+        guard.body,
+      ) ||
+      !/create\s+trigger\s+information_agent_fact_publications_guard\s+before\s+update\s+or\s+delete\s+on\s+public\.information_agent_fact_publications\s+for\s+each\s+row\s+execute\s+function\s+app_private\.information_agent_fact_publications_guard\s*\(\s*\)/i.test(
+        allSql,
+      ) ||
+      !/create\s+trigger\s+information_agent_fact_publications_no_truncate\s+before\s+truncate\s+on\s+public\.information_agent_fact_publications\b/i.test(
+        allSql,
+      )
+    ) {
+      failures.push(
+        "public.information_agent_fact_publications must keep its guard: a row only changes sale (record merge), only leaves with its sale, and the journal is never truncated",
+      );
+    }
+    for (const [name, sql] of all) {
+      for (const match of sql.matchAll(
+        /\b(?:drop\s+trigger\s+(?:if\s+exists\s+)?|alter\s+trigger\s+)(information_agent_fact_publications_(?:guard|no_truncate))\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?information_agent_fact_publications\s+disable\s+trigger\b|\bdrop\s+function\s+(?:if\s+exists\s+)?app_private\.information_agent_fact_publications_guard\b/gi,
+      )) {
+        // L'étape 6 retire puis recrée ses déclencheurs (aucun reste d'une version antérieure).
+        if (
+          name === STEP6_MIGRATION &&
+          match[1] &&
+          new RegExp(
+            `^\\s+on\\s+public\\.information_agent_fact_publications\\s*;\\s*create\\s+trigger\\s+${match[1]}\\b`,
+            "i",
+          ).test(sql.slice(match.index + match[0].length))
+        ) {
+          continue;
+        }
+        failures.push(
+          `${name} removes or disables the guard of public.information_agent_fact_publications`,
+        );
+      }
+      for (const match of sql.matchAll(
+        /\bupdate\s+(?:only\s+)?(?:public\.)?information_agent_fact_publications\b(?:\s+(?!set\b)[a-z_][a-z0-9_]*)?\s+set\s+([\s\S]*?)(?:\bwhere\b|;|$)/gi,
+      )) {
+        const columns = [
+          ...match[1].matchAll(/(?:^|,)\s*(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)\s*=/gi),
+        ].map((column) => column[1].toLowerCase());
+        if (!columns.length || columns.some((column) => column !== "sale_id")) {
+          failures.push(
+            `${name} rewrites public.information_agent_fact_publications beyond sale_id: a publication never changes its fact, author, author kind or policy version`,
+          );
+        }
+      }
+    }
+  }
+
+  // 7. Tables réservées au serveur, en lecture seule.
   for (const table of [
     "information_agent_auto_publication_settings",
     "information_agent_auto_publication_mode_changes",
     "information_agent_auto_publication_decisions",
+    "information_agent_auto_publication_arbitrations",
   ]) {
     const qualified = `public\\.${table}`;
     if (
@@ -2871,6 +3245,19 @@ function functionSignature(schema, name, argumentText) {
     for (const [name, sql] of all) {
       if (new RegExp(`create\\s+policy[^;]*\\b${qualified}\\b`, "i").test(sql)) {
         failures.push(`${name} opens public.${table} with a policy`);
+      }
+      // Ni supprimée, ni renommée : le réglage porte le mode, les journaux la trace.
+      if (
+        new RegExp(
+          `drop\\s+table\\s+(?:if\\s+exists\\s+)?(?:[a-z0-9_.,\\s]*,\\s*)?(?:public\\.)?${table}\\b`,
+          "i",
+        ).test(sql) ||
+        new RegExp(
+          `alter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?(?:public\\.)?${table}\\s+rename\\s+to\\b`,
+          "i",
+        ).test(sql)
+      ) {
+        failures.push(`${name} drops or renames public.${table}`);
       }
       for (const statement of sql.split(";")) {
         if (!/^\s*grant\s/i.test(statement) || !new RegExp(`\\b${table}\\b`, "i").test(statement)) {
@@ -3219,7 +3606,7 @@ console.log(
       "email-send-log-service-role-only-and-no-body",
       "privacy-requests-service-role-only",
       "information-agent-publication-journal-and-core-service-only",
-      "information-agent-no-automatic-publication-path",
+      "information-agent-single-automatic-publication-path",
       ...factRegistryInvariantNames,
     ],
   }),

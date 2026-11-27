@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryErrorMessage } from "@/components/admin/admin-format";
 import { REVIEW_QUERY_KEY } from "@/components/admin/information-agent-queries";
@@ -14,12 +15,14 @@ import type { AutoPublicationReviewDecision } from "@/lib/admin-information-agen
 const AUTO_PUBLICATION_QUERY_KEY = ["admin-information-agent-auto-publication"] as const;
 
 /**
- * Publication automatique des informations reçues (onglet Réglages) : arrêt ou simulation ; le mode
- * automatique est affiché verrouillé, avec ses conditions. Arrêt d'urgence en un geste. Tout arrive mis en
- * forme par le serveur ; chaque changement est tracé en base (qui, quand, ancien et nouveau mode).
+ * Publication automatique des informations reçues (onglet Réglages) : arrêt, simulation ou automatique (étape 6,
+ * décision du propriétaire du 27/11/2026). Le passage en automatique demande une confirmation explicite. Arrêt
+ * d'urgence en un geste. Tout arrive mis en forme par le serveur ; chaque changement est tracé en base (qui,
+ * quand, ancien et nouveau mode).
  */
 export function AdminInformationAgentAutoPublicationPanel() {
   const queryClient = useQueryClient();
+  const [autoConfirmed, setAutoConfirmed] = useState(false);
   const query = useQuery({
     queryKey: AUTO_PUBLICATION_QUERY_KEY,
     queryFn: fetchAdminAutoPublication,
@@ -28,6 +31,7 @@ export function AdminInformationAgentAutoPublicationPanel() {
   const run = useMutation({
     mutationFn: runAdminAutoPublicationActionClient,
     onSuccess: (view) => {
+      setAutoConfirmed(false);
       queryClient.setQueryData(AUTO_PUBLICATION_QUERY_KEY, view);
       // Les annotations de l'onglet Réponses suivent le mode.
       void queryClient.invalidateQueries({ queryKey: REVIEW_QUERY_KEY });
@@ -62,8 +66,12 @@ export function AdminInformationAgentAutoPublicationPanel() {
             Mode : <strong>{view.modeLabel}</strong>
           </p>
           <p className="text-brand-navy/70">
-            En simulation, chaque information reçue est examinée par le moteur et l’onglet Réponses
-            indique « aurait été publié » ou « relecture », avec les raisons. Rien n’est publié.
+            Chaque information reçue passe les contrôles de sécurité (réponse authentifiée de
+            l’avocat poursuivant, aucune opposition ni contradiction), puis l’IA (Claude Haiku)
+            confirme ou non la valeur. En simulation, l’onglet Réponses indique « aurait été publié
+            » ou « à relire », avec les raisons, et rien n’est publié. En automatique, une
+            information confirmée est publiée sur la fiche sans relecture humaine ; elle se retire
+            depuis les observations de la vente.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -85,20 +93,27 @@ export function AdminInformationAgentAutoPublicationPanel() {
             <button
               type="button"
               className="admin-button-secondary"
-              disabled
-              aria-describedby="auto-publication-lock"
+              disabled={run.isPending || view.mode === "auto" || !autoConfirmed}
+              aria-describedby="auto-publication-confirm"
+              onClick={() => run.mutate({ action: "set_mode", mode: "auto" })}
             >
-              Automatique (verrouillé)
+              Automatique
             </button>
           </div>
-          <div id="auto-publication-lock" className="text-brand-navy/70">
-            <p className="font-medium">Le mode automatique reste verrouillé jusqu’à :</p>
-            <ul className="mt-1 list-inside list-disc">
-              {view.lockReasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          </div>
+          {view.mode === "auto" ? null : (
+            <label id="auto-publication-confirm" className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={autoConfirmed}
+                onChange={(event) => setAutoConfirmed(event.target.checked)}
+              />
+              <span>
+                Je confirme : en mode automatique, les informations confirmées par l’IA sont
+                publiées sur les fiches sans relecture humaine.
+              </span>
+            </label>
+          )}
           <p className="text-brand-navy/70">
             Champs concernés : {view.eligibleFields.join(", ")}. Plafonds : {view.caps.daily} par
             jour, {view.caps.perCase} par dossier.
@@ -121,30 +136,40 @@ export function AdminInformationAgentAutoPublicationPanel() {
   );
 }
 
-/** Décision du moteur affichée à côté d'une information de l'onglet Réponses (mode simulation). */
+/**
+ * Décision du moteur affichée à côté d'une information de l'onglet Réponses : « Simulation : … » en simulation,
+ * « Publié automatiquement le … » ou « À relire (raisons) » en automatique.
+ */
 export function AutoPublicationDecisionNote({
   decision,
+  simulation,
 }: {
   decision: AutoPublicationReviewDecision | undefined;
+  simulation: boolean;
 }) {
+  const prefix = simulation ? "Simulation : " : "";
   if (!decision) {
     return (
-      <p className="mt-2 text-xs text-ink-soft">
-        Simulation : décision du moteur pas encore calculée.
-      </p>
+      <p className="mt-2 text-xs text-ink-soft">{prefix}décision du moteur pas encore calculée.</p>
     );
   }
+  const reasons = [
+    ...decision.reasons,
+    ...(decision.arbiterReason ? [`motif de l’IA : ${decision.arbiterReason}`] : []),
+  ];
+  const label = simulation ? decision.label.toLowerCase() : decision.label;
   return (
     <p
       className={`mt-2 text-xs font-medium ${
-        decision.outcome === "would_publish" ? "text-success" : "text-brand-navy/70"
+        decision.outcome === "review" ? "text-brand-navy/70" : "text-success"
       }`}
     >
-      Simulation : {decision.label.toLowerCase()}
+      {prefix}
+      {label}
       {decision.decidedAt
-        ? `, le ${formatShortDateTime(decision.decidedAt, "date illisible")}`
+        ? `${simulation ? "," : ""} le ${formatShortDateTime(decision.decidedAt, "date illisible")}`
         : ""}
-      {decision.reasons.length ? ` (${decision.reasons.join(" ; ")})` : ""}.
+      {reasons.length ? ` (${reasons.join(" ; ")})` : ""}.
     </p>
   );
 }

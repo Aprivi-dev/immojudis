@@ -52,6 +52,7 @@ paths = [
 '''(?:^|/)supabase/migrations/20261119100200_fact_registry_check_systemic_errors\.sql''',
 '''(?:^|/)supabase/migrations/20261119100300_hold_memorises_listing_surface_kind\.sql''',
 '''(?:^|/)supabase/migrations/20261119100900_information_agent_acceptance_through_registry\.sql''',
+'''(?:^|/)supabase/migrations/20261211100000_information_agent_auto_publication_live\.sql''',
 '''(?:^|/)supabase/tests/370_auction_fact_claims\.sql''',
 '''(?:^|/)supabase/tests/383_ai_review_projection_guard\.sql''',
 '''(?:^|/)supabase/tests/872_catalogue_quality_sentinel\.sql''',
@@ -63,6 +64,7 @@ paths = [
 '''(?:^|/)supabase/tests/883_sale_field_projection\.sql''',
 '''(?:^|/)supabase/tests/885_sale_field_hold_echo\.sql''',
 '''(?:^|/)supabase/tests/887_fact_claim_decision_rpcs\.sql''',
+'''(?:^|/)supabase/tests/924_information_agent_auto_publication_live\.sql''',
 '''(?:^|/)supabase/tests/895_information_agent_acceptance_through_registry\.sql''',
 '''(?:^|/)supabase/tests/900_information_agent_acceptance_through_registry\.sql''',
 ]

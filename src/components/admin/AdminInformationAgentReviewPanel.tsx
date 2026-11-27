@@ -30,6 +30,8 @@ import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
 import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
 import { AutoPublicationDecisionNote } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
+import { fetchAdminRecentAutoPublications } from "@/lib/client-api/admin-auto-publication";
+import type { RecentAutoPublication } from "@/lib/admin-information-agent-auto-publication";
 import {
   FACT_CLAIM_LOT_ATTACHMENTS,
   factClaimDecisionsHref,
@@ -48,6 +50,14 @@ const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"
 
 export function AdminInformationAgentReviewPanel() {
   const queryClient = useQueryClient();
+  // Pages suivantes de « Publiées automatiquement » (la première arrive avec la page de relecture).
+  const [morePublished, setMorePublished] = useState<RecentAutoPublication[]>([]);
+  const loadMorePublished = useMutation({
+    mutationFn: fetchAdminRecentAutoPublications,
+    onSuccess: (next) => setMorePublished((current) => [...current, ...next.items]),
+    onError: (error) =>
+      toast.error(queryErrorMessage(error, "Publications automatiques suivantes indisponibles")),
+  });
   const [openingAssetId, setOpeningAssetId] = useState<string | null>(null);
   const [previewingAssetId, setPreviewingAssetId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ assetId: string; signedUrl: string } | null>(null);
@@ -190,8 +200,17 @@ export function AdminInformationAgentReviewPanel() {
   const factSourcesByMessageId = new Map(
     (page?.factSources ?? []).map((source) => [source.messageId, source]),
   );
-  // Moteur « publier ou relire » : annotations en simulation seulement (rien en mode arrêt).
+  // Moteur « publier ou relire » : décisions en simulation et en automatique (rien à relire en mode arrêt).
   const autoPublication = page?.autoPublication;
+  const autoPublished = page?.autoPublished;
+  // Première page et pages suivantes, sans doublon si la première a été relue entre-temps.
+  const publishedShown = autoPublished
+    ? [
+        ...new Map(
+          [...autoPublished.items, ...morePublished].map((item) => [item.factId, item]),
+        ).values(),
+      ]
+    : [];
   // Tâches du registre (lot C) : nul quand la lecture a échoué (le reste de l'écran s'affiche).
   const withdrawalTasks = page?.withdrawalTasks;
   const pendingRegistryDecisions = page?.pendingRegistryDecisions;
@@ -204,18 +223,64 @@ export function AdminInformationAgentReviewPanel() {
         </div>
         <h2 className="mt-2 font-semibold">Informations à contrôler</h2>
         <p className="mt-1 text-sm text-ink-soft">
-          Rien n’est intégré à une annonce sans validation. Accepter une pièce (document ou photo)
-          la publie pour l’annonce, une fois ses droits de diffusion autorisés. Accepter une autre
-          information l’inscrit au registre des pièces, à votre nom : surface, terrain, pièces et
-          occupation s’affichent sur la fiche et sont protégés contre la collecte, si le lot est
-          identifié.
+          Hors publication automatique (réglage « Automatique »), rien n’est intégré à une annonce
+          sans validation. Accepter une pièce (document ou photo) la publie pour l’annonce, une fois
+          ses droits de diffusion autorisés. Accepter une autre information l’inscrit au registre
+          des pièces, à votre nom : surface, terrain, pièces et occupation s’affichent sur la fiche
+          et sont protégés contre la collecte, si le lot est identifié.
         </p>
         {autoPublication?.mode === "unavailable" ? (
           <p role="alert" className="mt-1 text-sm text-warning">
-            Simulation de la publication automatique indisponible.
+            Décisions de la publication automatique indisponibles.
           </p>
         ) : null}
       </div>
+      {autoPublished === null ? (
+        <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
+          Informations publiées automatiquement : liste indisponible.
+        </p>
+      ) : autoPublished?.items.length ? (
+        <section aria-labelledby="auto-published-title" className="border-b px-5 py-4">
+          <h3 id="auto-published-title" className="text-sm font-semibold">
+            Publiées automatiquement, 30 derniers jours ({autoPublished.total})
+          </h3>
+          {autoPublished.total > publishedShown.length ? (
+            <p role="status" className="mt-1 text-xs font-medium text-warning">
+              Les {publishedShown.length} plus récentes sont affichées sur {autoPublished.total}.
+            </p>
+          ) : null}
+          <p className="mt-1 text-xs text-brand-navy/70">
+            Publiées sans relecture humaine, après les contrôles de sécurité et la confirmation de
+            l’IA. Pour en retirer une : « Ouvrir les observations de cette vente », puis « Retirer
+            ».
+          </p>
+          <ul className="mt-2 space-y-1 text-xs">
+            {publishedShown.map((item) => (
+              <li key={item.factId}>
+                {factLabel(item.factKey)} : {item.displayValue ?? "valeur purgée"} · vente{" "}
+                <Link href={saleDetailPath(item.saleId)} className="underline">
+                  {shortId(item.saleId)}
+                </Link>{" "}
+                · Publié automatiquement le{" "}
+                {formatShortDateTime(item.publishedAt, "date illisible")} ·{" "}
+                <a href={factClaimDecisionsHref(item.saleId)} className="underline">
+                  Ouvrir les observations de cette vente
+                </a>
+              </li>
+            ))}
+          </ul>
+          {autoPublished.total > publishedShown.length ? (
+            <button
+              type="button"
+              className="admin-button-secondary mt-2"
+              disabled={loadMorePublished.isPending}
+              onClick={() => loadMorePublished.mutate(publishedShown.length)}
+            >
+              Afficher les suivantes
+            </button>
+          ) : null}
+        </section>
+      ) : null}
       {withdrawalTasks === null ? (
         <p role="alert" className="border-b bg-amber-50/60 px-5 py-3 text-sm text-amber-950">
           Retraits à faire après une opposition : liste indisponible. Rechargez la page avant de
@@ -539,8 +604,13 @@ export function AdminInformationAgentReviewPanel() {
                         {reviewReasonLabels(fact.metadata).join(" ; ")}.
                       </p>
                     ) : null}
-                    {autoPublication?.mode === "simulation" ? (
-                      <AutoPublicationDecisionNote decision={autoPublication.decisions[fact.id]} />
+                    {autoPublication &&
+                    autoPublication.mode !== "unavailable" &&
+                    autoPublication.mode !== "off" ? (
+                      <AutoPublicationDecisionNote
+                        decision={autoPublication.decisions[fact.id]}
+                        simulation={autoPublication.mode === "simulation"}
+                      />
                     ) : null}
                     {isLotUnidentified(fact.metadata) ? (
                       <p className="mt-2 text-xs font-medium text-amber-900">

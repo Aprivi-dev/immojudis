@@ -839,7 +839,7 @@ describe("invariants de sécurité : journal et noyau de publication de l'agent 
   });
 });
 
-describe("invariants de sécurité : aucun chemin de publication automatique (étape 3)", () => {
+describe("invariants de sécurité : un seul chemin de publication automatique (étape 6)", () => {
   const coreCall = (call) => `
 create or replace function app_private.publish_automatically(p_fact_id uuid, p_kind text)
 returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -892,29 +892,129 @@ $$;`;
 
   it.each([
     [
-      "le retrait du verrou du mode automatique",
+      "le retrait du verrou du mode automatique hors de la migration de l'étape 6",
       "alter table public.information_agent_auto_publication_settings drop constraint information_agent_auto_publication_settings_auto_locked;",
-      "drops the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+      "drops or renames information_agent_auto_publication_settings_auto_locked: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
     ],
     [
       "le retrait entre guillemets",
       'alter table public.information_agent_auto_publication_settings drop constraint "information_agent_auto_publication_settings_auto_locked";',
-      "drops the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+      "drops or renames information_agent_auto_publication_settings_auto_locked: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
     ],
     [
       "le renommage puis le retrait",
       "alter table public.information_agent_auto_publication_settings rename constraint information_agent_auto_publication_settings_auto_locked to tmp_lock; alter table public.information_agent_auto_publication_settings drop constraint tmp_lock;",
-      "renames the automatic publication lock information_agent_auto_publication_settings_auto_locked",
+      "drops or renames information_agent_auto_publication_settings_auto_locked: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
     ],
     [
-      "le retrait du verrou des publications",
+      "le retrait du verrou des publications hors de la migration de l'étape 6",
       "alter table public.information_agent_fact_publications drop constraint if exists information_agent_fact_publications_auto_locked;",
-      "drops the automatic publication lock information_agent_fact_publications_auto_locked",
+      "drops or renames information_agent_fact_publications_auto_locked: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
     ],
     [
-      "la suppression de la table qui porte un verrou",
+      "le retrait de la forme des publications automatiques",
+      "alter table public.information_agent_fact_publications drop constraint if exists information_agent_fact_publications_auto_shape;",
+      "drops the automatic publication lock information_agent_fact_publications_auto_shape",
+    ],
+    [
+      "la suppression de la table du réglage",
       "drop table if exists public.information_agent_auto_publication_settings cascade;",
       "drops or renames public.information_agent_auto_publication_settings",
+    ],
+    [
+      "le mode automatique écrit par une migration",
+      "update public.information_agent_auto_publication_settings set mode = 'auto' where singleton;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le mode composé (concat) écrit par une migration",
+      "update public.information_agent_auto_publication_settings set mode = concat('au', 'to') where singleton;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "une seconde ligne du réglage insérée par une migration",
+      "insert into public.information_agent_auto_publication_settings (singleton, mode) values (true, 'off') on conflict (singleton) do update set mode = excluded.mode;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage fusionné par une migration",
+      "merge into public.information_agent_auto_publication_settings settings using (select true as singleton) source on settings.singleton = source.singleton when matched then update set mode = 'simulation';",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le défaut de la colonne du mode changé",
+      "alter table public.information_agent_auto_publication_settings alter column mode set default 'auto';",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage écrit par une autre fonction",
+      "create or replace function app_private.switch_mode() returns void language plpgsql security definer set search_path = '' as $$ begin update public.information_agent_auto_publication_settings set mode = 'simulation' where singleton; end; $$;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "le réglage écrit par du SQL dynamique",
+      "do $$ begin execute 'update public.' || 'information_agent_auto_publication_settings set mode = ' || quote_literal('au' || 'to'); end; $$;",
+      "writes public.information_agent_auto_publication_settings outside set_information_agent_auto_publication_mode",
+    ],
+    [
+      "une seconde source de lignes du journal des publications",
+      "create or replace function app_private.forge_publication(p_fact uuid) returns void language plpgsql security definer set search_path = '' as $$ begin insert into public.information_agent_fact_publications (fact_id, actor_kind, policy_version) values (p_fact, 'auto', 'auto_publication_v2'); end; $$;",
+      "writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (app_private.forge_publication)",
+    ],
+    [
+      "une ligne du journal des publications insérée par une migration",
+      "insert into public.information_agent_fact_publications (fact_id, actor_kind, policy_version) select id, 'auto', 'auto_publication_v2' from public.information_agent_fact_candidates;",
+      "writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (migration body)",
+    ],
+    [
+      "un auteur de publication réécrit après coup (m14)",
+      "update public.information_agent_fact_publications set actor_kind = 'admin', policy_version = null where actor_kind = 'auto';",
+      "rewrites public.information_agent_fact_publications beyond sale_id",
+    ],
+    [
+      "le fait d'une publication réécrit, avec un alias",
+      "update public.information_agent_fact_publications publication set sale_id = publication.sale_id, fact_id = gen_random_uuid();",
+      "rewrites public.information_agent_fact_publications beyond sale_id",
+    ],
+    [
+      "la garde du journal des publications retirée",
+      "drop trigger information_agent_fact_publications_guard on public.information_agent_fact_publications;",
+      "removes or disables the guard of public.information_agent_fact_publications",
+    ],
+    [
+      "la garde du journal des publications désactivée",
+      "alter table public.information_agent_fact_publications disable trigger all;",
+      "removes or disables the guard of public.information_agent_fact_publications",
+    ],
+    [
+      "la garde du journal des publications vidée de son contrôle",
+      "create or replace function app_private.information_agent_fact_publications_guard() returns trigger language plpgsql security definer set search_path = '' as $$ begin return coalesce(new, old); end; $$;",
+      "public.information_agent_fact_publications must keep its guard",
+    ],
+    [
+      "la RPC de publication donnée à un compte du navigateur",
+      "grant execute on function public.publish_information_agent_fact_auto(uuid, text, text, text) to authenticated;",
+      "grants public.publish_information_agent_fact_auto to a browser role",
+    ],
+    [
+      "la RPC du journal des décisions donnée à un compte du navigateur",
+      "grant execute on function public.record_information_agent_auto_publication_decision(uuid, text, text, text[], text) to authenticated;",
+      "grants public.record_information_agent_auto_publication_decision to a browser role",
+    ],
+    [
+      "la RPC des verdicts donnée à un visiteur",
+      "grant execute on function public.record_information_agent_auto_publication_arbitration(uuid, numeric, text, boolean, text, numeric, text, text, text) to anon;",
+      "grants public.record_information_agent_auto_publication_arbitration to a browser role",
+    ],
+    [
+      "la liste des faits à juger donnée à un compte du navigateur",
+      "grant execute on function public.list_information_agent_facts_to_arbitrate(text, integer) to public;",
+      "grants public.list_information_agent_facts_to_arbitrate to a browser role",
+    ],
+    [
+      "une fonction qui enveloppe la RPC de publication",
+      "create or replace function public.publish_for_me(p_fact uuid) returns jsonb language sql security definer set search_path = '' as $$ select public.publish_information_agent_fact_auto(p_fact, 'surface_m2', 'auto_publication_v2') $$;",
+      "names publish_information_agent_fact_auto",
     ],
     [
       "le renommage de la table qui porte un verrou",
@@ -931,6 +1031,7 @@ $$;`;
     "information_agent_auto_publication_decisions",
     "information_agent_auto_publication_settings",
     "information_agent_auto_publication_mode_changes",
+    "information_agent_auto_publication_arbitrations",
   ])("refuse une écriture accordée au rôle de service sur %s", (table) => {
     const result = runInvariants({
       "99990101000000_grant_write.sql": `grant insert, delete on table public.${table} to service_role;`,
@@ -948,6 +1049,76 @@ $$;`;
     expect(result.stderr).toContain(
       "src/lib/sneaky-publish.ts calls review_information_agent_fact_candidate",
     );
+  });
+
+  it("refuse une RPC de publication qui lit le jeton d'un compte, ou publie avant de relire le mode", () => {
+    const step6 = migration("20261211100000_information_agent_auto_publication_live.sql");
+    const readsToken = step6.replace(
+      "  v_evidence text;\nbegin\n",
+      "  v_evidence text;\nbegin\n  if (select auth.uid()) is null then\n    return null;\n  end if;\n",
+    );
+    expect(readsToken).not.toBe(step6);
+    const tokenResult = runInvariants({
+      "99990101000000_publish_reads_token.sql": readsToken.slice(
+        readsToken.indexOf("create or replace function public.publish_information_agent_fact_auto"),
+      ),
+    });
+    expect(tokenResult.status).toBe(1);
+    expect(tokenResult.stderr).toContain(
+      "public.publish_information_agent_fact_auto must be SECURITY DEFINER with an empty search_path, read the mode under a shared lock",
+    );
+    const noGuard = step6.replace(
+      "  if v_mode is distinct from 'auto' then\n    return pg_catalog.jsonb_build_object('status', 'inactive');\n  end if;\n",
+      "",
+    );
+    expect(noGuard).not.toBe(step6);
+    const guardResult = runInvariants({
+      "99990101000000_publish_without_mode.sql": noGuard.slice(
+        noGuard.indexOf("create or replace function public.publish_information_agent_fact_auto"),
+      ),
+    });
+    expect(guardResult.status).toBe(1);
+    expect(guardResult.stderr).toContain("require 'auto' before any write and before the core");
+  });
+
+  it("refuse un module autre que le moteur qui appelle la RPC de publication automatique", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/sneaky-auto.ts": 'export const rpc = "publish_information_agent_fact_auto";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/sneaky-auto.ts names public.publish_information_agent_fact_auto: only src/lib/information-agent/auto-publication-store.ts may",
+    );
+  });
+
+  it("refuse un module qui nomme la décision automatique du registre", () => {
+    const result = runInvariants({}, [], {
+      "src/lib/sneaky-registry.ts":
+        'export const rpc = "accept_information_agent_claim_automatically";\n',
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "src/lib/sneaky-registry.ts names app_private.accept_information_agent_claim_automatically",
+    );
+  });
+
+  it.each([
+    ["un script", "scripts/publish-now.mjs", 'await rpc("publish_information_agent_fact_auto");\n'],
+    [
+      "une fonction Edge",
+      "supabase/functions/publish-now/index.ts",
+      'await rpc("accept_information_agent_claim_automatically");\n',
+    ],
+    [
+      "un workflow",
+      ".github/workflows/publish-now.yml",
+      'jobs:\n  run:\n    steps:\n      - run: curl -X POST "$URL/rest/v1/rpc/publish_information_agent_fact_auto"\n',
+    ],
+  ])("refuse %s qui atteint le chemin de publication automatique", (_label, path, content) => {
+    const result = runInvariants({}, [], {}, { [path]: content });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`${path} names`);
+    expect(result.stderr).toContain("reach the automatic publication path");
   });
 
   it("refuse un module qui nomme le noyau de publication", () => {

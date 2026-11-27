@@ -1,5 +1,4 @@
 import "server-only";
-import { PublicApiError } from "@/lib/api-errors";
 import { z } from "zod";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { assertAdminAuth } from "@/lib/admin-auth.server";
@@ -9,6 +8,7 @@ import {
   AUTO_PUBLICATION_DAILY_CAP,
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   AUTO_PUBLICATION_MODES,
+  autoPublicationArbiterReasonLabel,
   autoPublicationReasonLabels,
   isAutoPublicationEligibleField,
   type AutoPublicationEligibleField,
@@ -17,14 +17,16 @@ import {
 } from "@/lib/information-agent/auto-publication-policy";
 import {
   loadAutoPublicationMode,
+  loadLatestArbiterReasons,
   loadLatestAutoPublicationDecisions,
 } from "@/lib/information-agent/auto-publication-store";
 
 /**
- * Réglage de la publication automatique (onglet Réglages) et annotations de simulation (onglet Réponses).
+ * Réglage de la publication automatique (onglet Réglages) et annotations des décisions (onglet Réponses).
  * Lecture : modèle de vue mis en forme par le serveur. Écriture : deux RPC d'administration appelées avec le
- * jeton de l'administrateur (`is_admin`), chaque changement tracé en base. Le mode automatique est verrouillé :
- * refusé ici, refusé par la RPC, et impossible à enregistrer (contrainte de la table).
+ * jeton de l'administrateur (`is_admin`), chaque changement tracé en base. Depuis l'étape 6 (décision du
+ * propriétaire du 27/11/2026), le mode automatique s'enregistre comme les deux autres : seul un administrateur,
+ * avec son jeton, le pose ; l'arrêt d'urgence le coupe.
  */
 
 const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
@@ -32,17 +34,6 @@ const AUTO_PUBLICATION_MODE_LABELS: Record<AutoPublicationMode, string> = {
   simulation: "Simulation",
   auto: "Automatique",
 };
-
-/** Conditions du déverrouillage du mode automatique (étape 6 du plan d'enrichissement). */
-const AUTO_PUBLICATION_LOCK_REASONS = [
-  "textes juridiques mis à jour et publiés",
-  "AIPD mise à jour et signée",
-  "validation des huit points par un avocat",
-  "jeu d’évaluation à zéro publication fausse",
-  "période de simulation concluante",
-] as const;
-
-export const AUTO_PUBLICATION_LOCKED_MESSAGE = `Mode automatique verrouillé. Conditions requises : ${AUTO_PUBLICATION_LOCK_REASONS.join(" ; ")}.`;
 
 const FIELD_LABELS: Record<AutoPublicationEligibleField, string> = {
   surface_m2: "surface",
@@ -59,8 +50,6 @@ export type AdminAutoPublicationAction = z.output<typeof adminAutoPublicationAct
 export type AutoPublicationView = {
   mode: AutoPublicationMode;
   modeLabel: string;
-  autoLocked: true;
-  lockReasons: string[];
   eligibleFields: string[];
   caps: { daily: number; perCase: number };
   changes: Array<{ at: string; label: string }>;
@@ -86,8 +75,6 @@ export async function getAdminAutoPublicationView(authToken: string): Promise<Au
   return {
     mode,
     modeLabel: AUTO_PUBLICATION_MODE_LABELS[mode],
-    autoLocked: true,
-    lockReasons: [...AUTO_PUBLICATION_LOCK_REASONS],
     eligibleFields: AUTO_PUBLICATION_ELIGIBLE_FIELDS.map((field) => FIELD_LABELS[field]),
     caps: { daily: AUTO_PUBLICATION_DAILY_CAP, perCase: AUTO_PUBLICATION_CASE_CAP },
     changes: (changes.data ?? []).map((change) => ({
@@ -108,8 +95,7 @@ export async function runAdminAutoPublicationAction({
 }): Promise<AutoPublicationView> {
   const auth = await assertAdminAuth(authToken);
   if (input.action === "set_mode") {
-    // Verrou de l'étape 3 : refus avant tout appel à la base (la RPC et la contrainte refusent aussi).
-    if (input.mode === "auto") throw new PublicApiError(AUTO_PUBLICATION_LOCKED_MESSAGE, 409);
+    // Le mode automatique passe par la même RPC, avec le jeton de l'administrateur (tracé en base).
     const { error } = await auth.supabase.rpc("set_information_agent_auto_publication_mode", {
       p_mode: input.mode,
     });
@@ -123,9 +109,11 @@ export async function runAdminAutoPublicationAction({
 }
 
 export type AutoPublicationReviewDecision = {
-  outcome: "would_publish" | "review";
+  outcome: "would_publish" | "published" | "review";
   label: string;
   reasons: string[];
+  /** Motif du dernier verdict de Claude Haiku, en clair, quand il refuse de publier. */
+  arbiterReason: string | null;
   /** Faux : décision déduite à l'affichage (hors liste, déjà traitée), jamais écrite au journal. */
   recorded: boolean;
   /** Date de la décision du journal (ISO) ; nulle pour une décision déduite à l'affichage. */
@@ -133,45 +121,52 @@ export type AutoPublicationReviewDecision = {
 };
 
 /**
- * Annotations de l'onglet Réponses. Arrêt (ou migration absente) : rien n'est lu ni affiché. Simulation :
- * dernière décision du journal de chaque fait d'un champ de la liste fermée, avec sa date, qu'il soit encore
- * en attente ou déjà traité ; à défaut de décision au journal, un fait hors liste ou déjà traité s'affiche
- * « relecture » sans écriture au journal, et un fait en attente n'a pas encore été examiné. Lecture
- * impossible ou tronquée : « unavailable » (signalé dans le journal serveur), la liste des réponses reste
- * affichée.
+ * Annotations de l'onglet Réponses. Arrêt : rien n'est lu ni affiché (les publications faites sont listées à
+ * part, `listRecentAutoPublications`). Simulation et automatique : dernière décision du journal de chaque fait d'un champ de la liste fermée, avec sa date, qu'il soit encore en attente ou déjà
+ * traité ; à défaut de décision au journal, un fait hors liste ou déjà traité s'affiche « relecture » sans
+ * écriture au journal, et un fait en attente n'a pas encore été examiné. Lecture impossible ou tronquée :
+ * « unavailable » (signalé dans le journal serveur), la liste des réponses reste affichée.
  */
 export type AutoPublicationReviewAnnotations =
-  | { mode: "off" }
   | { mode: "unavailable" }
-  | { mode: "simulation"; decisions: Record<string, AutoPublicationReviewDecision> };
+  | { mode: AutoPublicationMode; decisions: Record<string, AutoPublicationReviewDecision> };
+
+const OUTCOME_LABELS: Record<AutoPublicationReviewDecision["outcome"], string> = {
+  would_publish: "Aurait été publié",
+  published: "Publié automatiquement",
+  review: "À relire",
+};
 
 export async function loadAutoPublicationReviewAnnotations(
   facts: Array<{ id: string; fact_key: string; status: string }>,
 ): Promise<AutoPublicationReviewAnnotations> {
   try {
     const mode = await loadAutoPublicationMode();
-    if (mode === "off") return { mode: "off" };
-    if (mode !== "simulation") return { mode: "unavailable" };
     const decisions: Record<string, AutoPublicationReviewDecision> = {};
-    const eligible = facts.filter((fact) => isAutoPublicationEligibleField(fact.fact_key));
-    const latest = await loadLatestAutoPublicationDecisions(eligible.map((fact) => fact.id));
+    if (mode === "off") return { mode, decisions };
+    const eligibleIds = facts
+      .filter((fact) => isAutoPublicationEligibleField(fact.fact_key))
+      .map((fact) => fact.id);
+    const [latest, arbiterReasons] = await Promise.all([
+      loadLatestAutoPublicationDecisions(eligibleIds),
+      loadLatestArbiterReasons(eligibleIds),
+    ]);
     for (const fact of facts) {
       const decision = latest.get(fact.id);
       if (decision) {
-        decisions[fact.id] = {
-          outcome: decision.outcome,
-          label: decision.outcome === "would_publish" ? "Aurait été publié" : "Relecture",
-          reasons: autoPublicationReasonLabels(decision.reasons),
-          recorded: true,
-          decidedAt: decision.decidedAt,
-        };
+        decisions[fact.id] = annotation(
+          decision,
+          decision.reasons.includes("arbiter_declined")
+            ? autoPublicationArbiterReasonLabel(arbiterReasons.get(fact.id) ?? null)
+            : null,
+        );
       } else if (!isAutoPublicationEligibleField(fact.fact_key)) {
         decisions[fact.id] = staticReview("field_not_eligible");
       } else if (fact.status !== "pending") {
         decisions[fact.id] = staticReview("candidate_not_pending");
       }
     }
-    return { mode: "simulation", decisions };
+    return { mode, decisions };
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -184,12 +179,112 @@ export async function loadAutoPublicationReviewAnnotations(
   }
 }
 
+function annotation(
+  decision: {
+    outcome: AutoPublicationReviewDecision["outcome"];
+    reasons: string[];
+    decidedAt: string;
+  },
+  arbiterReason: string | null,
+): AutoPublicationReviewDecision {
+  return {
+    outcome: decision.outcome,
+    label: OUTCOME_LABELS[decision.outcome],
+    reasons: autoPublicationReasonLabels(decision.reasons),
+    arbiterReason,
+    recorded: true,
+    decidedAt: decision.decidedAt,
+  };
+}
+
 function staticReview(reason: AutoPublicationReason): AutoPublicationReviewDecision {
   return {
     outcome: "review",
-    label: reason === "field_not_eligible" ? "Relecture (hors liste)" : "Relecture",
+    label: reason === "field_not_eligible" ? "À relire (hors liste)" : "À relire",
     reasons: autoPublicationReasonLabels([reason]),
+    arbiterReason: null,
     recorded: false,
     decidedAt: null,
   };
+}
+
+/**
+ * Fenêtre et taille d'une page de la liste « Publiées automatiquement » de l'onglet Réponses. Le plafond de 10
+ * publications par jour en permet jusqu'à 310 sur la fenêtre : le total exact est lu, et l'écran affiche les pages
+ * suivantes à la demande (« Afficher les suivantes »).
+ */
+const RECENT_AUTO_PUBLICATION_DAYS = 30;
+const RECENT_AUTO_PUBLICATION_LIMIT = 100;
+/** Pages suivantes : décalage borné (au-delà du maximum possible sur la fenêtre). */
+export const recentAutoPublicationsQuerySchema = z.object({
+  offset: z.coerce.number().int().min(0).max(1_000).default(0),
+});
+
+export type RecentAutoPublication = {
+  factId: string;
+  factKey: string;
+  /** Valeur affichée du fait ; nulle si le fait a été purgé avec ses messages. */
+  displayValue: string | null;
+  saleId: string;
+  publishedAt: string;
+};
+
+export type RecentAutoPublications = {
+  /** Les plus récentes d'abord, une page de `RECENT_AUTO_PUBLICATION_LIMIT` au plus à partir du décalage demandé. */
+  items: RecentAutoPublication[];
+  /** Nombre exact de publications de la fenêtre (supérieur à `items.length` quand la liste est tronquée). */
+  total: number;
+};
+
+/**
+ * Publications automatiques des 30 derniers jours (journal du moteur, issue « published »), la plus récente
+ * d'abord : l'onglet Réponses les liste pour qu'un administrateur puisse les retirer par le chemin existant
+ * (« Retirer » dans les observations de la vente). Lecture seule ; une erreur remonte.
+ */
+export async function listRecentAutoPublications(
+  now = new Date(),
+  offset = 0,
+): Promise<RecentAutoPublications> {
+  const since = new Date(now.getTime() - RECENT_AUTO_PUBLICATION_DAYS * 24 * 60 * 60 * 1000);
+  const { data, error, count } = await supabaseAdmin
+    .from("information_agent_auto_publication_decisions")
+    .select("id,fact_id,fact_key,sale_id,decided_at", { count: "exact" })
+    .eq("outcome", "published")
+    .gte("decided_at", since.toISOString())
+    .order("decided_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(offset, offset + RECENT_AUTO_PUBLICATION_LIMIT - 1);
+  if (error) throw error;
+  const rows = data ?? [];
+  // Total inconnu : la liste ne peut pas dire si elle est complète, elle est donc indisponible.
+  if (typeof count !== "number") throw new Error("Auto-publication total missing");
+  if (!rows.length) return { items: [], total: count };
+  const { data: facts, error: factsError } = await supabaseAdmin
+    .from("information_agent_fact_candidates")
+    .select("id,display_value")
+    .in(
+      "id",
+      rows.map((row) => row.fact_id),
+    );
+  if (factsError) throw factsError;
+  const values = new Map((facts ?? []).map((fact) => [fact.id, fact.display_value]));
+  return {
+    items: rows.map((row) => ({
+      factId: row.fact_id,
+      factKey: row.fact_key,
+      displayValue: values.get(row.fact_id) ?? null,
+      saleId: row.sale_id,
+      publishedAt: row.decided_at,
+    })),
+    total: Math.max(count, offset + rows.length),
+  };
+}
+
+/** Page suivante de la liste « Publiées automatiquement » (administrateur seulement). */
+export async function listAdminRecentAutoPublications(
+  authToken: string,
+  offset: number,
+): Promise<RecentAutoPublications> {
+  await assertAdminAuth(authToken);
+  return listRecentAutoPublications(new Date(), offset);
 }

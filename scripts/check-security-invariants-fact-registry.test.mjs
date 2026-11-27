@@ -329,20 +329,64 @@ $$;`;
         "do $$ begin alter table public.auction_sale_field_hold_events add column sale_ref uuid references auction_sales (id); end $$;",
       message: "gives public.auction_sale_field_hold_events a foreign key to auction_sales",
     },
+    // Étape 6 de l'agent d'information : les verrous de l'étape 3 ne sont retirés que par la migration de l'étape 6,
+    // et les contraintes de forme qui les remplacent restent.
     {
-      label: "le verrou des décisions automatiques retiré",
+      label: "le verrou des décisions automatiques retiré hors de la migration de l'étape 6",
       file: migration("decisions_unlock"),
       content:
         "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_auto_locked;",
-      message: "drops the automatic publication lock auction_fact_claim_decisions_auto_locked",
+      message:
+        "drops or renames auction_fact_claim_decisions_auto_locked: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
     },
     {
-      label: "la contrainte « acceptation par un administrateur » retirée",
+      label:
+        "la contrainte « acceptation par un administrateur » retirée hors de la migration de l'étape 6",
       file: migration("accepted_by_admin_dropped"),
       content:
         "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_accepted_by_admin;",
       message:
-        "drops the automatic publication lock auction_fact_claim_decisions_accepted_by_admin",
+        "drops or renames auction_fact_claim_decisions_accepted_by_admin: the locks of step 3 are lifted by 20261211100000_information_agent_auto_publication_live.sql only",
+    },
+    {
+      label: "la forme unique des décisions automatiques retirée",
+      file: migration("auto_shape_dropped"),
+      content:
+        "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_auto_shape;",
+      message: "drops the automatic publication lock auction_fact_claim_decisions_auto_shape",
+    },
+    {
+      label:
+        "la contrainte « acceptation par un administrateur ou par la publication automatique » retirée",
+      file: migration("accepted_by_admin_or_auto_dropped"),
+      content:
+        "alter table public.auction_fact_claim_decisions drop constraint if exists auction_fact_claim_decisions_accepted_by_admin_or_auto;",
+      message:
+        "drops the automatic publication lock auction_fact_claim_decisions_accepted_by_admin_or_auto",
+    },
+    {
+      label: "la version de règle des décisions automatiques retirée",
+      file: migration("policy_check_dropped"),
+      content:
+        "alter table public.auction_fact_claim_decisions drop constraint auction_fact_claim_decisions_policy_check;",
+      message: "drops the automatic publication lock auction_fact_claim_decisions_policy_check",
+    },
+    {
+      label: "une autre fonction qui appelle la décision automatique du registre",
+      file: migration("auto_decide_wrapped"),
+      content:
+        "create function app_private.wrap_auto(p_claim uuid) returns jsonb language sql security definer set search_path = '' as $$ select app_private.accept_information_agent_claim_automatically(p_claim, 'auto_publication_v2') $$;",
+      prefix: ": ",
+      message:
+        "app_private.wrap_auto calls app_private.accept_information_agent_claim_automatically: only public.publish_information_agent_fact_auto may",
+    },
+    {
+      label: "la décision automatique redéfinie hors de sa migration",
+      file: migration("auto_decide_redefined"),
+      content:
+        "create or replace function app_private.accept_information_agent_claim_automatically(p_claim_id uuid, p_policy_version text) returns jsonb language plpgsql security definer set search_path = '' as $$ begin return null; end; $$;",
+      message:
+        "names app_private.accept_information_agent_claim_automatically: only 20261211100000_information_agent_auto_publication_live.sql defines and calls it",
     },
     {
       label: "la contrainte « administrateur nommé » retirée",
@@ -1209,7 +1253,7 @@ $$;`;
         "create function app_private.write_decision(p_who uuid, p_claim uuid, p_sale uuid, p_field text) returns uuid language sql security definer set search_path = '' as $$ insert into public.auction_fact_claim_decisions (claim_id, sale_id, field_key, decision, lot_attachment, actor_kind, actor_id) values (p_claim, p_sale, p_field, 'accepted', 'single_lot', 'admin', p_who) returning id $$;",
       prefix: ": ",
       message:
-        "app_private.write_decision inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
+        "app_private.write_decision inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim and app_private.accept_information_agent_claim_automatically write a decision",
     },
     {
       label: "une fonction qui pose le jeton par un littéral",
@@ -1258,7 +1302,7 @@ $$;`;
       ),
       prefix: ": ",
       message:
-        "app_private.registry_test_writer inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim writes a decision",
+        "app_private.registry_test_writer inserts into public.auction_fact_claim_decisions: only app_private.decide_auction_fact_claim and app_private.accept_information_agent_claim_automatically write a decision",
     },
     {
       label: "une fonction de report qui lit la colonne interne de la vente conservée",

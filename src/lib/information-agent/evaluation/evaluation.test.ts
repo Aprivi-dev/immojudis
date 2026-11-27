@@ -216,13 +216,15 @@ describe("étape 3 : moteur de décision", () => {
           continue;
         }
         const rulesEntry = rules[item.id]!;
+        // Arbitre simulé (moteur v2) : aucun verdict sans IA, verdict « publier » partout sinon (borne pessimiste).
+        const arbiter = stage.configuration === "regles_seules" ? "aucun" : "permissif";
         decisions.set(
           item.id,
-          await runEngineStage(item, rulesEntry, entry.candidates, "hypothese"),
+          await runEngineStage(item, rulesEntry, entry.candidates, "hypothese", arbiter),
         );
         realState.set(
           item.id,
-          await runEngineStage(item, rulesEntry, entry.candidates, "etat_reel"),
+          await runEngineStage(item, rulesEntry, entry.candidates, "etat_reel", arbiter),
         );
       }
       reports.set(
