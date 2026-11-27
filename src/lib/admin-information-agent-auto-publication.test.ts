@@ -280,7 +280,11 @@ describe("publications automatiques récentes (onglet Réponses)", () => {
     let total: number | null = 2;
     mocks.from.mockImplementation((table: string) => {
       const query: Record<string, unknown> = {};
-      for (const name of ["select", "order", "limit"]) query[name] = () => query;
+      for (const name of ["select", "order"]) query[name] = () => query;
+      query.range = (from: number, to: number) => {
+        filters.push(`${table}:range=${from}-${to}`);
+        return query;
+      };
       query.eq = (column: string, value: unknown) => {
         filters.push(`${table}:${column}=${String(value)}`);
         return query;
@@ -340,11 +344,14 @@ describe("publications automatiques récentes (onglet Réponses)", () => {
       total: 2,
     });
 
-    // Jusqu'à 310 publications possibles sur la fenêtre : le total exact dit que la liste est tronquée.
+    expect(filters).toContain("information_agent_auto_publication_decisions:range=0-99");
+
+    // Jusqu'à 310 publications possibles sur la fenêtre : le total exact, et la page suivante à la demande.
     total = 300;
-    expect((await listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"))).total).toBe(
-      300,
-    );
+    expect(
+      (await listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"), 100)).total,
+    ).toBe(300);
+    expect(filters).toContain("information_agent_auto_publication_decisions:range=100-199");
     // Total inconnu : la liste est indisponible, jamais présentée comme complète.
     total = null;
     await expect(listRecentAutoPublications(new Date("2026-11-27T12:00:00.000Z"))).rejects.toThrow(

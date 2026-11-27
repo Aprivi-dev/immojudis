@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -197,15 +198,26 @@ class FakeRest:
             }
         )
 
-    def add_analysis(self, fact_id: str, status: str, attempts: int) -> None:
+    def add_analysis(self, fact_id: str, status: str, attempts: int, *, complete: object = None) -> None:
         self.tables["information_agent_evidence_extractions"].append(
             {
                 "id": f"extraction-{len(self.tables['information_agent_evidence_extractions'])}",
                 "message_id": f"message-{fact_id}",
                 "status": status,
                 "attempts": attempts,
+                "metadata": {"reading": {"complete": complete}},
             }
         )
+
+    @staticmethod
+    def _column(row: dict[str, Any], column: str) -> tuple[str, Any]:
+        """Colonne demandée, y compris un chemin JSON nommé (``complete:metadata->reading->complete``)."""
+        alias, _, path = column.rpartition(":")
+        parts = path.split("->")
+        value: Any = row.get(parts[0])
+        for part in parts[1:]:
+            value = value.get(part) if isinstance(value, dict) else None
+        return alias or parts[0], value
 
     @staticmethod
     def _matches(row: dict[str, Any], column: str, condition: str) -> bool:
@@ -250,7 +262,7 @@ class FakeRest:
                 for row in rows
             ]
         elif columns != "*":
-            rows = [{key: row.get(key) for key in columns.split(",")} for row in rows]
+            rows = [dict(self._column(row, column) for column in columns.split(",")) for row in rows]
         return httpx.Response(200, json=rows[:limit])
 
 
@@ -355,13 +367,46 @@ def test_haiku_is_not_called_while_an_analysis_of_the_message_is_not_finished(
     assert [call["p_fact_id"] for call in rest.recorded] == ["fact-2"]
 
 
-def test_a_finished_or_definitively_failed_analysis_does_not_hold_the_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_a_message_read_in_full_lets_the_fact_be_judged(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Remplace « une analyse finie ou en échec définitif ne retient pas le verdict » : depuis la décision du
+    # 27/11/2026, un échec définitif retient le fait (pièce illisible, relecture humaine) ; seules des analyses
+    # terminées avec une lecture complète laissent juger.
     monkeypatch.setattr(arbiter, "llm_provider", lambda: "anthropic")
     rest = FakeRest()
     rest.add_fact("fact-1")
-    rest.add_analysis("fact-1", "failed", 3)
-    rest.add_analysis("fact-1", "completed", 1)
+    rest.add_analysis("fact-1", "completed", 1, complete=True)
+    rest.add_analysis("fact-1", "completed", 2, complete=True)
     assert run(rest, publish_all) == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "attempts", "complete"),
+    [
+        ("failed", 3, None),
+        ("needs_password", 1, None),
+        ("unsupported", 1, None),
+        ("processing", 3, None),
+        ("completed", 1, False),
+        ("completed", 1, None),
+    ],
+)
+def test_haiku_is_never_called_when_an_attachment_cannot_be_read_in_full(
+    monkeypatch: pytest.MonkeyPatch, status: str, attempts: int, complete: object
+) -> None:
+    monkeypatch.setattr(arbiter, "llm_provider", lambda: "anthropic")
+    rest = FakeRest()
+    rest.add_fact("fact-1")
+    rest.add_analysis("fact-1", "completed", 1, complete=True)
+    rest.add_analysis("fact-1", status, attempts, complete=complete)
+    calls: list[str] = []
+
+    def generate_json(system: str, user: str) -> dict[str, object]:
+        calls.append(user)
+        return publish_all(system, user)
+
+    assert run(rest, generate_json) == 0
+    assert calls == []
+    assert rest.recorded == []
 
 
 def test_a_reply_too_long_to_be_read_entirely_is_recorded_as_skipped_without_a_call(
@@ -449,3 +494,62 @@ def test_the_workflow_preflight_asks_for_facts_to_judge_with_the_current_prompt(
     workflow = (ROOT / ".github/workflows/information-agent-evidence.yml").read_text(encoding="utf-8")
     assert "rpc/list_information_agent_facts_to_arbitrate" in workflow
     assert f'"p_prompt_version": "{ARBITER_PROMPT_VERSION}"' in workflow
+
+
+def _preflight_script() -> str:
+    """Script du contrôle préalable du workflow (bloc ``run: |`` de l'étape « Check for queued evidence »)."""
+    lines = (ROOT / ".github/workflows/information-agent-evidence.yml").read_text(encoding="utf-8").splitlines()
+    step = next(index for index, line in enumerate(lines) if line.strip() == "- name: Check for queued evidence")
+    run = next(index for index in range(step, len(lines)) if lines[index].strip() == "run: |")
+    indent = len(lines[run + 1]) - len(lines[run + 1].lstrip())
+    body: list[str] = []
+    for line in lines[run + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip()) < indent:
+            break
+        body.append(line[indent:])
+    return "\n".join(body)
+
+
+@pytest.mark.parametrize(
+    ("evidence", "facts_exit", "facts_body", "should_run", "warned"),
+    [
+        ("[]", 0, '[{"fact_id": "fact-1"}]', "true", False),
+        ("[]", 0, "[]", "false", False),
+        ('[{"id": "extraction-1"}]', 22, "", "true", True),
+        ("[]", 22, "", "false", True),
+        ("[]", 0, '{"message": "function not found"}', "false", False),
+    ],
+)
+def test_the_workflow_preflight_never_fails_on_the_facts_to_judge(
+    tmp_path: Path, evidence: str, facts_exit: int, facts_body: str, should_run: str, warned: bool
+) -> None:
+    # Une panne de la lecture des faits à juger (RPC absente, erreur, réponse inattendue) ne bloque jamais l'analyse
+    # des pièces : avertissement, puis décision sur les seules pièces.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    curl = bin_dir / "curl"
+    curl.write_text(
+        "#!/bin/bash\n"
+        'if [[ "$*" == *list_information_agent_facts_to_arbitrate* ]]; then\n'
+        f"  printf '%s' '{facts_body}'; exit {facts_exit}\n"
+        "fi\n"
+        f"printf '%s' '{evidence}'\n",
+        encoding="utf-8",
+    )
+    curl.chmod(0o755)
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-c", _preflight_script()],
+        env={
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_SERVICE_ROLE_KEY": "service-key",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text(encoding="utf-8").strip() == f"should_run={should_run}"
+    assert ("::warning title=Arbitre de la publication automatique::" in result.stdout) is warned

@@ -462,8 +462,10 @@ réglage ; le propriétaire (ou un administrateur) passe en « Automatique » lu
    message du dossier, antérieur ou postérieur, en relecture bloquante, opposé ou qui demande de ne pas publier ;
    aucune autre valeur pour ce champ dans la réponse ni dans une autre information en attente pour la vente ; **aucune
    analyse du message (pièce jointe, lecture du corps par l’IA) en file, en cours ou en échec avec des essais
-   restants** (`evidence_pending` : un PDF joint « Carrez 58,30 » peut contredire « 62 m² » dans le corps) ; champ
-   vide sur la fiche ; valeur plausible pour le type de bien ; **vente à un seul lot** (ni `multi_lot_sale`, ni lot
+   restants** (`evidence_pending` : un PDF joint « Carrez 58,30 » peut contredire « 62 m² » dans le corps), et **aucune
+   pièce qui ne sera jamais lue en entier** (`attachment_unreadable` : mot de passe, format non pris en charge, échec
+   définitif, analyse bloquée avec ses essais épuisés, ou lecture partielle, `metadata.reading.complete` différent de
+   `true`) : relecture humaine ; champ vide sur la fiche ; valeur plausible pour le type de bien ; **vente à un seul lot** (ni `multi_lot_sale`, ni lot
    choisi dans l’annonce) ; plafonds de 10 publications par jour (heure de Paris) et 2 par dossier.
 2. **Verdict de Claude Haiku** (dernier verdict du fait, version de prompt courante, pour la valeur du fait) :
    « publier » (`clear_statement`) ou un motif de la liste fermée (conditionnel ou approximation, autre lot ou autre
@@ -485,15 +487,19 @@ worker de l’analyse (workflow `information-agent-evidence.yml`). Ce workflow e
 dès qu’une analyse attend (au plus une fois par tranche de 10 minutes) et par l’horaire GitHub (`*/30`, **non
 tenu** : c’est un filet, pas une garantie de cadence) ; à chaque déclenchement, son contrôle préalable ne lance le
 worker que si une analyse attend **ou si un fait attend un verdict** (RPC `list_information_agent_facts_to_arbitrate`).
-Les faits à juger sont choisis en base, le plus ancien d’abord : aucun appel pour un fait que les conditions
-structurelles écartent déjà (champ rempli, plusieurs lots, DKIM ou DMARC en échec) ni pour un fait dont une analyse
-du message n’est pas finie ; un verdict final (`completed`, `skipped`) n’est jamais refait ; un verdict passager
+Une panne de cette lecture (RPC absente, erreur, réponse inattendue) ne bloque jamais l’analyse des pièces :
+avertissement « Arbitre de la publication automatique » dans le workflow. Les faits à juger sont choisis en base, le
+plus ancien d’abord, et **rien n’est envoyé à Haiku pour une réponse qui ne peut pas être publiée** : champ rempli,
+plusieurs lots, DKIM ou DMARC en échec, expéditeur différent de l’adresse contactée, import manuel ou portail, dossier
+d’un autre destinataire que l’avocat poursuivant, dossier ni répondu ni en relecture, opposition (dossier ou contact),
+message pas lu en entier (analyse en cours, à reprendre, illisible ou partielle) ; un verdict final (`completed`, `skipped`) n’est jamais refait ; un verdict passager
 (`unavailable`, `invalid_output` : délai, 429 ou 5xx, plafond horaire, prestataire différent) est refait au plus 3
 fois, une heure au moins après le précédent. Après 3 erreurs du fournisseur de suite, la passe s’arrête (les faits
 suivants attendent). Fournisseur non configuré (clé absente) : aucun verdict n’est inscrit et l’exécution échoue
 (annotation d’erreur « Arbitre de la publication automatique » du workflow) ; toute autre panne de la passe aussi.
 Une réponse de plus de 12 000 caractères n’est jamais tronquée : verdict « non appelé » (`ARBITER_TEXT_TOO_LONG`),
-relecture humaine. Même client (`create_llm_client`), même modèle (Claude Haiku 5.5), mêmes
+relecture humaine. Un verdict « non appelé » (texte trop long, consigne adressée à un modèle) s’affiche « l’IA n’a pas
+été appelée » (`arbiter_skipped`), distinct de « verdict de l’IA indisponible ». Même client (`create_llm_client`), même modèle (Claude Haiku 5.5), mêmes
 garde-fous que la lecture des réponses : plafond horaire `ANTHROPIC_MAX_CALLS_PER_HOUR`, échéance de 25 s, effort
 bas, un seul essai, prestataire identique à celui nommé dans le pied du message envoyé, texte expurgé et délimité
 (`<untrusted-reply>`), aucun appel sur une réponse qui contient une consigne adressée à un modèle. Au plus 20 faits
@@ -523,7 +529,9 @@ TypeScript), puis fait accepté sans relecteur, noyau `apply_information_agent_f
 (`app_private.accept_information_agent_claim_automatically` : auteur « system », mode « auto », version de règle,
 rattachement « un seul lot »), projection de la vente, décision « published » au journal du moteur. Un contrôle qui
 échoue écrit « relecture » avec son motif. Une vente occupée par un import (55P03), un conflit ou une erreur réseau
-(réponse perdue) : reprise à la passe suivante. Toute autre erreur : relecture (`publication_failed`), jamais
+(réponse perdue) : reprise à la passe suivante. **Erreur sans code (réseau)** : le premier report est tracé au journal
+(« publication reportée », `publication_deferred`, visible dans l’onglet Réponses) ; si l’erreur dure encore une heure
+après cette trace, le fait passe en relecture humaine (`publication_failed`, jamais retenté) et le cron échoue. Toute autre erreur : relecture (`publication_failed`), jamais
 retentée, et le cron échoue (signalé) ; le journal refuse une décision pour un fait qui n’est plus en attente.
 
 ### Activer, arrêter, retirer
@@ -537,7 +545,7 @@ retentée, et le cron échoue (signalé) ; le journal refuse une décision pour 
 - **Arrêter** : bouton rouge « Arrêt d’urgence » (inchangé), un geste, effet immédiat : la RPC de publication relit le
   mode sous verrou et ne publie plus rien, même au milieu d’une passe (statut `stopped` du résumé du cron).
 - **Retirer une publication** : onglet Réponses, bloc « Publiées automatiquement, 30 derniers jours » (total exact ;
-  au-delà de 100, l’écran le dit et n’affiche que les plus récentes) : « Ouvrir les observations de cette vente », puis
+  100 par page, « Afficher les suivantes » pour les autres) : « Ouvrir les observations de cette vente », puis
   « Retirer » sur l’observation (chemin existant, `withdraw_auction_fact_claim`,
   jeton de l’administrateur) : la projection rend la valeur de l’annonce. Une opposition de l’avocat se traite comme
   avant (« Retraits à faire après une opposition »).
@@ -554,9 +562,15 @@ Levés, remplacés par des contraintes de forme : `information_agent_auto_public
 (un seul appel du noyau avec `'auto'`, dans la RPC de publication ; RPC réservée au serveur, qui relit le mode avant
 toute écriture et ne lit aucun jeton ; un seul module l’appelle, et ni un script, ni une fonction Edge, ni un workflow
 ne la nomme ; le réglage n’est écrit par une migration que dans les deux RPC d’administration ; le journal des
-publications n’est écrit que par le noyau ; les RPC de service du moteur ne sont jamais données au navigateur) ; `registry-rpc-actor-from-jwt` et `field-projection-not-callable-by-api` admettent la seule décision
+publications n’est écrit que par le noyau, et une de ses lignes ne change que de vente (fusion de fiches) et ne part
+qu’avec sa vente, déclencheur `information_agent_fact_publications_guard` ; les RPC de service du moteur ne sont
+jamais données au navigateur) ; `registry-rpc-actor-from-jwt` et `field-projection-not-callable-by-api` admettent la seule décision
 automatique, épinglée par empreinte (`AUTO_DECIDE_BODY_SHA256`), avec l’accord explicite du propriétaire du 27/11.
-pgTAP : `924` (nouveau) ; `878`, `880`, `881`, `887` adaptés.
+pgTAP : `924` (nouveau) ; `878`, `880`, `881`, `887` adaptés. Appels simultanés : `npm run
+test:db-auto-publication-concurrency` (trois publications en même temps sur un dossier : deux au plus), dernière étape
+du job base de données de la CI, après les tests pgTAP (ses lignes restent dans le registre, en ajout seul). La
+migration retire puis recrée ses contraintes de forme et retire l’ancienne signature de la RPC : une base qui a vu une
+version antérieure n’en garde rien.
 
 ### Ce que mesure le banc (borne pessimiste)
 

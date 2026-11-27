@@ -21,8 +21,9 @@ Les faits à juger sont choisis EN BASE (RPC ``list_information_agent_facts_to_a
 préalable du workflow) : aucun appel pour un fait que les conditions structurelles écartent déjà (champ rempli,
 plusieurs lots, DKIM ou DMARC en échec) ; un verdict final (``completed``, ``skipped``) n'est jamais refait ; un
 verdict passager (``unavailable``, ``invalid_output``) est refait au plus 3 fois, une heure au moins après le
-précédent. Juste avant l'appel, une analyse du message encore en file, en cours ou à reprendre (pièce jointe, lecture
-du corps) fait passer le fait sans appel ni verdict : il sera jugé quand tout le message aura été lu. Fournisseur non
+précédent. Juste avant l'appel, le message doit être lu en entier (pièces jointes et lecture du corps terminées avec
+une lecture complète) : sinon, ni appel ni verdict (une analyse en cours sera attendue ; une pièce illisible ou lue en
+partie laisse le fait en relecture humaine). Fournisseur non
 configuré : aucun verdict n'est inscrit, la passe échoue (erreur visible dans le workflow).
 """
 
@@ -79,9 +80,6 @@ MAX_ARBITER_TEXT_CHARS = 12_000
 MAX_ARBITRATIONS_PER_PASS = 20
 ARBITER_PASS_SECONDS = 4 * 60
 MAX_CONSECUTIVE_PROVIDER_ERRORS = 3
-# Essais d'une analyse de pièce : claim_information_agent_evidence_extractions reprend une analyse tant que
-# attempts < 3 (même borne que app_private.information_agent_message_analysis_pending).
-EVIDENCE_MAX_ATTEMPTS = 3
 
 FIELD_LABELS = {
     "surface_m2": "surface habitable du logement (m²)",
@@ -277,25 +275,19 @@ def facts_to_arbitrate(client: httpx.Client, base_url: str, key: str, *, limit: 
     return facts
 
 
-def message_analysis_pending(client: httpx.Client, base_url: str, key: str, message_id: str) -> bool:
-    """Une analyse du message (pièce jointe, lecture du corps) est en file, en cours ou en échec avec des essais
-    restants : ce que dit le message n'est pas encore tout lu."""
+def message_fully_read(client: httpx.Client, base_url: str, key: str, message_id: str) -> bool:
+    """Toutes les analyses du message (pièces jointes, lecture du corps) sont terminées avec une lecture COMPLÈTE
+    (``metadata.reading.complete``). Une analyse en file, en cours, à reprendre, illisible (mot de passe, format non
+    pris en charge, échec définitif, bloquée) ou lue en partie : le message n'est pas tout lu, aucun appel (même
+    règle que ``app_private.information_agent_message_evidence_state``)."""
     rows = _get(
         client,
         base_url,
         key,
         "information_agent_evidence_extractions",
-        {
-            "select": "id,status,attempts",
-            "message_id": f"eq.{message_id}",
-            "status": _in_list(["queued", "processing", "failed"]),
-        },
+        {"select": "id,status,complete:metadata->reading->complete", "message_id": f"eq.{message_id}"},
     )
-    return any(
-        row.get("status") in {"queued", "processing"}
-        or (row.get("status") == "failed" and int(row.get("attempts") or 0) < EVIDENCE_MAX_ATTEMPTS)
-        for row in rows
-    )
+    return all(row.get("status") == "completed" and row.get("complete") is True for row in rows)
 
 
 def auto_publication_mode(client: httpx.Client, base_url: str, key: str) -> str:
@@ -372,9 +364,9 @@ def run_arbitration_pass(
         if time.monotonic() >= stop_at or provider_errors >= MAX_CONSECUTIVE_PROVIDER_ERRORS:
             break
         fact_id = str(fact["fact_id"])
-        # Tout le message doit être lu (un PDF joint peut contredire le corps) : sans appel ni verdict, le fait sera
-        # jugé à une passe suivante.
-        if message_analysis_pending(client, base_url, key, str(fact["message_id"])):
+        # Tout le message doit être lu en entier (un PDF joint peut contredire le corps) : sans appel ni verdict ; le
+        # fait sera jugé quand tout sera lu, ou restera en relecture humaine si une pièce ne peut pas l'être.
+        if not message_fully_read(client, base_url, key, str(fact["message_id"])):
             continue
         message = _get(
             client,

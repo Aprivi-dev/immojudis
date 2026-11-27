@@ -435,6 +435,11 @@ jobs:
           fi
           PIPELINE_REGISTRY_DB_SERVER_ADDR="${addresses[0]}" PIPELINE_REGISTRY_DB_URL="$SUPABASE_DB_URL" \
             python -m pytest tests/test_base_echo_registry_postgres.py -q
+      # Publication automatique de l'agent d'information (étape 6) : trois publications simultanées sur le même
+      # dossier n'en publient que deux (plafond tenu en base). Dernière étape avant l'arrêt : ses lignes restent dans le
+      # registre des pièces, en ajout seul même hors déclencheurs ordinaires.
+      - name: Run the automatic publication concurrency test
+        run: npm run test:db-auto-publication-concurrency
       - name: Stop local Supabase
         if: always()
         run: npx --yes supabase@2.110.0 stop --no-backup

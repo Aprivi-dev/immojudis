@@ -61,6 +61,7 @@ vi.mock("@/lib/client-api", () => ({
 }));
 vi.mock("@/lib/client-api/admin-auto-publication", () => ({
   fetchAdminAutoPublication: mocks.autoPublication,
+  fetchAdminRecentAutoPublications: vi.fn(),
   runAdminAutoPublicationActionClient: vi.fn(),
 }));
 vi.mock("@/lib/toast", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));

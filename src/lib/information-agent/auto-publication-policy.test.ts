@@ -16,7 +16,9 @@ import {
   isPlausibleValue,
   planAutoPublicationDecisions,
   type AutoPublicationInput,
+  messageEvidenceState,
   type AutoPublicationPlanItem,
+  type MessageEvidenceAnalysis,
 } from "./auto-publication-policy";
 import { mentionsDoNotPublish, namesPrivatePerson } from "./auto-publication-text";
 
@@ -82,7 +84,7 @@ function cleanInput(overrides: Partial<AutoPublicationInput> = {}): AutoPublicat
     otherValuesForSale: 0,
     otherMessages: [],
     fieldFilledInSimulation: false,
-    messageAnalysisPending: false,
+    messageEvidence: "complete",
     arbitration: { found: true, row: PUBLISH_VERDICT },
     ...overrides,
   };
@@ -257,6 +259,11 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
       withVerdict({ status: "unavailable", publish: false, reason_code: null }),
       "arbiter_unavailable",
     ],
+    [
+      "verdict « non appelé » (réponse trop longue, consigne) : motif distinct de « indisponible »",
+      withVerdict({ status: "skipped", publish: false, reason_code: null }),
+      "arbiter_skipped",
+    ],
     ["verdict mal formé", withVerdict({ publish: "oui" }), "arbiter_unavailable"],
     ["motif hors liste", withVerdict({ reason_code: "parce_que" }), "arbiter_unavailable"],
     ["verdict sur une autre valeur", withVerdict({ value: 64 }), "arbiter_value_mismatch"],
@@ -346,8 +353,13 @@ describe("moteur : chaque condition manquante renvoie en relecture avec sa raiso
     ],
     [
       "analyse du message (pièce jointe, lecture du corps) pas finie",
-      cleanInput({ messageAnalysisPending: true }),
+      cleanInput({ messageEvidence: "pending" }),
       "evidence_pending",
+    ],
+    [
+      "pièce du message illisible ou lue en partie",
+      cleanInput({ messageEvidence: "unreadable" }),
+      "attachment_unreadable",
     ],
     // Surface affichée par la fiche : surface retenue, habitable ou Carrez (règle getRecordedSurface).
     ["surface habitable connue", withSale({ habitableSurfaceM2: 52 }), "field_not_empty"],
@@ -510,7 +522,7 @@ describe("moteur : échec fermé sur une donnée manquante ou illisible", () => 
       withCandidate({ evidenceAssetId: "asset-1", evidenceKind: null }),
     ],
     ["journal illisible", cleanInput({ fieldFilledInSimulation: null })],
-    ["analyses du message illisibles", cleanInput({ messageAnalysisPending: null })],
+    ["analyses du message illisibles", cleanInput({ messageEvidence: null })],
     ["lecture annexe en échec", cleanInput({ readFailed: true })],
   ])("%s : relecture, motif input_unreadable", (_label, input) => {
     const decision = decideAutoPublication(input);
@@ -661,6 +673,43 @@ function planItem(index: number, overrides: Partial<AutoPublicationPlanItem> = {
     ...overrides,
   };
 }
+
+describe("lecture du message : tout doit être lu en entier", () => {
+  const NOW = new Date("2026-11-27T12:00:00.000Z");
+  const done = { status: "completed", attempts: 1, lockedAt: null, complete: true };
+
+  it.each<[string, MessageEvidenceAnalysis[], string]>([
+    ["aucune analyse", [], "complete"],
+    ["tout lu en entier", [done, done], "complete"],
+    ["en file", [done, { ...done, status: "queued", attempts: 0 }], "pending"],
+    ["en échec avec des essais restants", [{ ...done, status: "failed", attempts: 2 }], "pending"],
+    [
+      "en cours, prise il y a 10 minutes au dernier essai",
+      [{ ...done, status: "processing", attempts: 3, lockedAt: "2026-11-27T11:50:00.000Z" }],
+      "pending",
+    ],
+    ["en échec définitif", [{ ...done, status: "failed", attempts: 3 }], "unreadable"],
+    ["protégée par un mot de passe", [{ ...done, status: "needs_password" }], "unreadable"],
+    ["format non pris en charge", [{ ...done, status: "unsupported" }], "unreadable"],
+    [
+      "bloquée en cours, essais épuisés",
+      [{ ...done, status: "processing", attempts: 3, lockedAt: "2026-11-27T10:00:00.000Z" }],
+      "unreadable",
+    ],
+    ["terminée, lecture partielle", [{ ...done, complete: false }], "unreadable"],
+    ["terminée, lecture non déclarée", [{ ...done, complete: null }], "unreadable"],
+    [
+      "une analyse à reprendre l'emporte sur une pièce illisible",
+      [
+        { ...done, status: "unsupported" },
+        { ...done, status: "queued", attempts: 0 },
+      ],
+      "pending",
+    ],
+  ])("%s", (_label, analyses, expected) => {
+    expect(messageEvidenceState(analyses, NOW)).toBe(expected);
+  });
+});
 
 describe("plafonds, appliqués dès la simulation", () => {
   it(`au plus ${AUTO_PUBLICATION_DAILY_CAP} par jour : la suite est « plafond atteint »`, () => {

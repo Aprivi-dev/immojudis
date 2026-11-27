@@ -967,6 +967,31 @@ $$;`;
       "writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (migration body)",
     ],
     [
+      "un auteur de publication réécrit après coup (m14)",
+      "update public.information_agent_fact_publications set actor_kind = 'admin', policy_version = null where actor_kind = 'auto';",
+      "rewrites public.information_agent_fact_publications beyond sale_id",
+    ],
+    [
+      "le fait d'une publication réécrit, avec un alias",
+      "update public.information_agent_fact_publications publication set sale_id = publication.sale_id, fact_id = gen_random_uuid();",
+      "rewrites public.information_agent_fact_publications beyond sale_id",
+    ],
+    [
+      "la garde du journal des publications retirée",
+      "drop trigger information_agent_fact_publications_guard on public.information_agent_fact_publications;",
+      "removes or disables the guard of public.information_agent_fact_publications",
+    ],
+    [
+      "la garde du journal des publications désactivée",
+      "alter table public.information_agent_fact_publications disable trigger all;",
+      "removes or disables the guard of public.information_agent_fact_publications",
+    ],
+    [
+      "la garde du journal des publications vidée de son contrôle",
+      "create or replace function app_private.information_agent_fact_publications_guard() returns trigger language plpgsql security definer set search_path = '' as $$ begin return coalesce(new, old); end; $$;",
+      "public.information_agent_fact_publications must keep its guard",
+    ],
+    [
       "la RPC de publication donnée à un compte du navigateur",
       "grant execute on function public.publish_information_agent_fact_auto(uuid, text, text, text) to authenticated;",
       "grants public.publish_information_agent_fact_auto to a browser role",
@@ -1029,8 +1054,8 @@ $$;`;
   it("refuse une RPC de publication qui lit le jeton d'un compte, ou publie avant de relire le mode", () => {
     const step6 = migration("20261211100000_information_agent_auto_publication_live.sql");
     const readsToken = step6.replace(
-      "  v_registry jsonb;\nbegin\n",
-      "  v_registry jsonb;\nbegin\n  if (select auth.uid()) is null then\n    return null;\n  end if;\n",
+      "  v_evidence text;\nbegin\n",
+      "  v_evidence text;\nbegin\n  if (select auth.uid()) is null then\n    return null;\n  end if;\n",
     );
     expect(readsToken).not.toBe(step6);
     const tokenResult = runInvariants({

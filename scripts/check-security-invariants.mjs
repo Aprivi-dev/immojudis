@@ -2636,6 +2636,9 @@ function functionSignature(schema, name, argumentText) {
 // 8. Le journal des publications de l'agent (`information_agent_fact_publications`) n'est écrit, dans une
 //    migration, que par le noyau `app_private.apply_information_agent_fact` (aucune autre instruction INSERT, ni SQL
 //    dynamique qui le nomme) : aucune seconde source de lignes 'auto'.
+// 9. Une ligne de ce journal ne change que de vente et ne part qu'avec elle (déclencheur
+//    `information_agent_fact_publications_guard`, gardé, jamais retiré ni désactivé) ; aucune migration n'y
+//    réécrit une autre colonne que sale_id.
 {
   const PUBLISH_RPC = "public.publish_information_agent_fact_auto";
   const AUTO_ACCEPT = "app_private.accept_information_agent_claim_automatically";
@@ -2910,9 +2913,11 @@ function functionSignature(schema, name, argumentText) {
     { url: "../.github/workflows/", path: ".github/workflows/", pattern: /\.ya?ml$/ },
   ];
   // Ce contrôle et le module qu'il importe nomment ces fonctions pour les surveiller.
+  // Le test d'appels simultanés appelle la RPC sur la base locale jetable de la CI (jamais la production).
   const INVARIANT_SCRIPTS = [
     "scripts/check-security-invariants.mjs",
     "scripts/check-security-invariants-fact-registry.mjs",
+    "scripts/test-information-agent-auto-publication-concurrency.mjs",
   ];
   for (const root of otherRoots) {
     let entries;
@@ -3019,8 +3024,18 @@ function functionSignature(schema, name, argumentText) {
       failures.push(`the automatic publication lock ${lock.name} is missing`);
     }
     for (const [name, sql] of all) {
-      if (new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock.name}\\b`, "i").test(sql)) {
-        failures.push(`${name} drops the automatic publication lock ${lock.name}`);
+      // La migration de l'étape 6 retire puis recrée aussitôt ses contraintes de forme (aucun reste d'une version
+      // antérieure) : un retrait suivi, dans la même migration, de la recréation exacte est admis.
+      for (const drop of sql.matchAll(
+        new RegExp(`drop\\s+constraint\\s+(?:if\\s+exists\\s+)?${lock.name}\\b`, "gi"),
+      )) {
+        const recreated =
+          name === STEP6_MIGRATION &&
+          new RegExp(
+            `^\\s*;\\s*alter\\s+table\\s+public\\.${lock.table}\\s+add\\s+constraint\\s+${lock.name}\\s+${lock.definition}`,
+            "i",
+          ).test(sql.slice(drop.index + drop[0].length));
+        if (!recreated) failures.push(`${name} drops the automatic publication lock ${lock.name}`);
       }
       if (new RegExp(`rename\\s+constraint\\s+${lock.name}\\b`, "i").test(sql)) {
         failures.push(`${name} renames the automatic publication lock ${lock.name}`);
@@ -3051,7 +3066,7 @@ function functionSignature(schema, name, argumentText) {
   const settingsSeed =
     /^insert\s+into\s+public\.information_agent_auto_publication_settings\s*\(\s*singleton\s*\)\s+values\s*\(\s*true\s*\)\s+on\s+conflict\s*\(\s*singleton\s*\)\s+do\s+nothing$/i;
   const settingsWrite =
-    /\b(?:update\s+(?:only\s+)?|insert\s+into\s+|merge\s+into\s+|copy\s+)(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?[^;]*\balter\s+(?:column\s+)?"?mode"?\b|\bexecute\b[^;]*auto_publication_settings/gi;
+    /\b(?:update\s+(?:only\s+)?|insert\s+into\s+|merge\s+into\s+|copy\s+)(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:"?public"?\s*\.\s*)?"?information_agent_auto_publication_settings"?[^;]*\balter\s+(?:column\s+)?"?mode"?\b|\bexecute\b(?!\s+(?:function|procedure)\b)[^;]*auto_publication_settings/gi;
   for (const [name, sql] of all) {
     for (const match of sql.matchAll(settingsWrite)) {
       const owner = enclosingFunction(sql, match.index);
@@ -3131,7 +3146,7 @@ function functionSignature(schema, name, argumentText) {
   // 8. Journal des publications de l'agent : écrit par le seul noyau (aucune seconde source de lignes 'auto').
   for (const [name, sql] of all) {
     for (const match of sql.matchAll(
-      /\binsert\s+into\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\b(?:copy|merge\s+into)\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\bexecute\b[^;]*information_agent_fact_publications/gi,
+      /\binsert\s+into\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\b(?:copy|merge\s+into)\s+(?:"?public"?\s*\.\s*)?"?information_agent_fact_publications"?\b|\bexecute\b(?!\s+(?:function|procedure)\b)[^;]*information_agent_fact_publications/gi,
     )) {
       const owner = enclosingFunction(sql, match.index);
       if (owner?.name === "app_private.apply_information_agent_fact" && /^insert\b/i.test(match[0]))
@@ -3139,6 +3154,64 @@ function functionSignature(schema, name, argumentText) {
       failures.push(
         `${name} writes public.information_agent_fact_publications outside app_private.apply_information_agent_fact (${owner?.name ?? "migration body"}): only the publication core writes the publication journal`,
       );
+    }
+  }
+
+  // 9. Journal des publications de l'agent : une ligne ne change que de vente (fusion de fiches) et ne part qu'avec
+  //    sa vente (déclencheur information_agent_fact_publications_guard, 20261211100000) ; aucune migration ne le
+  //    retire, ne le désactive, ni ne réécrit une autre colonne que sale_id.
+  {
+    const guard = lastDefinition("app_private.information_agent_fact_publications_guard");
+    if (
+      !guard ||
+      !/if\s+tg_op\s*=\s*'DELETE'\s+then\s+if\s+not\s+exists\s*\(\s*select\s+1\s+from\s+public\.auction_sales\s+sale\s+where\s+sale\.id\s*=\s*old\.sale_id\s*\)\s+then\s+return\s+old\s*;\s*end\s+if\s*;\s*raise\s+exception/i.test(
+        guard.body,
+      ) ||
+      !/\(\s*pg_catalog\.to_jsonb\s*\(\s*new\s*\)\s*-\s*'sale_id'\s*-\s*'actor_id'\s*\)\s+is\s+distinct\s+from\s+\(\s*pg_catalog\.to_jsonb\s*\(\s*old\s*\)\s*-\s*'sale_id'\s*-\s*'actor_id'\s*\)/i.test(
+        guard.body,
+      ) ||
+      !/create\s+trigger\s+information_agent_fact_publications_guard\s+before\s+update\s+or\s+delete\s+on\s+public\.information_agent_fact_publications\s+for\s+each\s+row\s+execute\s+function\s+app_private\.information_agent_fact_publications_guard\s*\(\s*\)/i.test(
+        allSql,
+      ) ||
+      !/create\s+trigger\s+information_agent_fact_publications_no_truncate\s+before\s+truncate\s+on\s+public\.information_agent_fact_publications\b/i.test(
+        allSql,
+      )
+    ) {
+      failures.push(
+        "public.information_agent_fact_publications must keep its guard: a row only changes sale (record merge), only leaves with its sale, and the journal is never truncated",
+      );
+    }
+    for (const [name, sql] of all) {
+      for (const match of sql.matchAll(
+        /\b(?:drop\s+trigger\s+(?:if\s+exists\s+)?|alter\s+trigger\s+)(information_agent_fact_publications_(?:guard|no_truncate))\b|\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?information_agent_fact_publications\s+disable\s+trigger\b|\bdrop\s+function\s+(?:if\s+exists\s+)?app_private\.information_agent_fact_publications_guard\b/gi,
+      )) {
+        // L'étape 6 retire puis recrée ses déclencheurs (aucun reste d'une version antérieure).
+        if (
+          name === STEP6_MIGRATION &&
+          match[1] &&
+          new RegExp(
+            `^\\s+on\\s+public\\.information_agent_fact_publications\\s*;\\s*create\\s+trigger\\s+${match[1]}\\b`,
+            "i",
+          ).test(sql.slice(match.index + match[0].length))
+        ) {
+          continue;
+        }
+        failures.push(
+          `${name} removes or disables the guard of public.information_agent_fact_publications`,
+        );
+      }
+      for (const match of sql.matchAll(
+        /\bupdate\s+(?:only\s+)?(?:public\.)?information_agent_fact_publications\b(?:\s+(?!set\b)[a-z_][a-z0-9_]*)?\s+set\s+([\s\S]*?)(?:\bwhere\b|;|$)/gi,
+      )) {
+        const columns = [
+          ...match[1].matchAll(/(?:^|,)\s*(?:[a-z_][a-z0-9_]*\.)?([a-z_][a-z0-9_]*)\s*=/gi),
+        ].map((column) => column[1].toLowerCase());
+        if (!columns.length || columns.some((column) => column !== "sale_id")) {
+          failures.push(
+            `${name} rewrites public.information_agent_fact_publications beyond sale_id: a publication never changes its fact, author, author kind or policy version`,
+          );
+        }
+      }
     }
   }
 

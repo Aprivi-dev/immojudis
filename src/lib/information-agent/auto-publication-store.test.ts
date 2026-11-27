@@ -782,12 +782,20 @@ describe("passe du moteur v2 : verdict de Haiku et contrôles structurels", () =
 });
 
 describe("passe du moteur v2 : analyses du message", () => {
-  function analysis(messageId: string, status: string, attempts: number) {
+  function analysis(
+    messageId: string,
+    status: string,
+    attempts: number,
+    patch: Record<string, unknown> = {},
+  ) {
     db.information_agent_evidence_extractions!.push({
       id: uuid("extraction"),
       message_id: messageId,
       status,
       attempts,
+      locked_at: null,
+      complete: status === "completed" ? true : null,
+      ...patch,
     });
   }
 
@@ -822,13 +830,33 @@ describe("passe du moteur v2 : analyses du message", () => {
     ]);
   });
 
-  it("une analyse en échec définitif (3 essais) ou finie ne retient pas la publication", async () => {
+  it("des analyses finies et lues en entier ne retiennent pas la publication", async () => {
     const { messageId } = seedCleanFact();
-    analysis(messageId, "failed", 3);
     analysis(messageId, "completed", 1);
+    analysis(messageId, "completed", 2);
     await runAutoPublicationPass({ now: NOW });
     expect(recorded()).toEqual([expect.objectContaining({ p_outcome: "would_publish" })]);
   });
+
+  it.each([
+    ["en échec définitif (3 essais)", "failed", 3, {}],
+    ["protégée par un mot de passe", "needs_password", 1, {}],
+    ["non prise en charge", "unsupported", 1, {}],
+    ["bloquée en cours, essais épuisés", "processing", 3, { locked_at: "2026-11-20T09:00:00Z" }],
+    ["terminée, lecture partielle", "completed", 1, { complete: false }],
+  ])(
+    "une pièce %s : relecture « pièce illisible », jamais publiée",
+    async (_label, status, attempts, patch) => {
+      db.information_agent_auto_publication_settings = [{ singleton: true, mode: "auto" }];
+      const { messageId } = seedCleanFact();
+      analysis(messageId, status, attempts, patch);
+      await runAutoPublicationPass({ now: NOW });
+      expect(published()).toEqual([]);
+      expect(recorded()).toEqual([
+        expect.objectContaining({ p_outcome: "review", p_reasons: ["attachment_unreadable"] }),
+      ]);
+    },
+  );
 
   it("analyses illisibles : relecture, motif « données illisibles »", async () => {
     seedCleanFact();
@@ -947,9 +975,56 @@ describe("passe du moteur v2 : mode automatique", () => {
       );
       const result = await runAutoPublicationPass({ now: NOW });
       expect(result).toMatchObject({ deferred: 1, publishFailed: 0 });
-      expect(recorded()).toEqual([]);
+      expect(recorded()).toEqual([
+        expect.objectContaining({ p_outcome: "review", p_reasons: ["publication_deferred"] }),
+      ]);
     },
   );
+
+  it("report sans code : tracé au journal, puis relecture humaine et cron en échec au-delà d'une heure", async () => {
+    const { factId, caseId, saleId } = seedCleanFact();
+    mocks.rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "publish_information_agent_fact_auto"
+          ? { data: null, error: { message: "fetch failed", code: "" } }
+          : { data: true, error: null },
+      ),
+    );
+    const first = await runAutoPublicationPass({ now: NOW });
+    expect(first).toMatchObject({ deferred: 1, publishFailed: 0 });
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_fact_id: factId, p_reasons: ["publication_deferred"] }),
+    ]);
+
+    // Report tracé il y a 20 minutes : encore reporté, rien de plus n'est écrit.
+    const trace = {
+      fact_id: factId,
+      case_id: caseId,
+      sale_id: saleId,
+      fact_key: "surface_m2",
+      outcome: "review",
+      reasons: ["publication_deferred"],
+    };
+    decision({ ...trace, decided_at: "2026-11-20T11:40:00Z" });
+    mocks.rpc.mockClear();
+    expect(await runAutoPublicationPass({ now: NOW })).toMatchObject({
+      deferred: 1,
+      publishFailed: 0,
+    });
+    expect(recorded()).toEqual([]);
+
+    // Report tracé il y a plus d'une heure : relecture humaine, et le cron échouera (publishFailed).
+    db.information_agent_auto_publication_decisions = [];
+    decision({ ...trace, decided_at: "2026-11-20T10:30:00Z" });
+    mocks.rpc.mockClear();
+    expect(await runAutoPublicationPass({ now: NOW })).toMatchObject({
+      deferred: 0,
+      publishFailed: 1,
+    });
+    expect(recorded()).toEqual([
+      expect.objectContaining({ p_fact_id: factId, p_reasons: ["publication_failed"] }),
+    ]);
+  });
 
   it("une réponse inattendue de la RPC est un échec de publication, pas une publication", async () => {
     seedCleanFact();

@@ -10,7 +10,7 @@ begin;
 
 set local timezone = 'UTC';
 
-select plan(67);
+select plan(79);
 
 -- Structure et droits -------------------------------------------------------------------------------------------
 select has_table('public', 'information_agent_auto_publication_arbitrations', 'the verdict table exists');
@@ -246,6 +246,55 @@ select is(
   'the facts to judge exclude a message without DKIM (4) and a multi-lot sale (5)'
 );
 
+-- Minimisation : rien n'est envoyé à Haiku pour une réponse qui ne peut pas être publiée.
+create temporary table list_924 (label text, facts text[]) on commit drop;
+update public.information_agent_messages set metadata = metadata || '{"sender_matches_recipient": false}'
+where id = '92400000-4000-4000-8000-000000000004';
+insert into list_924 select 'other sender', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+update public.information_agent_messages set metadata = metadata || '{"sender_matches_recipient": true, "imported_manually": true}'
+where id = '92400000-4000-4000-8000-000000000004';
+insert into list_924 select 'manual import', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+update public.information_agent_messages set metadata = metadata || '{"imported_manually": false, "channel": "portal"}'
+where id = '92400000-4000-4000-8000-000000000004';
+insert into list_924 select 'portal', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+update public.information_agent_messages set metadata = metadata - 'channel'
+where id = '92400000-4000-4000-8000-000000000004';
+update public.information_agent_cases set recipient_kind = 'source_contact'
+where id = '92400000-3000-4000-8000-000000000003';
+insert into list_924 select 'not the lawyer', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+-- Dossier ni répondu ni en relecture (un dossier clos rejette déjà ses faits en attente).
+update public.information_agent_cases set recipient_kind = 'source_lawyer', status = 'sent'
+where id = '92400000-3000-4000-8000-000000000003';
+insert into list_924 select 'case not replied', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+update public.information_agent_cases set status = 'review'
+where id = '92400000-3000-4000-8000-000000000003';
+-- Opposition reçue dans le dossier (une opposition au registre des contacts rejette déjà les faits en attente).
+update public.information_agent_cases set metadata = '{"last_inbound_contact_opposed": true}'
+where id = '92400000-3000-4000-8000-000000000003';
+insert into list_924 select 'opposed contact', array_agg(right(fact_id::text, 1) order by fact_id)
+  from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50);
+update public.information_agent_cases set metadata = '{}'
+where id = '92400000-3000-4000-8000-000000000003';
+select is(
+  (select array_agg(label || ':' || array_to_string(facts, ',') order by label) from list_924),
+  array[
+    'case not replied:1,2,3', 'manual import:1,2,3', 'not the lawyer:1,2,3', 'opposed contact:1,2,3',
+    'other sender:1,2,3', 'portal:1,2,3'
+  ],
+  'no reply that cannot be published (other sender, import, portal, other recipient, case not replied, opposition) is sent to Haiku'
+);
+select is(
+  (select array_agg(right(fact_id::text, 1) order by fact_id)
+   from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v1', 50)),
+  array['1', '2', '3', '6', '7'],
+  'the facts are judged again once the reply can be published'
+);
+
 -- Verdicts ------------------------------------------------------------------------------------------------------
 select throws_ok(
   $$select public.record_information_agent_auto_publication_arbitration(
@@ -384,8 +433,49 @@ select ok(
   ),
   'Haiku is not called for a fact whose message analysis is not finished'
 );
+
+-- Pièce illisible ou lue en partie : jamais publiée automatiquement, motif distinct (relecture humaine).
+create temporary table unreadable_924 (label text, reasons jsonb) on commit drop;
+update public.information_agent_evidence_extractions set status = 'failed', attempts = 3
+where asset_id = '92400000-6000-4000-8000-000000000001';
+insert into unreadable_924 select 'failed for good', public.publish_information_agent_fact_auto(
+  '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons';
+update public.information_agent_evidence_extractions set status = 'needs_password', attempts = 1
+where asset_id = '92400000-6000-4000-8000-000000000001';
+insert into unreadable_924 select 'password', public.publish_information_agent_fact_auto(
+  '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons';
+update public.information_agent_evidence_extractions set status = 'unsupported'
+where asset_id = '92400000-6000-4000-8000-000000000001';
+insert into unreadable_924 select 'unsupported', public.publish_information_agent_fact_auto(
+  '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons';
 update public.information_agent_evidence_extractions
-set status = 'failed', attempts = 3
+set status = 'processing', attempts = 3, locked_at = now() - interval '2 hours'
+where asset_id = '92400000-6000-4000-8000-000000000001';
+insert into unreadable_924 select 'stuck', public.publish_information_agent_fact_auto(
+  '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons';
+update public.information_agent_evidence_extractions
+set status = 'completed', completed_at = now(),
+    metadata = metadata || '{"reading": {"complete": false, "pages_read": 2, "pages_total": 5}}'
+where asset_id = '92400000-6000-4000-8000-000000000001';
+insert into unreadable_924 select 'partial', public.publish_information_agent_fact_auto(
+  '92400000-5000-4000-8000-000000000001', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons';
+select is(
+  (select array_agg(label || ':' || (reasons ->> 0) order by label) from unreadable_924),
+  array[
+    'failed for good:attachment_unreadable', 'partial:attachment_unreadable', 'password:attachment_unreadable',
+    'stuck:attachment_unreadable', 'unsupported:attachment_unreadable'
+  ],
+  'an attachment never read in full (failed, password, unsupported, stuck, partial) keeps the fact in human review'
+);
+select ok(
+  not exists (
+    select 1 from public.list_information_agent_facts_to_arbitrate('auto_publication_arbiter_v2', 50)
+    where message_id = '92400000-4000-4000-8000-000000000001'
+  ),
+  'Haiku is not called for a fact whose message has an unreadable attachment'
+);
+update public.information_agent_evidence_extractions
+set metadata = metadata || '{"reading": {"complete": true, "pages_read": 5, "pages_total": 5}}'
 where asset_id = '92400000-6000-4000-8000-000000000001';
 
 -- Autres contrôles redits en base ---------------------------------------------------------------------------------------
@@ -508,6 +598,44 @@ select is(
   'the registry holds a single automatic decision'
 );
 
+-- Journal des publications : une ligne ne change que de vente, ne part qu'avec elle -----------------------------------
+select throws_ok(
+  $$update public.information_agent_fact_publications set actor_kind = 'admin', policy_version = null,
+      actor_id = '92400000-0000-4000-8000-0000000000a1'
+    where fact_id = '92400000-5000-4000-8000-000000000001'$$,
+  '55000', null, 'an automatic publication can never be rewritten as an administrator one'
+);
+select throws_ok(
+  $$update public.information_agent_fact_publications set fact_id = gen_random_uuid()
+    where fact_id = '92400000-5000-4000-8000-000000000001'$$,
+  '55000', null, 'the fact of a publication never changes'
+);
+select throws_ok(
+  $$update public.information_agent_fact_publications set policy_version = 'auto_publication_v9'
+    where fact_id = '92400000-5000-4000-8000-000000000001'$$,
+  '55000', null, 'the policy version of a publication never changes'
+);
+select throws_ok(
+  $$delete from public.information_agent_fact_publications
+    where fact_id = '92400000-5000-4000-8000-000000000001'$$,
+  '55000', null, 'a publication is never deleted outside the deletion of its sale'
+);
+select throws_ok(
+  $$truncate public.information_agent_fact_publications$$,
+  '55000', null, 'the publication journal is never emptied'
+);
+select lives_ok(
+  $$update public.information_agent_fact_publications set sale_id = sale_id
+    where fact_id = '92400000-5000-4000-8000-000000000001'$$,
+  'the sale of a publication may still change (merge of records)'
+);
+select ok(
+  (select count(*) = 1 from pg_proc where proname = 'publish_information_agent_fact_auto')
+  and to_regprocedure('public.publish_information_agent_fact_auto(uuid, text, text)') is null
+  and to_regprocedure('app_private.information_agent_message_analysis_pending(uuid)') is null,
+  'no earlier version of the publication RPC or of its helpers remains'
+);
+
 -- Contrôles de sécurité redits en base ---------------------------------------------------------------------------------
 select ok(
   (public.publish_information_agent_fact_auto(
@@ -576,6 +704,17 @@ select throws_ok(
   $$select app_private.apply_information_agent_fact(
       '92400000-5000-4000-8000-000000000002', 'auto', '92400000-0000-4000-8000-0000000000a1', 'auto_publication_v2')$$,
   '22023', null, 'the core still refuses an automatic publication that names a person'
+);
+
+-- Verdict « non appelé » (texte trop long, consigne) : motif distinct de « indisponible » -------------------------------
+select public.record_information_agent_auto_publication_arbitration(
+  '92400000-5000-4000-8000-000000000006', 95, 'skipped', false, null, null,
+  'claude-haiku-5-5', 'auto_publication_arbiter_v1', 'ARBITER_TEXT_TOO_LONG');
+select is(
+  public.publish_information_agent_fact_auto(
+    '92400000-5000-4000-8000-000000000006', 'surface_m2', 'auto_publication_v2', 'auto_publication_arbiter_v1') -> 'reasons',
+  '["arbiter_skipped"]'::jsonb,
+  'a verdict not asked (reply too long, instructions to a model) has its own reason'
 );
 
 -- Refus de Haiku, refus après un accord, autre valeur, plafond du jour -----------------------------------------------------

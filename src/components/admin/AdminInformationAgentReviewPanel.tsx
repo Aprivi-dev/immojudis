@@ -30,6 +30,8 @@ import type { InformationAgentFactSource } from "@/lib/admin-information-agent";
 import { asRecordOrNull as recordValue } from "@/lib/guards";
 import { reviewReasonLabels } from "@/lib/information-agent-review-reasons";
 import { AutoPublicationDecisionNote } from "@/components/admin/AdminInformationAgentAutoPublicationPanel";
+import { fetchAdminRecentAutoPublications } from "@/lib/client-api/admin-auto-publication";
+import type { RecentAutoPublication } from "@/lib/admin-information-agent-auto-publication";
 import {
   FACT_CLAIM_LOT_ATTACHMENTS,
   factClaimDecisionsHref,
@@ -48,6 +50,14 @@ const REVIEWABLE_CASE_STATUSES = new Set(["sending", "sent", "replied", "review"
 
 export function AdminInformationAgentReviewPanel() {
   const queryClient = useQueryClient();
+  // Pages suivantes de « Publiées automatiquement » (la première arrive avec la page de relecture).
+  const [morePublished, setMorePublished] = useState<RecentAutoPublication[]>([]);
+  const loadMorePublished = useMutation({
+    mutationFn: fetchAdminRecentAutoPublications,
+    onSuccess: (next) => setMorePublished((current) => [...current, ...next.items]),
+    onError: (error) =>
+      toast.error(queryErrorMessage(error, "Publications automatiques suivantes indisponibles")),
+  });
   const [openingAssetId, setOpeningAssetId] = useState<string | null>(null);
   const [previewingAssetId, setPreviewingAssetId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ assetId: string; signedUrl: string } | null>(null);
@@ -193,6 +203,14 @@ export function AdminInformationAgentReviewPanel() {
   // Moteur « publier ou relire » : décisions en simulation et en automatique (rien à relire en mode arrêt).
   const autoPublication = page?.autoPublication;
   const autoPublished = page?.autoPublished;
+  // Première page et pages suivantes, sans doublon si la première a été relue entre-temps.
+  const publishedShown = autoPublished
+    ? [
+        ...new Map(
+          [...autoPublished.items, ...morePublished].map((item) => [item.factId, item]),
+        ).values(),
+      ]
+    : [];
   // Tâches du registre (lot C) : nul quand la lecture a échoué (le reste de l'écran s'affiche).
   const withdrawalTasks = page?.withdrawalTasks;
   const pendingRegistryDecisions = page?.pendingRegistryDecisions;
@@ -226,10 +244,9 @@ export function AdminInformationAgentReviewPanel() {
           <h3 id="auto-published-title" className="text-sm font-semibold">
             Publiées automatiquement, 30 derniers jours ({autoPublished.total})
           </h3>
-          {autoPublished.total > autoPublished.items.length ? (
+          {autoPublished.total > publishedShown.length ? (
             <p role="status" className="mt-1 text-xs font-medium text-warning">
-              Seules les {autoPublished.items.length} plus récentes sont affichées sur{" "}
-              {autoPublished.total}. Les autres se retrouvent dans les observations de leur vente.
+              Les {publishedShown.length} plus récentes sont affichées sur {autoPublished.total}.
             </p>
           ) : null}
           <p className="mt-1 text-xs text-brand-navy/70">
@@ -238,7 +255,7 @@ export function AdminInformationAgentReviewPanel() {
             ».
           </p>
           <ul className="mt-2 space-y-1 text-xs">
-            {autoPublished.items.map((item) => (
+            {publishedShown.map((item) => (
               <li key={item.factId}>
                 {factLabel(item.factKey)} : {item.displayValue ?? "valeur purgée"} · vente{" "}
                 <Link href={saleDetailPath(item.saleId)} className="underline">
@@ -252,6 +269,16 @@ export function AdminInformationAgentReviewPanel() {
               </li>
             ))}
           </ul>
+          {autoPublished.total > publishedShown.length ? (
+            <button
+              type="button"
+              className="admin-button-secondary mt-2"
+              disabled={loadMorePublished.isPending}
+              onClick={() => loadMorePublished.mutate(publishedShown.length)}
+            >
+              Afficher les suivantes
+            </button>
+          ) : null}
         </section>
       ) : null}
       {withdrawalTasks === null ? (

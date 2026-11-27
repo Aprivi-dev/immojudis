@@ -60,13 +60,19 @@ jobs:
             --data-urlencode "status=in.(queued,failed,processing)" \
             --data-urlencode "attempts=lt.3" \
             --data-urlencode "limit=1")"
-          facts="$(curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/list_information_agent_facts_to_arbitrate" \
+          # Faits à juger : une panne de cette lecture (RPC absente, erreur, réponse illisible) n'empêche jamais
+          # l'analyse des pièces ; elle est signalée par un avertissement.
+          if ! facts="$(curl -fsS -X POST "${SUPABASE_URL%/}/rest/v1/rpc/list_information_agent_facts_to_arbitrate" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
-            --data '{"p_prompt_version": "auto_publication_arbiter_v1", "p_limit": 1}')"
-          if [ "$(jq 'length' <<< "$response")" -gt 0 ] || [ "$(jq 'length' <<< "$facts")" -gt 0 ]; then
+            --data '{"p_prompt_version": "auto_publication_arbiter_v1", "p_limit": 1}')"; then
+            echo "::warning title=Arbitre de la publication automatique::faits à juger illisibles ; seule l'analyse des pièces décide du lancement."
+            facts='[]'
+          fi
+          facts_count="$(jq 'if type == "array" then length else 0 end' <<< "$facts" 2>/dev/null || echo 0)"
+          if [ "$(jq 'length' <<< "$response")" -gt 0 ] || [ "${facts_count:-0}" -gt 0 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"

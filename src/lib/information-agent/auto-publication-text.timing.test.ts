@@ -109,7 +109,7 @@ describe("plafond de taille du texte analysé", () => {
     otherValuesForSale: 0,
     otherMessages: [],
     fieldFilledInSimulation: false,
-    messageAnalysisPending: false,
+    messageEvidence: "complete",
     arbitration: {
       found: true,
       row: {

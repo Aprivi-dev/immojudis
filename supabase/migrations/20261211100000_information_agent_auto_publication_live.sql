@@ -29,6 +29,8 @@ set local statement_timeout = '60s';
 --          nommé, ou de la publication automatique, et de rien d'autre) ;
 --        * auction_fact_claim_decisions reçoit la colonne policy_version (version de la règle d'une décision
 --          automatique, nulle pour toute décision manuelle ; contrainte auction_fact_claim_decisions_policy_check).
+--      Le journal des publications de l'agent reçoit le déclencheur information_agent_fact_publications_guard :
+--      une ligne ne change que de vente (fusion de fiches), ne part qu'avec sa vente, et n'est jamais vidée.
 --   2. set_information_agent_auto_publication_mode : ne refuse plus « auto » (55000). Toujours is_admin et
 --      auth.uid() : le service ne peut pas changer le mode ; l'arrêt d'urgence est inchangé.
 --   3. public.information_agent_auto_publication_arbitrations : verdicts de Claude Haiku (worker Python du
@@ -100,29 +102,23 @@ set local statement_timeout = '60s';
 -- publication automatique déjà faite (les lignes 'auto' des journaux restent, et les contraintes de forme aussi).
 
 -- 1. Verrous levés, contraintes de forme --------------------------------------------------------------------------
+-- Chaque contrainte de forme est retirée puis recréée (jamais « si absente ») : une base qui aurait vu une version
+-- antérieure de cette migration n'en garde aucune définition périmée.
 -- Réglage : le mode « auto » s'enregistre (la contrainte de la colonne garde la liste des trois modes).
 alter table public.information_agent_auto_publication_settings
   drop constraint if exists information_agent_auto_publication_settings_auto_locked;
 
 -- Journal des publications de l'agent : une ligne 'auto' n'a ni personne ni autre version que celle du moteur, et ne
 -- concerne que l'avocat poursuivant.
-do $$
-begin
-  if not exists (
-    select 1 from pg_catalog.pg_constraint constraint_row
-    where constraint_row.conrelid = 'public.information_agent_fact_publications'::regclass
-      and constraint_row.conname = 'information_agent_fact_publications_auto_shape'
-  ) then
-    alter table public.information_agent_fact_publications
-      add constraint information_agent_fact_publications_auto_shape check (
-        actor_kind <> 'auto' or (
-          actor_id is null and policy_version ~ '^auto_publication_v[0-9]{1,4}$'
-          and recipient_kind = 'source_lawyer'
-        )
-      );
-  end if;
-end;
-$$;
+alter table public.information_agent_fact_publications
+  drop constraint if exists information_agent_fact_publications_auto_shape;
+alter table public.information_agent_fact_publications
+  add constraint information_agent_fact_publications_auto_shape check (
+    actor_kind <> 'auto' or (
+      actor_id is null and policy_version ~ '^auto_publication_v[0-9]{1,4}$'
+      and recipient_kind = 'source_lawyer'
+    )
+  );
 alter table public.information_agent_fact_publications
   drop constraint if exists information_agent_fact_publications_auto_locked;
 
@@ -130,51 +126,85 @@ alter table public.information_agent_fact_publications
 -- décision automatique. Une décision manuelle n'a pas de version (toutes les lignes existantes sont manuelles).
 alter table public.auction_fact_claim_decisions add column if not exists policy_version text;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_catalog.pg_constraint constraint_row
-    where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
-      and constraint_row.conname = 'auction_fact_claim_decisions_policy_check'
-  ) then
-    alter table public.auction_fact_claim_decisions
-      add constraint auction_fact_claim_decisions_policy_check check (
-        (publication_mode = 'auto') = (policy_version is not null)
-        and (policy_version is null or policy_version ~ '^auto_publication_v[0-9]{1,4}$')
-      );
-  end if;
-  if not exists (
-    select 1 from pg_catalog.pg_constraint constraint_row
-    where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
-      and constraint_row.conname = 'auction_fact_claim_decisions_auto_shape'
-  ) then
-    alter table public.auction_fact_claim_decisions
-      add constraint auction_fact_claim_decisions_auto_shape check (
-        publication_mode <> 'auto' or (
-          decision = 'accepted' and actor_kind = 'system' and actor_id is null
-          and information_agent_fact_id is not null and supersedes_decision_id is null
-          and lot_attachment = 'single_lot' and recipient_kind = 'source_lawyer'
-        )
-      );
-  end if;
-  if not exists (
-    select 1 from pg_catalog.pg_constraint constraint_row
-    where constraint_row.conrelid = 'public.auction_fact_claim_decisions'::regclass
-      and constraint_row.conname = 'auction_fact_claim_decisions_accepted_by_admin_or_auto'
-  ) then
-    alter table public.auction_fact_claim_decisions
-      add constraint auction_fact_claim_decisions_accepted_by_admin_or_auto check (
-        decision <> 'accepted'
-        or (actor_kind = 'admin' and actor_id is not null)
-        or (actor_kind = 'system' and actor_id is null and publication_mode = 'auto')
-      );
-  end if;
-end;
-$$;
+alter table public.auction_fact_claim_decisions
+  drop constraint if exists auction_fact_claim_decisions_policy_check;
+alter table public.auction_fact_claim_decisions
+  add constraint auction_fact_claim_decisions_policy_check check (
+    (publication_mode = 'auto') = (policy_version is not null)
+    and (policy_version is null or policy_version ~ '^auto_publication_v[0-9]{1,4}$')
+  );
+alter table public.auction_fact_claim_decisions
+  drop constraint if exists auction_fact_claim_decisions_auto_shape;
+alter table public.auction_fact_claim_decisions
+  add constraint auction_fact_claim_decisions_auto_shape check (
+    publication_mode <> 'auto' or (
+      decision = 'accepted' and actor_kind = 'system' and actor_id is null
+      and information_agent_fact_id is not null and supersedes_decision_id is null
+      and lot_attachment = 'single_lot' and recipient_kind = 'source_lawyer'
+    )
+  );
+alter table public.auction_fact_claim_decisions
+  drop constraint if exists auction_fact_claim_decisions_accepted_by_admin_or_auto;
+alter table public.auction_fact_claim_decisions
+  add constraint auction_fact_claim_decisions_accepted_by_admin_or_auto check (
+    decision <> 'accepted'
+    or (actor_kind = 'admin' and actor_id is not null)
+    or (actor_kind = 'system' and actor_id is null and publication_mode = 'auto')
+  );
 alter table public.auction_fact_claim_decisions
   drop constraint if exists auction_fact_claim_decisions_auto_locked;
 alter table public.auction_fact_claim_decisions
   drop constraint if exists auction_fact_claim_decisions_accepted_by_admin;
+
+-- Journal des publications de l'agent : une ligne écrite n'est plus réécrite. Seule la vente peut changer (fusion de
+-- fiches, 20261118100200 : le journal suit la fiche conservée) ; l'auteur ne passe à nul que par la suppression de
+-- son compte (clé étrangère « on delete set null »). Une ligne ne part qu'avec sa vente (suppression en cascade) ;
+-- aucun vidage. Ni l'auteur, ni le type d'auteur, ni la version, ni le fait d'une ligne 'admin' ou 'auto' ne peuvent
+-- donc être changés après coup.
+create or replace function app_private.information_agent_fact_publications_guard()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if not exists (select 1 from public.auction_sales sale where sale.id = old.sale_id) then
+      return old;
+    end if;
+    raise exception using errcode = '55000',
+      message = 'Le journal des publications de l''agent ne perd une ligne qu''avec sa vente.';
+  end if;
+  if (pg_catalog.to_jsonb(new) - 'sale_id' - 'actor_id')
+      is distinct from (pg_catalog.to_jsonb(old) - 'sale_id' - 'actor_id')
+    or (
+      new.actor_id is distinct from old.actor_id
+      and not (
+        new.actor_id is null
+        and not exists (select 1 from auth.users account where account.id = old.actor_id)
+      )
+    )
+  then
+    raise exception using errcode = '55000',
+      message = 'Une ligne du journal des publications de l''agent ne change que de vente.';
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function app_private.information_agent_fact_publications_guard()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists information_agent_fact_publications_guard on public.information_agent_fact_publications;
+create trigger information_agent_fact_publications_guard
+  before update or delete on public.information_agent_fact_publications
+  for each row execute function app_private.information_agent_fact_publications_guard();
+
+drop trigger if exists information_agent_fact_publications_no_truncate
+  on public.information_agent_fact_publications;
+create trigger information_agent_fact_publications_no_truncate
+  before truncate on public.information_agent_fact_publications
+  for each statement execute function app_private.information_agent_auto_publication_append_only();
 
 comment on column public.auction_fact_claim_decisions.policy_version is
   'Version de la règle de publication automatique (auto_publication_vN) d''une décision automatique ; nulle pour toute décision manuelle.';
@@ -250,27 +280,48 @@ $$;
 revoke all on function app_private.information_agent_auto_publication_value(jsonb)
   from public, anon, authenticated, service_role;
 
--- Une analyse du message (pièce jointe, ou corps relu par l'IA) est en file, en cours, ou en échec avec des essais
--- restants (claim_information_agent_evidence_extractions reprend jusqu'à 3 essais) : ce que le message dit n'est pas
--- encore tout lu (un PDF joint peut contredire le corps), rien n'est publié ni jugé (motif evidence_pending).
-create or replace function app_private.information_agent_message_analysis_pending(p_message_id uuid)
-returns boolean
+-- État des analyses du message (pièces jointes, et corps relu par l'IA) : ce que le message dit doit être LU EN ENTIER
+-- avant tout jugement ou publication (un PDF joint peut contredire le corps).
+--   * 'pending' (motif evidence_pending) : une analyse est en file ou en échec avec des essais restants
+--     (claim_information_agent_evidence_extractions reprend jusqu'à 3 essais), ou en cours et encore reprenable ;
+--   * 'unreadable' (motif attachment_unreadable) : une analyse ne lira jamais tout le message : protégée par un mot de
+--     passe (needs_password), non prise en charge (unsupported), en échec définitif, bloquée en cours avec ses essais
+--     épuisés, ou terminée sans lecture complète (metadata.reading.complete différent de true : pages non lues,
+--     texte coupé, lecture par l'IA bornée) ;
+--   * null : toutes les analyses du message sont terminées avec une lecture complète (ou il n'y en a aucune).
+-- Une analyse « pending » l'emporte : le motif dit qu'il faut attendre.
+drop function if exists app_private.information_agent_message_analysis_pending(uuid);
+create or replace function app_private.information_agent_message_evidence_state(p_message_id uuid)
+returns text
 language sql
 stable
 set search_path = ''
 as $$
-  select exists (
-    select 1
+  with analyses as (
+    select
+      (extraction.status in ('queued', 'failed') and extraction.attempts < 3)
+        or (
+          extraction.status = 'processing'
+          and (
+            extraction.attempts < 3
+            or extraction.locked_at >= pg_catalog.statement_timestamp() - interval '45 minutes'
+          )
+        ) as pending,
+      not (
+        extraction.status = 'completed'
+        and coalesce(extraction.metadata #> '{reading,complete}', 'false'::jsonb) = 'true'::jsonb
+      ) as incomplete
     from public.information_agent_evidence_extractions extraction
     where extraction.message_id = p_message_id
-      and (
-        extraction.status in ('queued', 'processing')
-        or (extraction.status = 'failed' and extraction.attempts < 3)
-      )
-  );
+  )
+  select case
+    when bool_or(analyses.pending) then 'pending'
+    when bool_or(analyses.incomplete) then 'unreadable'
+  end
+  from analyses;
 $$;
 
-revoke all on function app_private.information_agent_message_analysis_pending(uuid)
+revoke all on function app_private.information_agent_message_evidence_state(uuid)
   from public, anon, authenticated, service_role;
 
 -- Message entrant traité sans motif de relecture bloquant : même règle que processedForPublication
@@ -479,9 +530,11 @@ grant execute on function public.record_information_agent_auto_publication_arbit
 
 -- Faits à juger par Haiku (worker Python, et contrôle préalable du workflow information-agent-evidence.yml), le plus
 -- ancien d'abord, filtrés en base (pas de famine derrière des faits déjà jugés) : mode simulation ou automatique ;
--- fait en attente, du corps du message, de la liste fermée, reçu depuis 45 jours, valeur lisible ; message
--- authentifié (DKIM et DMARC « pass »), champ vide sur la fiche et vente à un seul lot (aucun appel pour un fait que
--- les conditions structurelles écartent déjà) ; aucune analyse du message en cours ou à reprendre ; aucun verdict
+-- fait en attente, du corps du message, de la liste fermée, reçu depuis 45 jours, valeur lisible ; réponse e-mail
+-- (ni import ni portail) de l'adresse contactée, authentifiée (DKIM et DMARC « pass »), à un dossier de l'avocat
+-- poursuivant répondu ou en relecture, sans opposition (dossier ou contact), champ vide sur la fiche et vente à un
+-- seul lot (minimisation : aucune donnée envoyée à Haiku pour une réponse qui ne peut pas être publiée) ; message lu
+-- en entier (aucune analyse en cours, à reprendre, illisible ou lue en partie) ; aucun verdict
 -- final (completed, skipped) de cette version du prompt pour cette valeur ; un verdict passager (unavailable,
 -- invalid_output) est refait au plus 3 fois en tout, une heure au moins après le précédent.
 create or replace function public.list_information_agent_facts_to_arbitrate(
@@ -524,16 +577,30 @@ begin
     select app_private.information_agent_auto_publication_value(fact.proposed_value) as value
   ) candidate
   join public.information_agent_messages message on message.id = fact.message_id
+  join public.information_agent_cases case_row on case_row.id = fact.case_id
   where fact.status = 'pending'
     and fact.reviewed_by is null
     and fact.evidence_asset_id is null
     and fact.fact_key in ('surface_m2', 'land_surface_m2', 'rooms_count')
     and fact.created_at >= pg_catalog.statement_timestamp() - interval '45 days'
     and candidate.value is not null
+    -- Minimisation : rien n'est envoyé à Haiku pour une réponse qui ne peut pas être publiée.
+    and message.direction = 'inbound'
+    and (message.metadata ->> 'imported_manually') = 'false'
+    and coalesce(message.metadata ->> 'channel', 'email') = 'email'
+    and (message.metadata ->> 'sender_matches_recipient') = 'true'
     and (message.metadata #>> '{sender_authentication,dkim}') = 'pass'
     and (message.metadata #>> '{sender_authentication,dmarc}') = 'pass'
+    and case_row.recipient_kind = 'source_lawyer'
+    and case_row.status in ('replied', 'review')
+    and coalesce(case_row.metadata ->> 'last_inbound_contact_opposed', 'false') = 'false'
+    and not exists (
+      select 1 from public.information_agent_contacts contact
+      where contact.normalized_email = case_row.normalized_recipient_email
+        and contact.opposition_status = 'opposed'
+    )
     and cardinality(app_private.information_agent_auto_publication_sale_blocks(fact.sale_id, fact.fact_key)) = 0
-    and not app_private.information_agent_message_analysis_pending(fact.message_id)
+    and app_private.information_agent_message_evidence_state(fact.message_id) is null
     and not exists (
       select 1 from public.information_agent_auto_publication_arbitrations verdict
       where verdict.fact_id = fact.id and verdict.prompt_version = p_prompt_version
@@ -606,7 +673,7 @@ alter table public.information_agent_auto_publication_decisions
       'field_already_filled_in_simulation', 'implausible_value', 'daily_cap_reached',
       'case_cap_reached', 'other_message_in_case', 'contact_opposed', 'multi_lot_sale', 'arbiter_pending',
       'arbiter_unavailable', 'arbiter_declined', 'arbiter_value_mismatch', 'publication_failed',
-      'evidence_pending'
+      'evidence_pending', 'attachment_unreadable', 'arbiter_skipped', 'publication_deferred'
     ]::text[]
   );
 
@@ -1191,6 +1258,9 @@ revoke all on function app_private.accept_information_agent_claim_automatically(
   from public, anon, authenticated, service_role;
 
 -- 7. Publication automatique : le seul chemin d'écriture 'auto' -----------------------------------------------------
+-- Signature à trois arguments d'une version antérieure de cette migration : retirée, pour qu'il ne reste qu'un chemin.
+drop function if exists public.publish_information_agent_fact_auto(uuid, text, text);
+
 create or replace function public.publish_information_agent_fact_auto(
   p_fact_id uuid,
   p_fact_key text,
@@ -1215,6 +1285,7 @@ declare
   v_day_start timestamptz;
   v_claim_id uuid;
   v_registry jsonb;
+  v_evidence text;
 begin
   if p_policy_version is null or p_policy_version !~ '^auto_publication_v[0-9]{1,4}$' then
     raise exception using errcode = '22023', message = 'Invalid policy version.';
@@ -1294,10 +1365,13 @@ begin
     end if;
   end if;
 
-  -- Toutes les analyses du message sont finies : une pièce jointe ou la lecture du corps encore en file, en cours
-  -- ou à reprendre peut contredire la valeur.
-  if app_private.information_agent_message_analysis_pending(v_fact.message_id) then
+  -- Tout le message est lu : une pièce jointe ou la lecture du corps encore en file, en cours ou à reprendre peut
+  -- contredire la valeur ; une pièce illisible ou lue en partie renvoie à la relecture humaine.
+  v_evidence := app_private.information_agent_message_evidence_state(v_fact.message_id);
+  if v_evidence = 'pending' then
     v_reasons := v_reasons || 'evidence_pending'::text;
+  elsif v_evidence is not null then
+    v_reasons := v_reasons || 'attachment_unreadable'::text;
   end if;
 
   select case_row.recipient_kind, case_row.status, case_row.metadata, case_row.normalized_recipient_email,
@@ -1358,6 +1432,8 @@ begin
   limit 1;
   if not found or v_arbitration.prompt_version is distinct from p_arbiter_version then
     v_reasons := v_reasons || 'arbiter_pending'::text;
+  elsif v_arbitration.status = 'skipped' then
+    v_reasons := v_reasons || 'arbiter_skipped'::text;
   elsif v_arbitration.status <> 'completed' then
     v_reasons := v_reasons || 'arbiter_unavailable'::text;
   elsif not v_arbitration.publish then

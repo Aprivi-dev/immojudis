@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   reviewFact: vi.fn(),
   messageAction: vi.fn(),
   updateRights: vi.fn(),
+  fetchRecentAutoPublications: vi.fn(),
+}));
+
+vi.mock("@/lib/client-api/admin-auto-publication", () => ({
+  fetchAdminRecentAutoPublications: mocks.fetchRecentAutoPublications,
 }));
 
 vi.mock("@/lib/client-api", () => ({
@@ -249,8 +254,43 @@ describe("AdminInformationAgentReviewPanel", () => {
       await screen.findByText("Publiées automatiquement, 30 derniers jours (250)"),
     ).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain(
-      "Seules les 1 plus récentes sont affichées sur 250.",
+      "Les 1 plus récentes sont affichées sur 250.",
     );
+  });
+
+  it("shows the next automatic publications on demand until the total is reached", async () => {
+    const published = (index: number) => ({
+      factId: `44444444-4444-4444-8444-44444444444${index}`,
+      factKey: "surface_m2",
+      displayValue: `${50 + index} m²`,
+      saleId: "11111111-1111-4111-8111-111111111111",
+      publishedAt: "2026-11-27T09:00:00.000Z",
+    });
+    mocks.fetchReview.mockResolvedValue({
+      facts: [],
+      messages: [],
+      cases: [],
+      assets: [],
+      extractions: [],
+      offset: 0,
+      limit: 50,
+      total: 0,
+      autoPublication: { mode: "auto", decisions: {} },
+      autoPublished: { items: [published(1)], total: 2 },
+    });
+    mocks.fetchRecentAutoPublications.mockResolvedValue({ items: [published(2)], total: 2 });
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <AdminInformationAgentReviewPanel />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Afficher les suivantes" }));
+    expect(await screen.findByText(/52 m²/)).toBeTruthy();
+    expect(mocks.fetchRecentAutoPublications).toHaveBeenCalledWith(1, expect.anything());
+    expect(screen.queryByRole("button", { name: "Afficher les suivantes" })).toBeNull();
+    expect(screen.queryByText(/plus récentes sont affichées/)).toBeNull();
   });
 
   it("shows where each fact comes from (email, portal or manual import)", async () => {

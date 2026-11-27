@@ -209,12 +209,16 @@ function staticReview(reason: AutoPublicationReason): AutoPublicationReviewDecis
 }
 
 /**
- * Fenêtre et nombre de lignes affichées de la liste « Publiées automatiquement » de l'onglet Réponses. Le plafond
- * de 10 publications par jour en permet jusqu'à 310 sur la fenêtre : le total exact est lu et l'écran dit quand la
- * liste est tronquée.
+ * Fenêtre et taille d'une page de la liste « Publiées automatiquement » de l'onglet Réponses. Le plafond de 10
+ * publications par jour en permet jusqu'à 310 sur la fenêtre : le total exact est lu, et l'écran affiche les pages
+ * suivantes à la demande (« Afficher les suivantes »).
  */
 const RECENT_AUTO_PUBLICATION_DAYS = 30;
 const RECENT_AUTO_PUBLICATION_LIMIT = 100;
+/** Pages suivantes : décalage borné (au-delà du maximum possible sur la fenêtre). */
+export const recentAutoPublicationsQuerySchema = z.object({
+  offset: z.coerce.number().int().min(0).max(1_000).default(0),
+});
 
 export type RecentAutoPublication = {
   factId: string;
@@ -226,7 +230,7 @@ export type RecentAutoPublication = {
 };
 
 export type RecentAutoPublications = {
-  /** Les plus récentes d'abord, au plus `RECENT_AUTO_PUBLICATION_LIMIT`. */
+  /** Les plus récentes d'abord, une page de `RECENT_AUTO_PUBLICATION_LIMIT` au plus à partir du décalage demandé. */
   items: RecentAutoPublication[];
   /** Nombre exact de publications de la fenêtre (supérieur à `items.length` quand la liste est tronquée). */
   total: number;
@@ -239,15 +243,17 @@ export type RecentAutoPublications = {
  */
 export async function listRecentAutoPublications(
   now = new Date(),
+  offset = 0,
 ): Promise<RecentAutoPublications> {
   const since = new Date(now.getTime() - RECENT_AUTO_PUBLICATION_DAYS * 24 * 60 * 60 * 1000);
   const { data, error, count } = await supabaseAdmin
     .from("information_agent_auto_publication_decisions")
-    .select("fact_id,fact_key,sale_id,decided_at", { count: "exact" })
+    .select("id,fact_id,fact_key,sale_id,decided_at", { count: "exact" })
     .eq("outcome", "published")
     .gte("decided_at", since.toISOString())
     .order("decided_at", { ascending: false })
-    .limit(RECENT_AUTO_PUBLICATION_LIMIT);
+    .order("id", { ascending: false })
+    .range(offset, offset + RECENT_AUTO_PUBLICATION_LIMIT - 1);
   if (error) throw error;
   const rows = data ?? [];
   // Total inconnu : la liste ne peut pas dire si elle est complète, elle est donc indisponible.
@@ -270,6 +276,15 @@ export async function listRecentAutoPublications(
       saleId: row.sale_id,
       publishedAt: row.decided_at,
     })),
-    total: Math.max(count, rows.length),
+    total: Math.max(count, offset + rows.length),
   };
+}
+
+/** Page suivante de la liste « Publiées automatiquement » (administrateur seulement). */
+export async function listAdminRecentAutoPublications(
+  authToken: string,
+  offset: number,
+): Promise<RecentAutoPublications> {
+  await assertAdminAuth(authToken);
+  return listRecentAutoPublications(new Date(), offset);
 }

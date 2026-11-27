@@ -5,8 +5,10 @@ import {
   AUTO_PUBLICATION_ELIGIBLE_FIELDS,
   AUTO_PUBLICATION_MODES,
   AUTO_PUBLICATION_POLICY_VERSION,
+  messageEvidenceState,
   planAutoPublicationDecisions,
   proposedNumber,
+  type MessageEvidenceAnalysis,
   type AutoPublicationCounters,
   type AutoPublicationMode,
   type AutoPublicationPlanItem,
@@ -39,11 +41,6 @@ const AUTO_PUBLICATION_REQUEST_ROWS = 1000;
 const PASS_TIME_BUDGET_MS = 60_000;
 /** La boucle d'écriture s'arrête après ce nombre d'échecs consécutifs du même code. */
 const MAX_SAME_ERROR_STREAK = 3;
-/**
- * Essais d'une analyse de pièce : `claim_information_agent_evidence_extractions` reprend une analyse tant que
- * `attempts < 3` (même borne que `app_private.information_agent_message_analysis_pending`, migration 20261211100000).
- */
-const EVIDENCE_MAX_ATTEMPTS = 3;
 
 /** Échec d'une lecture d'état global : la passe s'arrête sans rien écrire (code seul, sans détail). */
 export class AutoPublicationPassError extends Error {
@@ -349,7 +346,7 @@ function sameValue(left: unknown, right: unknown): boolean {
 }
 
 /** Contexte de chaque fait du lot : message, messages postérieurs, dossier, vente, autres valeurs, pièce. */
-async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlanItem[]> {
+async function buildPlanItems(plan: CandidateRow[], now: Date): Promise<AutoPublicationPlanItem[]> {
   const caseIds = plan.map((row) => row.case_id);
   const saleIds = plan.map((row) => row.sale_id);
   const assetIds = plan.flatMap((row) => (row.evidence_asset_id ? [row.evidence_asset_id] : []));
@@ -422,28 +419,30 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
         .order("id", { ascending: false })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
-    // Analyses des messages des faits encore en file, en cours ou en échec (pièces jointes, lecture du corps).
+    // Toutes les analyses des messages des faits (pièces jointes, lecture du corps) : état et lecture complète.
     readInChunks("analyses", messageIds, (ids) =>
       supabaseAdmin
         .from("information_agent_evidence_extractions")
-        .select("id,message_id,status,attempts", { count: "exact" })
+        .select("id,message_id,status,attempts,locked_at,complete:metadata->reading->complete", {
+          count: "exact",
+        })
         .in("message_id", ids)
-        .in("status", ["queued", "processing", "failed"])
         .order("id", { ascending: true })
         .limit(AUTO_PUBLICATION_REQUEST_ROWS),
     ),
   ]);
-  // Messages dont une analyse est en file, en cours ou en échec avec des essais restants.
-  const pendingAnalysisMessages = new Set(
-    (analyses ?? [])
-      .filter(
-        (row) =>
-          row.status === "queued" ||
-          row.status === "processing" ||
-          (row.status === "failed" && row.attempts < EVIDENCE_MAX_ATTEMPTS),
-      )
-      .map((row) => row.message_id),
-  );
+  const analysesByMessage = new Map<string, MessageEvidenceAnalysis[]>();
+  for (const row of analyses ?? []) {
+    analysesByMessage.set(row.message_id, [
+      ...(analysesByMessage.get(row.message_id) ?? []),
+      {
+        status: row.status,
+        attempts: row.attempts,
+        lockedAt: row.locked_at,
+        complete: row.complete,
+      },
+    ]);
+  }
   // Opposition du destinataire (registre des contacts, toute portée), lue après le dossier.
   const recipients = (cases ?? []).flatMap((row) =>
     row.normalized_recipient_email ? [row.normalized_recipient_email] : [],
@@ -575,7 +574,9 @@ async function buildPlanItems(plan: CandidateRow[]): Promise<AutoPublicationPlan
           : null,
         // Calculé par le plan à partir des compteurs.
         fieldFilledInSimulation: false,
-        messageAnalysisPending: analyses ? pendingAnalysisMessages.has(row.message_id) : null,
+        messageEvidence: analyses
+          ? messageEvidenceState(analysesByMessage.get(row.message_id) ?? [], now)
+          : null,
         readFailed:
           !messages ||
           !cases ||
@@ -610,6 +611,13 @@ function sameDecision(
  * sans rien réécrire).
  */
 const TRANSIENT_PUBLISH_CODES = new Set(["55P03", "40001", "40P01", "", "unknown"]);
+/** Erreurs sans code (réseau, réponse perdue) : reportées, mais tracées au journal (`publication_deferred`). */
+const UNCODED_PUBLISH_CODES = new Set(["", "unknown"]);
+/**
+ * Au-delà de ce délai depuis le premier report sans code (trace `publication_deferred` au journal), le fait passe en
+ * relecture humaine (`publication_failed`, jamais retenté) et le cron échoue : un report sans fin reste visible.
+ */
+const DEFERRAL_ESCALATION_MS = 60 * 60 * 1000;
 
 /** Réponse de la RPC de publication, validée : une forme inconnue est un échec de publication. */
 const publishResultSchema = z.object({
@@ -622,7 +630,9 @@ const publishResultSchema = z.object({
  * Automatique : une relecture est inscrite au journal ; « publier » appelle `publish_information_agent_fact_auto`,
  * qui relit le mode sous verrou et publie (ou écrit lui-même la relecture). Une publication en échec est laissée en
  * relecture (motif `publication_failed`) et n'est plus retentée ; un verrou d'import, un conflit ou une erreur réseau
- * la remet à la passe suivante (un fait déjà publié n'est jamais republié). Le budget de temps est vérifié avant le
+ * la remet à la passe suivante (un fait déjà publié n'est jamais republié). Une erreur sans code est tracée au
+ * journal (`publication_deferred`) ; si elle dure plus d'une heure, le fait passe en `publication_failed` et le cron
+ * échoue. Le budget de temps est vérifié avant le
  * calcul de chaque décision. Hors de ces deux modes, rien n'est lu ni calculé. Une lecture du contexte d'un fait qui échoue ou
  * est tronquée donne « relecture » (motif `input_unreadable`). Une lecture d'état global (mode, liste des faits,
  * dernières décisions, compteurs) qui échoue ou est tronquée arrête la passe en échec SANS RIEN ÉCRIRE.
@@ -669,7 +679,7 @@ export async function runAutoPublicationPass({
     ? await loadCounters(now, plan, mode === "auto" ? "published" : "would_publish")
     : { today: 0, byCase: new Map<string, number>(), filled: new Set<string>() };
   if (!counters) throw new AutoPublicationPassError("counters_unreadable");
-  const items = plan.length ? await buildPlanItems(plan) : [];
+  const items = plan.length ? await buildPlanItems(plan, now) : [];
 
   const result: Extract<AutoPublicationPassResult, { examined: number }> = {
     status: "done",
@@ -769,8 +779,23 @@ export async function runAutoPublicationPass({
       }
       const code = error ? errorCode(error) : "invalid_result";
       logFailure("publish", { code });
-      if (TRANSIENT_PUBLISH_CODES.has(code)) {
+      const previous = latest.get(item.factId);
+      const deferredSince =
+        previous?.outcome === "review" && previous.reasons.includes("publication_deferred")
+          ? Date.parse(previous.decidedAt)
+          : null;
+      const deferredTooLong =
+        UNCODED_PUBLISH_CODES.has(code) &&
+        deferredSince !== null &&
+        Number.isFinite(deferredSince) &&
+        now.getTime() - deferredSince >= DEFERRAL_ESCALATION_MS;
+      if (TRANSIENT_PUBLISH_CODES.has(code) && !deferredTooLong) {
         result.deferred += 1;
+        // Trace du premier report sans code : rien n'est écrit si la publication a en fait été faite (le journal
+        // refuse un fait qui n'est plus en attente).
+        if (UNCODED_PUBLISH_CODES.has(code) && deferredSince === null) {
+          await recordDecision(item, "review", ["publication_deferred"]);
+        }
         continue;
       }
       result.publishFailed += 1;

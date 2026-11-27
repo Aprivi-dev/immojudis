@@ -157,6 +157,12 @@ export const AUTO_PUBLICATION_REASON_LABELS = {
   publication_failed: "la publication a échoué : relecture humaine",
   evidence_pending:
     "une analyse du message (pièce jointe ou lecture du corps) est en cours ou à reprendre",
+  attachment_unreadable:
+    "une pièce du message (ou la lecture du corps) n’a pas pu être lue en entier : mot de passe, format non pris en charge, échec ou lecture partielle",
+  arbiter_skipped:
+    "l’IA n’a pas été appelée : réponse trop longue pour être lue en entier, ou consignes adressées à un modèle",
+  publication_deferred:
+    "publication reportée après une erreur réseau ; nouvel essai à la passe suivante",
 } as const satisfies Record<string, string>;
 
 export type AutoPublicationReason = keyof typeof AUTO_PUBLICATION_REASON_LABELS;
@@ -164,6 +170,54 @@ export type AutoPublicationReason = keyof typeof AUTO_PUBLICATION_REASON_LABELS;
 export type AutoPublicationDecision =
   | { outcome: "would_publish"; reasons: [] }
   | { outcome: "review"; reasons: AutoPublicationReason[] };
+
+/** Lecture du message : voir `messageEvidenceState`. */
+export type MessageEvidenceState = "complete" | "pending" | "unreadable";
+
+/** Une analyse d'une pièce du message (ou de son corps), telle que lue en base. */
+export type MessageEvidenceAnalysis = {
+  status: string;
+  attempts: number;
+  lockedAt: string | null;
+  /** `metadata.reading.complete` de l'analyse : true seulement si tout a été lu, sans coupure. */
+  complete: unknown;
+};
+
+/**
+ * Essais d'une analyse : `claim_information_agent_evidence_extractions` reprend une analyse tant que `attempts < 3`,
+ * et une analyse en cours depuis 45 minutes. Mêmes bornes que `app_private.information_agent_message_evidence_state`
+ * (migration 20261211100000).
+ */
+const EVIDENCE_MAX_ATTEMPTS = 3;
+const EVIDENCE_STALE_LOCK_MS = 45 * 60 * 1000;
+
+/**
+ * État de la lecture d'un message, à partir de ses analyses (même règle que la base) : « pending » si une analyse est
+ * en file ou en échec avec des essais restants, ou en cours et encore reprenable ; sinon « unreadable » si une
+ * analyse ne lira jamais tout (mot de passe, format non pris en charge, échec définitif, bloquée avec ses essais
+ * épuisés, ou terminée sans lecture complète) ; sinon « complete ».
+ */
+export function messageEvidenceState(
+  analyses: readonly MessageEvidenceAnalysis[],
+  now: Date,
+): MessageEvidenceState {
+  const pending = analyses.some((analysis) => {
+    if (analysis.status === "queued" || analysis.status === "failed") {
+      return analysis.attempts < EVIDENCE_MAX_ATTEMPTS;
+    }
+    if (analysis.status !== "processing") return false;
+    const locked = timestamp(analysis.lockedAt);
+    return (
+      analysis.attempts < EVIDENCE_MAX_ATTEMPTS ||
+      (locked !== null && locked >= now.getTime() - EVIDENCE_STALE_LOCK_MS)
+    );
+  });
+  if (pending) return "pending";
+  const unreadable = analyses.some(
+    (analysis) => analysis.status !== "completed" || analysis.complete !== true,
+  );
+  return unreadable ? "unreadable" : "complete";
+}
 
 /** Un autre message entrant du même dossier ; `after` : reçu après celui du fait. */
 type AutoPublicationOtherMessage = {
@@ -241,10 +295,10 @@ export type AutoPublicationInput = {
   /** Un autre fait a déjà « rempli » ce champ de la vente (simulé ou publié). */
   fieldFilledInSimulation: boolean | null;
   /**
-   * Une analyse du message (pièce jointe, ou corps relu par l'IA) est en file, en cours ou en échec avec des essais
-   * restants : ce que dit le message n'est pas encore tout lu. Null si illisible.
+   * Lecture du message (pièces jointes, et corps relu par l'IA), voir `messageEvidenceState` : tout lu en entier,
+   * une analyse encore en cours ou à reprendre, ou une pièce qui ne sera jamais lue en entier. Null si illisible.
    */
-  messageAnalysisPending: boolean | null;
+  messageEvidence: MessageEvidenceState | null;
   /** Une lecture annexe a échoué (journal, vente…) : relecture, motif `input_unreadable`. */
   readFailed?: boolean;
 };
@@ -495,9 +549,11 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     else reasons.add("attachment_source");
   }
   if (!record(candidate.metadata)) reasons.add("input_unreadable");
-  // Toutes les analyses du message sont finies : une pièce jointe encore à lire peut contredire le corps.
-  if (input.messageAnalysisPending === null) reasons.add("input_unreadable");
-  else if (input.messageAnalysisPending) reasons.add("evidence_pending");
+  // Tout le message est lu en entier : une pièce jointe encore à lire peut contredire le corps ; une pièce illisible
+  // ou lue en partie renvoie à la relecture humaine.
+  if (input.messageEvidence === null) reasons.add("input_unreadable");
+  else if (input.messageEvidence === "pending") reasons.add("evidence_pending");
+  else if (input.messageEvidence === "unreadable") reasons.add("attachment_unreadable");
 
   // 3. Aucune autre valeur pour ce champ, ni dans la réponse ni pour la vente.
   if (input.otherCandidatesForKey === null) reasons.add("input_unreadable");
@@ -532,7 +588,8 @@ export function decideAutoPublication(input: AutoPublicationInput): AutoPublicat
     arbitration.prompt_version !== AUTO_PUBLICATION_ARBITER_VERSION
   ) {
     reasons.add("arbiter_pending");
-  } else if (arbitration.status !== "completed") reasons.add("arbiter_unavailable");
+  } else if (arbitration.status === "skipped") reasons.add("arbiter_skipped");
+  else if (arbitration.status !== "completed") reasons.add("arbiter_unavailable");
   else if (!arbitration.publish) reasons.add("arbiter_declined");
   else if (value === null || arbitration.value !== value) reasons.add("arbiter_value_mismatch");
 

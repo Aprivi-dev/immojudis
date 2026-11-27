@@ -150,8 +150,11 @@ select throws_ok(
     )$$,
   '23514', null, 'the recipient of the case is one of the three known kinds'
 );
+-- Le journal refuse toute suppression hors cascade de la vente (20261211100000) : nettoyage hors déclencheurs.
+set local session_replication_role = replica;
 delete from public.information_agent_fact_publications
 where fact_id = '87800000-9000-4000-8000-000000000001';
+set local session_replication_role = origin;
 
 -- Jeu d'essai : un dossier, une réponse reçue, des faits candidats -----------------------------------------------
 -- Le pont vers auction_fact_claims est un déclencheur différé (il passe après l'écriture de la fiche, avant
