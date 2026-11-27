@@ -94,6 +94,15 @@ import { EMAIL_TEMPLATES } from "./registry";
  *
  * Ajout du 26/11/2026 (email unique de prise en main, validé par le propriétaire) : empreinte du nouveau
  * gabarit onboarding, mesurée à sa création. Aucune autre empreinte ne change.
+ *
+ * Mise à jour explicite du 27/11/2026 (publication automatique de certaines informations des réponses, décision du
+ * propriétaire) : les empreintes de agent_request et agent_court_registry ont changé, et SEULEMENT celles-là. Les
+ * deux rendus changent la première ligne sous la signature (« Une IA aide à lire et classer les réponses. Certaines
+ * informations d’une réponse par email de l’avocat poursuivant peuvent être reprises sur la fiche sans relecture
+ * préalable par notre équipe ; les autres sont relues avant toute mise à jour. ») ; agent_request change en plus la
+ * note du dépôt privé (« Ce qui y est déposé est relu par notre équipe avant toute publication. ») et l'introduction
+ * du modèle (révision 12). En remettant les trois anciennes phrases dans le rendu, chaque rendu redonne l'empreinte
+ * d'avant (vérifié). Textes gardés mot pour mot par emails/information-request.test.tsx.
  */
 const BASELINE: Record<string, string> = {
   alert: "e5edf96964d49e74667515e78a52b1853863b288b42023e733b41bc5090c1b0f",
@@ -109,8 +118,8 @@ const BASELINE: Record<string, string> = {
   lawyer_referral: "13e2a2e884e8138a6afb70af09f463d85401002d5e4028961adbff98c21a6e89",
   operations_incident: "1e060cf4fa5ff9c44ea4d501b95f3962eea981cd5aadb410f39d6e446f3dd5cc",
   replies_review_digest: "f7297b7ee825ceccae19102bbff8a98ffd01ae4c55e07ae4a1f8b0eb268a0852",
-  agent_request: "ab04a4ffa91349ba24009ed3b05bd2051244c7ee476c7594a5a1c37e04370fc9",
-  agent_court_registry: "d404b8cd9c0b7c7cc77d94b02110b1d2d47ef9b77d9f68a207d64414af648c24",
+  agent_request: "7a7d440ad125e4209836cedcfc63bc3179492235ae33462169be6dd07091091d",
+  agent_court_registry: "411c4ada3730a02e0b63ad9ce27f92c461c96ca31ffc9bb19743641ed3d0f383",
 };
 
 async function fingerprints(key: string): Promise<string[]> {

@@ -31,7 +31,9 @@ const AUTOMATIC_SENTENCES = [
   "L’outil n’écrit qu’à l’avocat dont l’adresse figure dans l’annonce publique de la vente, et ne pose que des questions d’une liste fixe sur les informations absentes de l’annonce.",
   "Le texte est un modèle fixe : il n’est pas rédigé par une IA.",
   "Cet envoi ne produit aucun effet juridique à votre égard et ne vous affecte d’aucune autre manière importante : ce n’est pas une décision prise à votre sujet au sens de l’article 22 du RGPD. Répondre est facultatif ; ne pas répondre n’a aucune conséquence pour vous.",
-  "Vos réponses sont lues avec l’aide d’un outil d’IA, puis vérifiées par un membre de l’équipe avant toute mise à jour de la fiche : rien n’est publié automatiquement.",
+  // Décision du propriétaire du 27/11/2026 : publication automatique de certaines informations, sans relecture
+  // préalable (la phrase disait « rien n’est publié automatiquement »).
+  "Vos réponses sont lues avec l’aide d’un outil d’IA. Certaines informations d’une réponse par email (par exemple une surface ou un nombre de pièces) peuvent être reprises sur la fiche telles que vous les avez écrites, sur décision de cet outil et sans relecture préalable par un membre de l’équipe ; les autres sont vérifiées par un membre de l’équipe avant toute mise à jour de la fiche. Vous pouvez demander le retrait d’une information à tout moment.",
   "Si ce message ne vous concerne pas, répondez « mauvais destinataire » : l’envoi automatique ne vous écrira plus pendant 24 mois, et il est arrêté jusqu’à vérification.",
 ];
 const RETENTION_COMPLEMENT =

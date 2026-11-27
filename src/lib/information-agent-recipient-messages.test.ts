@@ -202,6 +202,23 @@ describe("texte du message selon le destinataire", () => {
     expect(informationAgentAudienceTemplate("other")).toBeNull();
   });
 
+  it("annonce la reprise automatique au seul avocat poursuivant : notaire et service de l'État gardent la relecture", () => {
+    // La réponse d'un autre destinataire que l'avocat poursuivant n'est jamais publiée automatiquement
+    // (`recipient_not_lawyer`, décision du propriétaire du 27/11/2026).
+    const reviewed =
+      "Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.";
+    for (const template of [NOTARY_EMAIL_TEMPLATE, STATE_SERVICE_EMAIL_TEMPLATE]) {
+      const message = render(template);
+      expect(message).toContain(reviewed);
+      expect(message).not.toContain("reprises automatiquement");
+    }
+    const lawyer = render(DEFAULT_INFORMATION_AGENT_EMAIL_TEMPLATE);
+    expect(lawyer).toContain(
+      "Certaines informations de votre réponse peuvent être reprises automatiquement sur la fiche, après une analyse par un outil d’IA et sans relecture préalable par notre équipe ; vous pouvez en demander le retrait à tout moment.",
+    );
+    expect(lawyer).not.toContain(reviewed);
+  });
+
   it("notaire : ni pièces de procédure, ni garantie, ni audience, ni invitation à joindre", () => {
     const message = render(NOTARY_EMAIL_TEMPLATE);
     expect(message).toContain(
