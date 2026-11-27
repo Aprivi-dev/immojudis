@@ -92,9 +92,10 @@ beforeEach(() => {
 describe("modèle de message publié en base", () => {
   it("la révision minimale reste celle de la mise en conformité", () => {
     // Les révisions 8 à 10 ne changent que la rédaction : un modèle publié en révision 7 reste utilisable.
-    // La révision 10 (lot C) fait régénérer les brouillons préparés sous la révision 9.
+    // La révision 10 (lot C) fait régénérer les brouillons préparés sous la révision 9 ; la révision 12
+    // (publication automatique, 27/11/2026) ceux préparés sous la révision 11.
     expect(MIN_COMPLIANT_TEMPLATE_REVISION).toBe(7);
-    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(11);
+    expect(INFORMATION_AGENT_EMAIL_TEMPLATE_REVISION).toBe(12);
   });
 
   it("ignore un modèle publié antérieur à la mise en conformité et retombe sur le modèle du code", async () => {

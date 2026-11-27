@@ -10,6 +10,7 @@ import {
   LEGAL_DOCUMENTS,
   PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
   PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
+  PRIVACY_AUTO_PUBLICATION_EFFECTIVE_DATE,
   PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
   PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
   PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
@@ -229,38 +230,44 @@ describe("conditions générales : classement, référencement et mise en avant"
     for (const link of links) expect(link.getAttribute("href")).toBe("/methode-pepites");
   });
 
-  it("la politique de confidentialité est en version 2026-11-26.1 (nouveautés et offres par email) ; les 2026-11-23.2, 2026-11-23.1, 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
-    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-26.1");
+  it("la politique de confidentialité est en version 2026-11-27.1 (publication automatique de certaines informations) ; les 2026-11-26.1, 2026-11-23.2, 2026-11-23.1, 2026-11-22.1, 2026-11-21.1, 2026-11-15.1, 2026-11-14.1, 2026-11-01.3, 2026-11-01.2, 2026-11-01.1, 2026-10-31.1, 2026-10-26.1 et 2026-10-25.1 sont archivées", () => {
+    expect(LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-27.1");
     // La version garde la date de rédaction ; l'effet est porté à la mise en ligne.
-    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE);
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-23.2");
+    expect(LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(PRIVACY_AUTO_PUBLICATION_EFFECTIVE_DATE);
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.version).toBe("2026-11-26.1");
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.effectiveDate).toBe(
-      PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+      PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.applicableUntil).toBe(
       LEGAL_DOCUMENTS.privacy.effectiveDate,
     );
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[0]).toMatchObject({
+      version: "2026-11-23.2",
+      effectiveDate: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
+      applicableUntil: PRIVACY_MARKETING_EMAILS_EFFECTIVE_DATE,
+    });
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
       version: "2026-11-23.1",
       effectiveDate: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_AUTOPILOT_LICITOR_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[1]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[2]).toMatchObject({
       version: "2026-11-22.1",
       effectiveDate: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_AUTOPILOT_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[2]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[3]).toMatchObject({
       version: "2026-11-21.1",
       effectiveDate: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_ALL_AI_EFFECTIVE_DATE,
     });
-    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[3]).toMatchObject({
+    expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier[4]).toMatchObject({
       version: "2026-11-15.1",
       effectiveDate: FREE_UNLOCK_EFFECTIVE_DATE,
       applicableUntil: PRIVACY_ANTHROPIC_EFFECTIVE_DATE,
     });
     expect(PREVIOUS_LEGAL_DOCUMENTS.privacy.earlier.map((item) => item.version)).toEqual([
+      "2026-11-23.2",
       "2026-11-23.1",
       "2026-11-22.1",
       "2026-11-21.1",
@@ -934,7 +941,7 @@ describe("politique de confidentialité", () => {
   it("aligne la base légale de l'enquête dossier sur le registre et ne parle plus de prospection", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Aucune information reçue n’est publiée sans vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
+      "Intérêt légitime à publier des informations exactes sur les ventes ; un outil prépare les messages, et chaque message est validé par un membre de l’équipe, sauf les messages envoyés automatiquement au seul avocat poursuivant dont l’adresse figure dans l’annonce de la vente (voir plus bas). Certaines informations d’une réponse par email de l’avocat poursuivant peuvent être publiées sur décision d’un modèle d’IA, sans vérification humaine préalable (voir plus bas) ; les autres informations reçues ne sont publiées qu’après vérification humaine. Les messages ne contiennent aucune offre commerciale. La liste d’opposition (adresse et identité professionnelle) est conservée en application de l’obligation de respecter le droit d’opposition (art. 21 RGPD).",
     );
     // 2026-11-23.1 : l'envoi automatique aux avocats poursuivants est annoncé ; la promesse de
     // modifier la page avant tout envoi automatique est tenue, elle est donc retirée.
@@ -1118,7 +1125,7 @@ describe("politique de confidentialité", () => {
   it("dit aux professionnels contactés qu'Anthropic lit leurs réponses et pièces jointes, textes filtrés", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).toContain(
-      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente. Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré. Les réponses aux messages qui nommaient un autre prestataire d’IA sont lues par une personne, sans IA. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
+      "Vos réponses et leurs pièces jointes sont lues par un modèle d’IA d’Anthropic, qui aide à les classer et à y repérer les informations sur la vente ; pour certaines de ces informations, il décide aussi de leur publication automatique (voir plus bas). Avant l’envoi, les noms, les signatures, les numéros de téléphone et les adresses e-mail sont retirés automatiquement des textes ; ce filtre peut laisser passer un nom. Les photos jointes sont réduites à 1 600 pixels au plus, réenregistrées en JPEG et privées de leurs métadonnées (EXIF, dont la position GPS) ; leur contenu n’est pas filtré. Les réponses aux messages qui nommaient un autre prestataire d’IA sont lues par une personne, sans IA. Le lieu de stockage des données, les conditions dans lesquelles Anthropic fait appel à des sous-traitants et la durée de conservation sont indiqués dans « Destinataires et sous-traitants ».",
     );
     expect(text).toContain(
       "réponses et pièces jointes lues par un modèle d’IA d’Anthropic, après retrait automatique des noms, signatures, numéros de téléphone et adresses e-mail des textes (les photos jointes sont réduites, réenregistrées en JPEG et privées de leurs métadonnées, sans filtre sur leur contenu)",
@@ -1240,6 +1247,37 @@ describe("politique de confidentialité", () => {
     );
   });
 
+  it("décrit la publication automatique décidée par une IA, sans relecture préalable, et le retrait (2026-11-27.1)", () => {
+    const text = pageText(<PrivacyPage />);
+    // Décision du propriétaire du 27/11/2026 : plus aucune promesse de vérification humaine de toute
+    // information reçue.
+    expect(text).not.toContain("Aucune information reçue n’est publiée sans vérification humaine");
+    expect(text).not.toContain("Toute information transmise par un professionnel est validée");
+    expect(text).not.toContain("puis vérifiées par un membre de l’équipe avant toute mise à jour");
+    expect(text).toContain(
+      "Publication automatique de certaines informations. Certaines informations d’une réponse peuvent être publiées sur la fiche de la vente sans relecture préalable par un membre de l’équipe. La décision de les publier est prise par un modèle d’IA d’Anthropic (Claude Haiku 5.5 à la date de cette version), le prestataire qui lit déjà les réponses (voir « Destinataires et sous-traitants »), après des contrôles automatiques.",
+    );
+    expect(text).toContain(
+      "Seule est prise en compte une réponse par email de l’avocat poursuivant à qui nous avons écrit, envoyée depuis l’adresse contactée et dont l’authenticité est vérifiée automatiquement (contrôles DKIM et DMARC). Seules les informations d’une liste fermée peuvent être publiées ainsi, par exemple la surface ou le nombre de pièces ; la valeur publiée est celle de votre message, sans modification par l’IA.",
+    );
+    expect(text).toContain(
+      "Les pièces jointes, les photos, les dépôts dans l’espace privé du dossier et les réponses des autres professionnels ne sont jamais publiés automatiquement : ils restent relus par l’équipe.",
+    );
+    expect(text).toContain(
+      "Un membre de l’équipe peut retirer à tout moment une information publiée, et la publication automatique peut être arrêtée immédiatement.",
+    );
+    expect(text).toContain(
+      "Cela vaut aussi pour les réponses aux messages envoyés avant la version 2026-11-27.1 de cette page, qui annonçaient une relecture par l’équipe avant toute mise à jour de la fiche.",
+    );
+    expect(text).toContain(
+      "Vous pouvez à tout moment, sans motif, en demander le retrait ou la correction, en répondant à notre message ou en écrivant à contact@immojudis.example : nous la retirons au plus tard un mois après réception de votre demande.",
+    );
+    // Article 22 : une analyse, pas une conformité affirmée.
+    expect(text).toContain(
+      "Cette décision porte sur une information relative au bien vendu, et non sur vous : selon notre analyse, elle ne produit pas d’effet juridique à votre égard et ne vous affecte pas de manière importante au sens de l’article 22 du RGPD. Si vous estimez le contraire, écrivez-nous : un membre de l’équipe réexaminera la publication.",
+    );
+  });
+
   it("ne dit plus que toute information de la fiche est validée par l'équipe : seules celles des professionnels", () => {
     const text = pageText(<PrivacyPage />);
     expect(text).not.toContain("toute intégration d’information sur une fiche");
@@ -1247,13 +1285,13 @@ describe("politique de confidentialité", () => {
       "Tout envoi à un professionnel est validé par un membre de l’équipe",
     );
     expect(text).toContain(
-      "Un outil détecte les informations manquantes et prépare la demande à partir d’un modèle fixe, qui n’est pas rédigé par une IA. Les demandes aux professionnels sont validées par un membre de l’équipe, sauf les envois automatiques à l’avocat poursuivant décrits dans la section « Professionnels contactés par Immojudis » ; ces envois ne produisent aucun effet juridique à l’égard du destinataire et ne l’affectent pas de manière importante (article 22 du RGPD). Aucune demande n’est lancée directement par un utilisateur Analyse. Toute information transmise par un professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche ; les valeurs relevées automatiquement dans les pièces publiques des ventes sont affichées sans relecture préalable, avec leur source, et peuvent être signalées.",
+      "Un outil détecte les informations manquantes et prépare la demande à partir d’un modèle fixe, qui n’est pas rédigé par une IA. Les demandes aux professionnels sont validées par un membre de l’équipe, sauf les envois automatiques à l’avocat poursuivant décrits dans la section « Professionnels contactés par Immojudis » ; ces envois ne produisent aucun effet juridique à l’égard du destinataire et ne l’affectent pas de manière importante (article 22 du RGPD). Aucune demande n’est lancée directement par un utilisateur Analyse. Une information transmise par un professionnel est validée par un membre de l’équipe avant d’apparaître sur la fiche, sauf certaines informations d’une réponse par email de l’avocat poursuivant, publiées sur décision d’un modèle d’IA sans relecture préalable (voir « Professionnels contactés par Immojudis ») ; les valeurs relevées automatiquement dans les pièces publiques des ventes sont affichées sans relecture préalable, avec leur source, et peuvent être signalées.",
     );
   });
 
   it("décrit l'IA du message d'enquête comme le fait le message lui-même", () => {
     expect(pageText(<PrivacyPage />)).toContain(
-      "Le message précise qu’une IA aide à lire et classer les réponses et que l’équipe vérifie les informations avant toute mise à jour de la fiche",
+      "Le message précise qu’une IA aide à lire et classer les réponses, et si des informations peuvent être reprises sur la fiche sans relecture préalable",
     );
   });
 

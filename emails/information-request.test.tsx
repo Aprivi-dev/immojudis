@@ -298,7 +298,7 @@ describe("renderInformationRequestEmail", () => {
     expect(deposit).toBeGreaterThan(message.text.indexOf("Répondre est facultatif."));
     expect(deposit).toBeLessThan(message.text.indexOf("Bien cordialement"));
     expect(message.text).toContain(
-      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.com : https://immojudis.com/contribuer/mission#secret-token\nCe lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier, sur immojudis.com : https://immojudis.com/contribuer/mission#secret-token\nCe lien est propre à ce dossier. Ce qui y est déposé est relu par notre équipe avant toute publication.",
     );
   });
 
@@ -312,7 +312,7 @@ describe("renderInformationRequestEmail", () => {
     });
     const flatHtml = message.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
     expect(flatHtml).toContain(
-      "Vous pouvez aussi répondre dans l’espace privé de ce dossier , sur immojudis.com. Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+      "Vous pouvez aussi répondre dans l’espace privé de ce dossier , sur immojudis.com. Ce lien est propre à ce dossier. Ce qui y est déposé est relu par notre équipe avant toute publication.",
     );
     // Un lien de texte, pas un bouton (classe `ej-btn-a`) dans un encadré.
     expect(message.html).toMatch(
@@ -412,7 +412,7 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Vous pouvez vous opposer à tout moment, sans motif, à ce que nous vous contactions : utilisez le lien « Ne plus être contacté » ci-dessous ou répondez à ce message. Nous ne vous solliciterons plus, sur aucun de nos canaux. Les données qui ne servent qu’à vous contacter sont supprimées ; les échanges déjà intervenus sont conservés jusqu’à la fin de leur durée normale (12 ou 24 mois), puis supprimés. Seule l’information strictement nécessaire pour ne plus vous solliciter (adresse, identité professionnelle, date de l’opposition) est conservée au-delà, à cette seule fin.",
     "Politique de confidentialité et vos droits",
     "Réclamation auprès de la CNIL",
-    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses ; notre équipe relit chaque réponse avant toute mise à jour de la fiche.",
+    "Immojudis n’agit pas au nom d’un tribunal. Une IA aide à lire et classer les réponses. Certaines informations d’une réponse par email de l’avocat poursuivant peuvent être reprises sur la fiche sans relecture préalable par notre équipe ; les autres sont relues avant toute mise à jour.",
     "Inutile de nous transmettre des pièces : nous indiquer où les consulter suffit.",
   ];
 
@@ -420,11 +420,12 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
     "Immojudis est un site privé d’information sur les ventes immobilières aux enchères, destiné aux candidats acquéreurs. Il ne vend aucun bien et n’agit pas au nom d’un tribunal.",
     "Nous souhaitons vérifier avec vous quelques points de la fiche que nous publions sur cette vente :",
     // C14, C13 et J15 (14/11/2026) : l'intérêt de l'avocat avant les questions, ni pièces ni procès-verbal.
-    "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit ; notre équipe la relit avant toute mise à jour.",
+    // Révision 12 (27/11/2026) : reprise automatique de certaines informations, sans relecture préalable.
+    "Ces points manquent à notre fiche ou s’y contredisent. Une fiche exacte évite aux candidats de vous interroger sur ce qui est déjà connu. Une réponse, même partielle, suffit. Certaines informations de votre réponse peuvent être reprises automatiquement sur la fiche, après une analyse par un outil d’IA et sans relecture préalable par notre équipe ; vous pouvez en demander le retrait à tout moment.",
     "Répondre est facultatif. Le plus simple : un retour à cet email. Aucun compte n’est nécessaire.",
     // Le lien du HTML coupe la phrase (« dossier , sur ») une fois les balises retirées.
     "Vous pouvez aussi répondre dans l’espace privé de ce dossier",
-    "Ce lien est propre à ce dossier. Rien n’est publié sans relecture par notre équipe.",
+    "Ce lien est propre à ce dossier. Ce qui y est déposé est relu par notre équipe avant toute publication.",
     "Ne communiquez que des informations déjà destinées à tout candidat acquéreur (celles du cahier des conditions de vente : mise à prix, garantie exigée pour enchérir, dates de visite, audience) : votre secret professionnel prime sur notre demande. Inutile de joindre des pièces. Si ce dossier est suivi par un collaborateur ou un autre interlocuteur, vous pouvez lui transférer ce message.",
     "Merci par avance.",
     "Bien cordialement, L’équipe Immojudis",
@@ -465,6 +466,11 @@ describe("textes juridiques du courrier de l'agent d'information : inchangés mo
       for (const sentence of [...lawyerLegalSentences, ...lawyerTemplateSentences]) {
         expect(output, `${name} : ${sentence.slice(0, 60)}`).toContain(sentence);
       }
+      // Publication automatique (décision du propriétaire du 27/11/2026) : plus aucune promesse de relecture
+      // de chaque réponse avant toute mise à jour.
+      expect(output).not.toContain("notre équipe la relit avant toute mise à jour");
+      expect(output).not.toContain("relit chaque réponse");
+      expect(output).not.toContain("Rien n’est publié sans relecture");
     }
   });
 
