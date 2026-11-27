@@ -80,6 +80,8 @@ MAX_TITLE_CHARS = 100
 MAX_DOCUMENT_LABEL_CHARS = 120
 MAX_DOCUMENT_TYPE_CHARS = 40
 MAX_EXPLANATION_CHARS = 320
+# « À vérifier » of a point (versions that ask for it): one short sentence.
+MAX_CHECK_CHARS = 160
 READING_MAX_OUTPUT_TOKENS = 4_000
 READING_TIMEOUT_SECONDS = 90
 
@@ -546,6 +548,9 @@ class ReadingProfile:
     select_pages: Callable[[Sequence[ReadingDocument], int], tuple[dict[int, list[int]], bool]]
     # Says whether a verified quote must be left out whatever the model made of it (None: no such rule).
     rejects_quote: Callable[[str], bool] | None = None
+    # The version asks, for each point, what remains to check (« check »): this rule returns the text to keep
+    # or None (``document_reading_check.checked_check``). None: the field is ignored even if the model writes one.
+    check_rule: Callable[[str, str, str], str | None] | None = None
 
 
 PRODUCTION_PROFILE = ReadingProfile(
@@ -781,6 +786,7 @@ def validate_reading_points(
     sold_lot: SoldLot | None = None,
     max_points: int = MAX_POINTS,
     rejects_quote: Callable[[str], bool] | None = None,
+    check_rule: Callable[[str, str, str], str | None] | None = None,
     rejections: dict[str, int] | None = None,
     rejected_points: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
@@ -796,6 +802,9 @@ def validate_reading_points(
     With a designated lot (multi-lot listing), a point the model places on another lot, or whose
     quote names another lot of the sale and not this one, is dropped. Without one, the « lot » answer
     is ignored: a one-lot sale or an uncertain lot reads as before v3.
+
+    With a ``check_rule`` (a version that asks what remains to check), the « check » of a kept point is kept
+    when the rule accepts it; a refused one is dropped alone and counted as ``check_dropped``.
 
     ``rejections``, when given, counts the dropped points by reason and ``rejected_points`` keeps what the
     model wrote for each of them (diagnostics for the trials).
@@ -900,6 +909,13 @@ def validate_reading_points(
             # A stored point replayed by revalidate_stored_points keeps its flags.
             "page_corrected": found_page != cited_page or raw.get("page_corrected") is True,
         }
+        written_check = _bounded_text(raw.get("check"), MAX_CHECK_CHARS) if check_rule else None
+        if check_rule and written_check:
+            check = check_rule(written_check, doc.pages[found_page], excerpt)
+            if check:
+                point["check"] = check
+            elif rejections is not None:
+                rejections["check_dropped"] = rejections.get("check_dropped", 0) + 1
         if is_energy_point(point):
             # A DPE class must be proven by its own page (dpe_reading_guard).
             point = checked_energy_point(point, doc.pages[found_page])
@@ -916,6 +932,7 @@ def revalidate_stored_points(
     documents: Sequence[ReadingDocument],
     *,
     sold_lot: SoldLot | None = None,
+    check_rule: Callable[[str, str, str], str | None] | None = None,
     rejected_points: list[dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
     """Stored points checked again with the current rules, without calling the model.
@@ -933,7 +950,10 @@ def revalidate_stored_points(
         for point in (points if isinstance(points, list) else [])
         if isinstance(point, Mapping)
     ]
-    return validate_reading_points(raw_points, documents, sold_lot=sold_lot, rejected_points=rejected_points)
+    # ``check_rule``: the rule of the version that wrote the stored « check » (without one, it is not kept).
+    return validate_reading_points(
+        raw_points, documents, sold_lot=sold_lot, check_rule=check_rule, rejected_points=rejected_points
+    )
 
 
 def _counts_as_attempt(exc: BaseException) -> bool:
@@ -1005,6 +1025,7 @@ def read_sale_documents(
         sold_lot=sold_lot,
         max_points=profile.max_points,
         rejects_quote=profile.rejects_quote,
+        check_rule=profile.check_rule,
         rejections=rejections,
         rejected_points=rejected_points,
     )

@@ -57,8 +57,9 @@ def test_production_reads_with_the_v4_profile() -> None:
     )
     documents = _long_dossier()
     assert build_reading_prompt(documents) == build_reading_prompt(documents, None, PRODUCTION_PROFILE)
-    # No candidate is under trial: the trial tool reads the production profile alone.
-    assert CANDIDATE_PROFILES == {}
+    # One candidate is under trial (v5, tests/test_document_reading_v5.py): production still reads with v4.
+    assert set(CANDIDATE_PROFILES) == {"v5"}
+    assert PRODUCTION_PROFILE.check_rule is None
 
 
 def test_a_page_of_standard_clauses_is_not_relevant() -> None:
