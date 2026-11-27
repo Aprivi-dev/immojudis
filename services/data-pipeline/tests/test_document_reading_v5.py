@@ -39,12 +39,14 @@ def test_v5_is_the_v4_reading_plus_the_check_field() -> None:
     assert CANDIDATE_PROFILES == {"v5": V5_PROFILE}
     assert V5_PROFILE.version == "document_reading_v5" != reading.DOCUMENT_READING_VERSION
     assert V5_PROFILE.check_rule is checked_check
-    # Everything but the version, the prompt and the rule on « check » is the production profile.
+    assert V5_PROFILE.max_output_tokens == 4_800 > PRODUCTION_PROFILE.max_output_tokens
+    # Everything but the version, the prompt, the rule on « check » and the room for it is the production profile.
     assert replace(
         V5_PROFILE,
         version=PRODUCTION_PROFILE.version,
         system_prompt=PRODUCTION_PROFILE.system_prompt,
         check_rule=None,
+        max_output_tokens=PRODUCTION_PROFILE.max_output_tokens,
     ) == PRODUCTION_PROFILE
     prompt = V5_PROFILE.system_prompt
     assert '"check": "ce qu\'il reste à vérifier' in prompt

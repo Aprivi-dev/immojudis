@@ -12,10 +12,10 @@ de production.
 Candidat en cours, « v5 » (27/11/2026) : la v4, plus un champ « check » par point : ce qu'il reste à vérifier
 (lors de la visite, dans une pièce, auprès de l'avocat poursuivant, de la mairie ou du syndic), en une phrase à
 l'infinitif. Ni montant, ni conseil sur l'achat : ``document_reading_check.checked_check`` retire un « check » qui en
-porte, sans retirer son point. Le choix des pages, le budget de texte, le nombre de points et la longueur de
-réponse autorisée sont ceux de la v4. À juger à l'essai : le nombre de points gardés ne doit pas baisser par
-rapport au témoin, aucune réponse ne doit être coupée par ce champ de plus (colonne « sortie coupée » du
-rapport), et les « check » doivent être propres au dossier.
+porte, sans retirer son point. Le choix des pages, le budget de texte et le nombre de points sont ceux de la
+v4 ; la sortie autorisée passe de 4 000 à 4 800 jetons pour ce champ de plus. À juger à l'essai : le nombre de
+points gardés ne doit pas baisser par rapport au témoin, aucune réponse ne doit être coupée (colonne « sortie
+coupée » du rapport), et les « check » doivent être propres au dossier.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from src.document_reading import PRODUCTION_PROFILE, SYSTEM_PROMPT, ReadingProfi
 from src.document_reading_check import checked_check
 
 V5_VERSION = "document_reading_v5"
+V5_MAX_OUTPUT_TOKENS = 4_800
 
 _V4_ANSWER_RULE = "Réponds uniquement par un objet JSON :\n"
 _V4_QUOTE_FIELD = '"document": "D1", "page": 3, "quote": "extrait exact", '
@@ -55,6 +56,7 @@ V5_PROFILE: ReadingProfile = replace(
     PRODUCTION_PROFILE,
     version=V5_VERSION,
     system_prompt=_v5_system_prompt(),
+    max_output_tokens=V5_MAX_OUTPUT_TOKENS,
     check_rule=checked_check,
 )
 
