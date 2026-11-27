@@ -164,7 +164,9 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // 27/11/2026 : 6 915 000, relevé de 5 000 sur décision du propriétaire, fiche vente (prix habituels sur
 // la réglette, argent à réunir sous le plafond, bandeau des ventes de la même audience) : total mesuré
 // 6 911 352, les plafonds par page tenus (le bandeau est rendu par le serveur).
-const MAX_TOTAL_CLIENT_JS_BYTES = 6_915_000;
+// 27/11/2026 : 6 930 000, même plafond que la branche des textes de la publication automatique (décision du
+// propriétaire du même jour) : après la fusion de l'étape 6 de l'agent d'information, total mesuré 6 916 290.
+const MAX_TOTAL_CLIENT_JS_BYTES = 6_930_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).
 // Refonte de l'accueil du 24/11/2026 : neuf peintures et leurs boucles vidéo (3,7 Mo, chargées à
