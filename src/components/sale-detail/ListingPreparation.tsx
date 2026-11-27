@@ -208,6 +208,25 @@ export type StartingPriceSignal = { title: string; text: string; todo: string };
  * prioritaires à confirmer, sans doublon. Celles qui manquent tiennent en une ligne. La liste
  * complète et une note personnelle sont dans une fenêtre.
  */
+type RiskProof = ReturnType<typeof riskEvidence>["proofs"][number];
+
+/** Une preuve d'un point à vérifier : la pièce (en lien quand elle est servie), sa page, l'extrait. */
+function riskProof(proof: RiskProof, index: number) {
+  return (
+    <span key={`${index}-${proof.label}`} className={styles.proof} data-testid="risk-proof">
+      {proof.url ? (
+        <a href={proof.url} target="_blank" rel="noopener noreferrer">
+          {proof.label} (nouvel onglet)
+        </a>
+      ) : (
+        proof.label
+      )}
+      {proof.page != null ? ` · page ${proof.page}` : null}
+      {proof.excerpt ? <q className={styles.proofQuote}>{proof.excerpt}</q> : null}
+    </span>
+  );
+}
+
 export function ListingChecks({
   points,
   showRisks = false,
@@ -336,20 +355,20 @@ export function ListingChecks({
               <li key={`risk-${risk.risk_type}-${risk.risk_label}`}>
                 <div>
                   <strong>{risk.risk_label}</strong>
-                  {/* Le constat et sa preuve d'abord (pièce, page, extrait), puis ce qu'il reste à faire. */}
-                  {evidence.proofs.map((proof, index) => (
-                    <span key={`${index}-${proof.label}`} data-testid="risk-proof">
-                      {proof.url ? (
-                        <a href={proof.url} target="_blank" rel="noopener noreferrer">
-                          {proof.label} (nouvel onglet)
-                        </a>
-                      ) : (
-                        proof.label
-                      )}
-                      {proof.page != null ? ` · page ${proof.page}` : null}
-                      {proof.excerpt ? <q className={styles.proofQuote}>{proof.excerpt}</q> : null}
-                    </span>
-                  ))}
+                  {/* Le constat et sa première preuve d'abord (pièce, page, extrait), puis ce qu'il reste
+                      à faire. Un risque relevé dans des dizaines de pages (amiante d'un dossier de
+                      diagnostics) garde ses autres extraits repliés : la liste reste lisible. */}
+                  {evidence.proofs.slice(0, 1).map(riskProof)}
+                  {evidence.proofs.length > 1 ? (
+                    <details className={styles.moreProofs}>
+                      <summary>
+                        {evidence.proofs.length === 2
+                          ? "Voir l’autre extrait"
+                          : `Voir les ${evidence.proofs.length - 1} autres extraits`}
+                      </summary>
+                      {evidence.proofs.slice(1).map(riskProof)}
+                    </details>
+                  ) : null}
                   <span className={styles.todo}>
                     <span>Que faire : </span>
                     {evidence.action}

@@ -237,3 +237,41 @@ describe("ListingPreparation", () => {
     expect(screen.queryByText("Travaux à chiffrer")).toBeNull();
   });
 });
+
+describe("preuves d'un point à vérifier", () => {
+  function riskWith(count: number) {
+    return {
+      risk_type: "amiante",
+      risk_label: "Amiante",
+      severity: 4,
+      evidence: null,
+      occurrences: Array.from({ length: count }, (_, index) => ({
+        document_label: "Diagnostics techniques",
+        document_type: "diagnostics_techniques",
+        document_url: null,
+        page_number: index + 1,
+        excerpt: `Extrait numéro ${index + 1} du repérage amiante.`,
+      })),
+    } as unknown as NonNullable<AuctionSale["risks"]>[number];
+  }
+
+  it("montre la première preuve et replie les autres, même s'il y en a des dizaines", () => {
+    render(<ListingChecks sale={sale({ risks: [riskWith(54)] })} points={[]} showRisks />);
+
+    const proofs = screen.getAllByTestId("risk-proof");
+    expect(proofs).toHaveLength(54);
+    // Une seule preuve hors du bloc replié : la liste ne s'allonge pas avec le nombre de pages.
+    expect(proofs.filter((proof) => proof.closest("details") === null)).toHaveLength(1);
+    expect(proofs[0].textContent).toContain("page 1");
+    const more = screen.getByText("Voir les 53 autres extraits").closest("details")!;
+    expect(more.open).toBe(false);
+    expect(within(more).getAllByTestId("risk-proof")).toHaveLength(53);
+  });
+
+  it("ne propose rien à déplier pour une preuve unique", () => {
+    render(<ListingChecks sale={sale({ risks: [riskWith(1)] })} points={[]} showRisks />);
+
+    expect(screen.getAllByTestId("risk-proof")).toHaveLength(1);
+    expect(screen.queryByText(/autres? extraits?/)).toBeNull();
+  });
+});
