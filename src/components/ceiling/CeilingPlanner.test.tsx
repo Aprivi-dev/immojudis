@@ -267,6 +267,19 @@ describe("CeilingPlanner headline", () => {
 
     expect(screen.getByText("Aucun prix ne tient")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Trésorerie à prévoir" })).toBeNull();
+    expect(screen.queryByTestId("cash-summary")).toBeNull();
+  });
+
+  it("shows the money to gather under the ceiling, without unfolding anything", () => {
+    renderPlanner({});
+
+    const summary = within(screen.getByTestId("cash-summary"));
+    expect(summary.getByRole("heading", { name: /^L’argent à réunir pour / })).toBeTruthy();
+    expect(summary.getByText("Avant l’audience")).toBeTruthy();
+    expect(summary.getByText("Sous 2 mois")).toBeTruthy();
+    expect(summary.getByText("Total à réunir")).toBeTruthy();
+    expect(summary.getByText(/Aucune condition suspensive de prêt/)).toBeTruthy();
+    expect(screen.getByTestId("cash-summary").closest("details")).toBeNull();
   });
 
   it("does not ask to read the preliminary fees, nor call them a default, once the user entered them", () => {

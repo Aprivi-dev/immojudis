@@ -87,7 +87,9 @@ import {
   getMarketValuationSurfaces,
   getSaleSurface,
 } from "@/lib/surface";
-import { PriceScale } from "@/components/sale-detail/PriceScale";
+import { CourtPriceScale } from "@/components/sale-detail/CourtPriceScale";
+import { SaleHearingSlot } from "@/components/sale-detail/SaleHearingSlot";
+import { SaleVerdict } from "@/components/sale-detail/SaleVerdict";
 import { AnalysisLead, hypothesesSummary } from "@/components/sale-detail/SaleAnalysisPanel";
 import type { HousingTension } from "@/lib/housing-tension";
 import type { RentReference } from "@/lib/rent-reference";
@@ -909,6 +911,7 @@ function SaleDetailWorkspace({
             publicDemo={publicDemo}
             showFavorite={dossierInPanel && isPersistedSale(sale)}
           />
+          <SaleHearingSlot className="mb-4" />
           <SaleDetailHeading
             sale={displaySale}
             publicDemo={publicDemo}
@@ -918,6 +921,18 @@ function SaleDetailWorkspace({
             pepiteFloodExposed={pepite?.flood?.verdict === "exposed"}
             showAddress
           />
+          {fullData &&
+          heroCeiling != null &&
+          !valuationConflict &&
+          !criticalAnalysisInputsBlocked ? (
+            <SaleVerdict
+              sale={displaySale}
+              startingPrice={startingPrice}
+              plan={ceilingPlan}
+              hypotheses={ceilingHypotheses}
+              labels={feeRegime?.labels}
+            />
+          ) : null}
           <div className={layoutStyles.split}>
             <div className={layoutStyles.gallery}>
               <PropertyIdentity
@@ -1239,7 +1254,11 @@ function SaleDetailWorkspace({
                     </div>
                   ) : fullData && ceilingOpen ? (
                     <>
-                      <PriceScale
+                      <CourtPriceScale
+                        saleId={sale.id}
+                        access={access}
+                        userKey={user?.id}
+                        courtEnabled={statisticsAvailable && Boolean(user) && !publicDemo}
                         startingPrice={startingPrice}
                         startLabel={startLabelText}
                         ceiling={criticalAnalysisInputsBlocked ? null : heroCeiling}

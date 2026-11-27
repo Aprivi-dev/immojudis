@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AuthConnectionBanner } from "@/components/AuthConnectionBanner";
 import { SaleDetailSkeleton, SaleNotFoundComponent } from "@/components/SaleDetailFallbacks";
 
 import { SalePublicPreview } from "@/components/SalePublicPreview";
+import { SaleHearingSlotProvider } from "@/components/sale-detail/SaleHearingSlot";
 import type { SaleGuideLink } from "@/components/SalePublicFurther";
 import { Button, Notice } from "@/components/ui/primitives";
 import { hasSupabaseAuthHint } from "@/integrations/supabase/lazy";
@@ -94,6 +95,8 @@ type SaleDetailPageProps = {
   rentalYield?: PublicRentalYield | null;
   /** Articles du blog proposés en bas de la fiche publique, choisis par le serveur. */
   guides?: readonly SaleGuideLink[];
+  /** Bandeau des ventes de la même audience (`SaleHearingNav`), rendu par le serveur ; absent : pas de bandeau. */
+  hearingNav?: ReactNode;
 };
 
 export function SaleDetailPage(props: SaleDetailPageProps) {
@@ -103,7 +106,9 @@ export function SaleDetailPage(props: SaleDetailPageProps) {
       {/* Identité déjà vérifiée mais revérification impossible (réseau) : la fiche reste affichée.
           Sans session, la fiche elle-même explique pourquoi elle ne s'ouvre pas. */}
       {!loading && authError && session ? <AuthConnectionBanner className="mt-3" /> : null}
-      <SaleDetailContent {...props} />
+      <SaleHearingSlotProvider nav={props.hearingNav ?? null}>
+        <SaleDetailContent {...props} />
+      </SaleHearingSlotProvider>
     </>
   );
 }

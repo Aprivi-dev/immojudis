@@ -727,6 +727,27 @@ export function buildCashPlan(h: CeilingHypotheses, plan: CeilingPlan, price: nu
   return steps;
 }
 
+/** Une échéance de trésorerie : la somme de ce qui est dû à ce moment-là. */
+export type CashDeadline = { when: string; amount: number };
+
+/**
+ * Les sommes de `buildCashPlan` regroupées par échéance, dans l'ordre où elles sont dues, et leur
+ * total. Les étapes sans montant (délai de surenchère) n'y figurent pas.
+ */
+export function summarizeCashPlan(steps: readonly CashStep[]): {
+  deadlines: CashDeadline[];
+  total: number;
+} {
+  const deadlines: CashDeadline[] = [];
+  for (const step of steps) {
+    if (step.amount == null || step.amount <= 0) continue;
+    const deadline = deadlines.find((entry) => entry.when === step.when);
+    if (deadline) deadline.amount += step.amount;
+    else deadlines.push({ when: step.when, amount: step.amount });
+  }
+  return { deadlines, total: deadlines.reduce((sum, entry) => sum + entry.amount, 0) };
+}
+
 /**
  * Consignation à prévoir : le montant lu dans l'annonce, sinon la règle du régime (par défaut celle
  * du tribunal). Une règle `null` : le régime n'exige pas de consignation, 0 quand l'annonce n'en

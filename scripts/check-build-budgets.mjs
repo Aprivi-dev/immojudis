@@ -161,8 +161,12 @@ const MAX_CLIENT_CHUNK_BYTES = 335_000;
 // 25/11/2026 : 6 910 000, relevé de 10 000 le 25/11 sur décision du propriétaire, lecture des pièces V3b-2
 // (total mesuré 6 904 683 pour 6 896 779 sur main : la mention, recopiée dans le chunk de la fiche et dans
 // celui de /annonce-exemple, pèse à elle seule plus que la marge de 3 221 octets ; plafonds par page tenus).
+// 27/11/2026 : 6 915 000, relevé de 5 000 sur décision du propriétaire, fiche vente (prix habituels sur
+// la réglette, argent à réunir sous le plafond, bandeau des ventes de la même audience) : total mesuré
+// 6 911 352, les plafonds par page tenus (le bandeau est rendu par le serveur).
 // 27/11/2026 : 6 930 000, relevé de 20 000 le 27/11 sur décision du propriétaire, textes et administration de
-// la publication automatique (total mesuré 6 910 182 en CI sur la branche).
+// la publication automatique (total mesuré 6 910 182 en CI sur la branche). La branche de la fiche vente a
+// repris ce même plafond le même jour (6 916 290 mesurés après la fusion de l'étape 6 de l'agent d'information).
 const MAX_TOTAL_CLIENT_JS_BYTES = 6_930_000;
 const MAX_LANDING_IMAGE_BYTES = 350_000;
 // Homepage editorial photography (heavier than the default landing image budget).

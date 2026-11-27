@@ -58,6 +58,7 @@ import {
   salesReturnLabel,
 } from "@/lib/navigation";
 import Link from "next/link";
+import { SaleHearingSlot } from "@/components/sale-detail/SaleHearingSlot";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLaunchOffer } from "@/hooks/use-launch-offer";
 import { LAUNCH_OFFER_LABEL, LAUNCH_OFFER_SHORT_TEXT } from "@/lib/launch-offer";
@@ -777,6 +778,7 @@ export function SalePublicPreview({
                 </li>
               </ol>
             </nav>
+            <SaleHearingSlot className="mt-2 w-full" />
           </div>
 
           <header className={styles.head}>

@@ -204,6 +204,8 @@ def point_texts(points: object) -> list[dict[str, object]]:
                 "importance": point.get("importance"),
                 "title": _safe(point.get("title")),
                 "explanation": _safe(point.get("explanation")),
+                # « À vérifier » : seulement dans les versions qui le lisent (v5).
+                **({"check": _safe(point.get("check"))} if point.get("check") else {}),
                 "quote": _safe(point.get("quote")),
                 "document_index": point.get("document_index"),
                 "page": point.get("page"),
@@ -364,6 +366,10 @@ def _generic(points: Sequence[Mapping[str, object]]) -> int:
     return sum(1 for point in points if point.get("theme") == "conditions_vente")
 
 
+def _with_check(points: Sequence[Mapping[str, object]]) -> int:
+    return sum(1 for point in points if point.get("check"))
+
+
 def render_report(report: TrialReport) -> str:
     options = report.options
     lines = [
@@ -420,6 +426,8 @@ def render_report(report: TrialReport) -> str:
             f"{sum(len(trial.points) for trial in done)} points gardés sur "
             f"{sum(trial.raw_points for trial in done)} rendus, dont "
             f"{sum(_generic(trial.points) for trial in done)} « conditions de vente » ; "
+            f"{sum(_with_check(trial.points) for trial in done)} avec « à vérifier » "
+            f"({sum(trial.rejections.get('check_dropped', 0) for trial in done)} retiré(s)) ; "
             f"{sum(trial.output_cut for trial in done)} sortie(s) coupée(s) ; "
             f"jetons : {_fmt(_sum([call.input_tokens for call in usage]))} en entrée, "
             f"{_fmt(_sum([call.output_tokens for call in usage]))} en sortie ; "

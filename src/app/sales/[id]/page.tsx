@@ -15,6 +15,9 @@ import {
 } from "@/lib/seo";
 import { pageMetadata } from "@/lib/page-metadata";
 import { rotatingResources } from "@/lib/resource-related";
+import { SaleHearingNav } from "@/components/sale-detail/SaleHearingNav";
+import { saleHearing } from "@/lib/sale-hearing";
+import { tryLoadUpcomingHearings } from "@/lib/upcoming-hearings.server";
 import { siteOrigin } from "@/lib/site-url";
 import { SaleDetailPage } from "./sale-detail-page";
 import { jsonLdString } from "@/lib/json-ld";
@@ -35,19 +38,30 @@ const THIN_PAGE = { index: false, follow: true } as const;
  */
 const RENT_REFERENCE_TIMEOUT_MS = 1_500;
 
-async function rentReferenceWithinDeadline(
-  sale: Parameters<typeof loadSaleRentReference>[0],
-): Promise<Awaited<ReturnType<typeof loadSaleRentReference>>> {
+/** `load`, ou `null` passé le délai : la génération de la fiche n'attend jamais une lecture annexe. */
+async function withinDeadline<T>(load: Promise<T>, timeoutMs: number): Promise<T | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), RENT_REFERENCE_TIMEOUT_MS);
+    timer = setTimeout(() => resolve(null), timeoutMs);
   });
   try {
-    return await Promise.race([loadSaleRentReference(sale), deadline]);
+    return await Promise.race([load, deadline]);
   } finally {
     clearTimeout(timer);
   }
 }
+
+function rentReferenceWithinDeadline(
+  sale: Parameters<typeof loadSaleRentReference>[0],
+): Promise<Awaited<ReturnType<typeof loadSaleRentReference>>> {
+  return withinDeadline(loadSaleRentReference(sale), RENT_REFERENCE_TIMEOUT_MS);
+}
+
+/**
+ * Délai maximal de la lecture des audiences (bandeau des ventes de la même audience). Elle est en
+ * cache 15 minutes ; cache expiré et base lente, la fiche part sans bandeau plutôt que d'attendre.
+ */
+const HEARINGS_TIMEOUT_MS = 1_500;
 
 function salePath(saleId: string): string {
   return `/sales/${saleId.toLowerCase()}`;
@@ -123,9 +137,18 @@ export default async function Page({ params }: PageProps) {
   // Loyer de référence de la commune (carte ANIL), lu côté serveur : le navigateur ne lit jamais la
   // table. Le rapport enregistré lit la même référence, pour que les deux plafonds restent égaux.
   // Le zonage « zone tendue » de la commune (fait neutre du bloc « Marché locatif ») se lit au même endroit.
-  const [rentReference, housingTension] = sale
-    ? await Promise.all([rentReferenceWithinDeadline(sale), loadSaleHousingTension(sale)])
-    : [null, null];
+  // Les audiences publiques des 30 prochains jours (une lecture mise en cache, partagée avec
+  // « Audiences à venir ») : la fiche y retrouve les autres ventes de son audience. Base en panne ou
+  // vente hors de la liste : pas de bandeau.
+  const [rentReference, housingTension, hearings] = sale
+    ? await Promise.all([
+        rentReferenceWithinDeadline(sale),
+        loadSaleHousingTension(sale),
+        withinDeadline(tryLoadUpcomingHearings(), HEARINGS_TIMEOUT_MS),
+      ])
+    : [null, null, null];
+  const hearing =
+    sale && hearings?.status === "ok" ? saleHearing(hearings.hearings, sale.id) : null;
   // Rendement brut de la fiche publique, calculé ici : le navigateur n'embarque pas le calcul des frais.
   const rentalYield = sale ? publicRentalYield(sale, rentReference) : null;
   // Deux articles du blog en bas de fiche, différents d'une vente à l'autre : les fiches sont les
@@ -160,6 +183,7 @@ export default async function Page({ params }: PageProps) {
         housingTension={housingTension}
         rentalYield={rentalYield}
         guides={guides}
+        hearingNav={hearing ? <SaleHearingNav hearing={hearing} /> : null}
         nextSalePrices={publicNextSalePricesText()}
       />
     </>

@@ -165,9 +165,9 @@ def test_details_carry_facts_stored_and_trial_points_without_private_names() -> 
     }]
 
 
-def test_the_production_profile_is_the_control_and_the_only_profile_without_a_candidate() -> None:
-    assert SHIPPED_PROFILES == {"production": trial.PRODUCTION_PROFILE}
-    assert trial.CANDIDATE_PROFILES == {}
+def test_the_production_profile_is_the_control_next_to_the_candidate_under_trial() -> None:
+    assert SHIPPED_PROFILES == {"production": trial.PRODUCTION_PROFILE, **trial.CANDIDATE_PROFILES}
+    assert set(trial.CANDIDATE_PROFILES) == {"v5"}
 
 
 def test_sale_prefixes_select_the_sales_and_the_call_cap_stops_the_trial() -> None:

@@ -20,6 +20,7 @@ export function DetailSection({
   id: SaleDetailSection;
   /** Titre propre à la vente (« Prix et offre plafond »…) ; absent : celui du sommaire. */
   title?: string;
+  /** Texte sous le titre ; absent : la question de la section. */
   intro?: ReactNode;
   children: ReactNode;
 }) {
@@ -34,7 +35,7 @@ export function DetailSection({
         <h2 id={titleId} className={styles.sectionTitle}>
           {title ?? section.label}
         </h2>
-        {intro ? <p className={styles.sectionIntro}>{intro}</p> : null}
+        <p className={styles.sectionIntro}>{intro ?? section.question}</p>
         <div className={styles.sectionContent}>{children}</div>
       </div>
     </section>
