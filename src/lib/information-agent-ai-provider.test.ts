@@ -85,6 +85,7 @@ describe("prestataire d'IA du pied de message", () => {
       "data-pipeline.yml",
       "document-reading-trial.yml",
       "fact-chunk-trial.yml",
+      "information-agent-arbiter-dry-run.yml",
       "information-agent-evaluation-trial.yml",
       "information-agent-evidence.yml",
     ]);

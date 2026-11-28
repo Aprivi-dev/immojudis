@@ -460,6 +460,7 @@ def _steps(workflow: str) -> tuple[str, list[str]]:
         ("information-agent-evidence.yml", ["Analyze queued attachments"]),
         ("fact-chunk-trial.yml", ["Run the read-only chunk trial"]),
         ("document-reading-trial.yml", ["Run the read-only reading trial"]),
+        ("information-agent-arbiter-dry-run.yml", ["Run the arbiter dry run"]),
     ],
 )
 def test_the_anthropic_key_goes_to_the_ai_steps_only(workflow: str, ai_steps: list[str]) -> None:
@@ -493,6 +494,7 @@ def test_every_workflow_and_the_site_fall_on_the_same_provider_without_any_setti
         "data-pipeline.yml",
         "document-reading-trial.yml",
         "fact-chunk-trial.yml",
+        "information-agent-arbiter-dry-run.yml",
         "information-agent-evaluation-trial.yml",
         "information-agent-evidence.yml",
     }
