@@ -166,6 +166,7 @@ def test_secrets_are_never_in_the_environment_of_pip_and_apt_steps(path: Path) -
         "check-pending-supabase-migrations.yml",
         "fact-chunk-trial.yml",
         "information-agent-evaluation-trial.yml",
+        "information-agent-arbiter-dry-run.yml",
     ],
 )
 def test_pipeline_workflows_keep_secrets_out_of_the_job_environment(name: str) -> None:
@@ -451,6 +452,98 @@ def test_information_agent_always_runs_main_with_secrets_on_its_two_business_ste
     assert "REPLICATE_API_TOKEN" not in steps["Check for queued evidence"].env
 
 
+def test_the_arbiter_dry_run_is_manual_read_only_and_gives_secrets_to_one_step() -> None:
+    text = (WORKFLOWS / "information-agent-arbiter-dry-run.yml").read_text(encoding="utf-8")
+    jobs = parse_jobs(text)
+
+    assert [job.name for job in jobs] == ["dry-run"]
+    # Lancement manuel seulement : aucun horaire, aucun autre déclencheur.
+    on_block = text.split("\non:\n", 1)[1].split("\npermissions:", 1)[0]
+    assert re.findall(r"^  ([a-z_]+):", on_block, re.M) == ["workflow_dispatch"]
+    assert "schedule" not in text and "cron" not in text
+    assert re.search(r"^      fact_ids:\n        description: .*\n        required: true\n        type: string$", text, re.M)
+    # Permissions minimales : la lecture du dépôt, rien d'autre, ni au niveau du workflow ni au niveau du job.
+    assert re.search(r"^permissions:\n  contents: read\n\n", text, re.M)
+    assert text.count("permissions:") == 1
+    assert re.search(r"^    environment: Production$", text, re.M)
+    assert re.search(r"^  group: immojudis-information-agent-arbiter-dry-run$", text, re.M)
+    timeout = re.search(r"^    timeout-minutes: (\d+)$", text, re.M)
+    assert timeout and int(timeout.group(1)) <= 15
+    _assert_main_only_without_persisted_credentials(text)
+    assert all(re.search(r"@[0-9a-f]{40}( |$)", step.uses) for step in jobs[0].steps if step.uses)
+    steps = {step.name: step for step in jobs[0].steps}
+    # Les mêmes secrets que le worker de l'analyse, à la seule étape du test à blanc.
+    assert [name for name, step in steps.items() if SECRET.search(step.env)] == ["Run the arbiter dry run"]
+    dry_run = steps["Run the arbiter dry run"]
+    assert set(re.findall(r"secrets\.([A-Z_]+)", dry_run.env)) == {
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "REPLICATE_API_TOKEN",
+        "ANTHROPIC_API_KEY",
+    }
+    # L'entrée passe par l'environnement, jamais par le gabarit du script ; le mode à blanc est toujours demandé.
+    assert "${{" not in dry_run.run
+    assert "args=(--dry-run)" in dry_run.run
+    assert "python -m src.information_agent_auto_publication_arbiter" in dry_run.run
+    # Le contrôle de l'entrée vient en premier, sans secret.
+    check = jobs[0].steps[0]
+    assert check.name == "Check the fact ids" and not SECRET.search(check.env)
+    assert "${{" not in check.run
+    # Mêmes réglages du modèle que le worker de l'analyse.
+    worker_env = parse_jobs((WORKFLOWS / "information-agent-evidence.yml").read_text(encoding="utf-8"))[0].env
+    for setting in (
+        "LLM_ENABLED",
+        "LLM_PROVIDER",
+        "REPLICATE_MODEL",
+        "REPLICATE_MIN_INTERVAL_SECONDS",
+        "REPLICATE_MAX_RETRIES",
+        "REPLICATE_MAX_CALLS_PER_HOUR",
+        "ANTHROPIC_MAX_CALLS_PER_HOUR",
+    ):
+        value = re.search(rf"^      {setting}: (.+)$", worker_env, re.M)
+        assert value and f"{setting}: {value.group(1)}" in jobs[0].env, setting
+
+
+def _arbiter_dry_run_check_script() -> str:
+    """Script de l'étape « Check the fact ids » du test à blanc de l'arbitre."""
+    text = (WORKFLOWS / "information-agent-arbiter-dry-run.yml").read_text(encoding="utf-8")
+    step = next(step for step in parse_jobs(text)[0].steps if step.name == "Check the fact ids")
+    lines = step.run.splitlines()
+    body = [line for line in lines if line.strip() and line.strip() != "|"]
+    indent = min(_indent(line) for line in body)
+    return "\n".join(line[indent:] for line in body)
+
+
+@pytest.mark.parametrize(
+    ("fact_ids", "accepted"),
+    [
+        ("297ac107-e847-4082-bce5-45cec3328f17", True),
+        ("297ac107-e847-4082-bce5-45cec3328f17, 7b9327d8-70e6-45d7-a9e2-09616b82470c", True),
+        ("297AC107-E847-4082-BCE5-45CEC3328F17 7b9327d8-70e6-45d7-a9e2-09616b82470c", True),
+        ("", False),
+        ("not-a-uuid", False),
+        ("297ac107-e847-4082-bce5-45cec3328f1", False),
+        ("297ac107-e847-4082-bce5-45cec3328f17;rm -rf /", False),
+        ("297ac107-e847-4082-bce5-45cec3328f17 $(id)", False),
+        (",".join(["297ac107-e847-4082-bce5-45cec3328f17"] * 6), False),
+    ],
+)
+def test_the_arbiter_dry_run_accepts_only_one_to_five_uuids(fact_ids: str, accepted: bool) -> None:
+    import subprocess
+
+    result = subprocess.run(
+        ["bash", "-c", _arbiter_dry_run_check_script()],
+        env={"PATH": "/usr/bin:/bin", "FACT_IDS": fact_ids},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) is accepted, result.stdout + result.stderr
+    # Le refus ne recopie pas l'entrée dans le journal.
+    if not accepted and fact_ids:
+        assert fact_ids not in result.stdout + result.stderr
+
+
 def test_dvf_and_training_secrets_reach_only_their_python_step() -> None:
     for name, step_name in (
         ("dvf-import.yml", "Download and import DVF resources"),
@@ -634,6 +727,7 @@ AI_WORKFLOWS = (
     "fact-chunk-trial.yml",
     "document-reading-trial.yml",
     "information-agent-evaluation-trial.yml",
+    "information-agent-arbiter-dry-run.yml",
 )
 
 

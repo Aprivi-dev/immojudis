@@ -511,6 +511,30 @@ ouverte (`INFORMATION_AGENT_EVIDENCE_SEMANTIC_ENABLED`). Sortie validée stricte
 autre valeur que celle du fait). Le moteur relit le verdict avec zod. Coût indicatif : un appel par information
 (environ 0,002 USD). **En simulation aussi, Haiku est appelé** (c’est ce qui mesure).
 
+#### Test à blanc de l’arbitre
+
+Pour voir ce que Haiku déciderait sur 1 à 5 faits choisis à la main, **sans rien inscrire** (ni verdict, ni décision,
+ni publication) : Actions → « Information Agent Arbiter Dry Run » → *Run workflow* depuis `main`, entrée `fact_ids` =
+les identifiants des faits (`information_agent_fact_candidates.id`) séparés par des virgules ou des espaces. Le
+workflow refuse ce qui n’est pas 1 à 5 UUID avant de recevoir le moindre secret ; il a les mêmes secrets, le même
+environnement Production et les mêmes réglages du modèle que `information-agent-evidence.yml`, et aucun horaire.
+Commande locale équivalente : `python -m src.information_agent_auto_publication_arbiter --dry-run --fact-id <uuid>`
+(sans `--dry-run`, elle refuse). Les lectures en base passent par un transport qui refuse toute requête autre que GET ;
+la seule écriture est la réservation de l’appel dans le budget partagé des modèles (`llm_usage_events`, étape
+`auto_publication_arbiter_dry_run`), qui garde les plafonds horaire et quotidien.
+
+Le test **contourne** les filtres de sélection (liste fermée, prestataire du pied du message, état des analyses,
+mode) : il les relève dans `structural_blocks` (`field_not_eligible`, `ai_provider_mismatch`, `candidate_conflict`,
+`message_not_fully_read`, etc.) au lieu d’écarter le fait. Il garde les garde-fous du texte de l’arbitre (expurgation,
+délimitation, 12 000 caractères, aucun appel sur une consigne adressée à un modèle), le prompt réel (un champ hors de
+la liste fermée y est nommé par sa clé) et la validation de la sortie. Une valeur qui n’est pas un nombre (pièce
+jointe `document` : identifiant de la pièce) n’est jamais envoyée (`VALUE_NOT_NUMERIC`). Attention : le contournement
+du prestataire envoie la réponse (expurgée) à un prestataire que le pied du message n’a peut-être pas nommé.
+Sortie : une ligne JSON par fait et un tableau dans le résumé de l’exécution, **des codes seulement** (identifiant et
+clé du fait, statut, `publish`, `reason_code`, `confidence`, code d’erreur, modèle, version du prompt, conditions
+structurelles) : jamais le texte du message, la valeur, une adresse, un nom ni la sortie brute du modèle, car les
+journaux d’Actions d’un dépôt public sont publics. Une erreur ne s’affiche que par son type.
+
 ### La publication
 
 En mode « Automatique », la passe des réponses (`/api/cron/information-agent-inbound`, pg_cron toutes les 2 minutes,

@@ -1,0 +1,98 @@
+name: Information Agent Arbiter Dry Run
+
+# Test à blanc de l'arbitre de la publication automatique (Claude Haiku) sur 1 à 5 faits choisis à la main : ce
+# qu'il déciderait, SANS RIEN INSCRIRE (ni verdict, ni décision, ni publication). Lancement manuel seulement, depuis
+# main. Lectures seules en base (transport qui refuse toute requête autre que GET) ; seule écriture : la réservation
+# de l'appel dans le budget partagé des modèles (llm_usage_events, étape auto_publication_arbiter_dry_run), comme pour
+# tout appel. Les filtres de sélection (liste fermée, prestataire du pied, état des analyses, mode) sont relevés comme
+# codes au lieu d'écarter le fait ; les garde-fous du texte restent ceux de l'arbitre
+# (services/data-pipeline/src/information_agent_auto_publication_arbiter.py). Dépôt public : la sortie et le résumé
+# ne contiennent que des codes, jamais le texte du message, la valeur, une adresse ou la sortie brute du modèle.
+# Mode d'emploi : docs/runbooks/information-agent.md (« Test à blanc de l'arbitre »).
+on:
+  workflow_dispatch:
+    inputs:
+      fact_ids:
+        description: "1 à 5 UUID de faits (information_agent_fact_candidates.id), séparés par des virgules ou des espaces"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immojudis-information-agent-arbiter-dry-run
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    # Reçoit la clé de service de production : seul le code de main la reçoit.
+    if: github.ref == 'refs/heads/main'
+    name: Ask the arbiter without recording anything
+    runs-on: ubuntu-24.04
+    # Secrets de production : lus dans l'environnement Production, restreint à main (audit du 16/11/2026).
+    environment: Production
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+      # Mêmes réglages du modèle que .github/workflows/information-agent-evidence.yml (test de concordance).
+      LLM_ENABLED: "true"
+      LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'anthropic' }}
+      REPLICATE_MODEL: qwen/qwen3-7-plus
+      REPLICATE_MIN_INTERVAL_SECONDS: 11
+      REPLICATE_MAX_RETRIES: 0
+      REPLICATE_MAX_CALLS_PER_HOUR: 60
+      # Plafond horaire des appels de texte à Claude (src/config.py, ANTHROPIC_MAX_CALLS_PER_HOUR).
+      ANTHROPIC_MAX_CALLS_PER_HOUR: "120"
+    steps:
+      # Avant tout secret : 1 à 5 UUID, rien d'autre (l'entrée passe par l'environnement, jamais par le script).
+      - name: Check the fact ids
+        env:
+          FACT_IDS: ${{ inputs.fact_ids }}
+        run: |
+          set -euo pipefail
+          read -ra ids <<< "${FACT_IDS//,/ }"
+          if [ "${#ids[@]}" -lt 1 ] || [ "${#ids[@]}" -gt 5 ]; then
+            echo "::error title=Test à blanc de l'arbitre::de 1 à 5 identifiants de faits attendus."
+            exit 1
+          fi
+          for id in "${ids[@]}"; do
+            if ! [[ "$id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+              echo "::error title=Test à blanc de l'arbitre::identifiant de fait invalide (UUID attendu)."
+              exit 1
+            fi
+          done
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/data-pipeline/requirements.lock
+
+      - name: Install Python dependencies
+        working-directory: services/data-pipeline
+        run: python -m pip install --require-hashes -r requirements.lock
+
+      - name: Run the arbiter dry run
+        working-directory: services/data-pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Jeton Replicate seulement pour le retour arrière (variable de dépôt LLM_PROVIDER=replicate).
+          REPLICATE_API_TOKEN: ${{ vars.LLM_PROVIDER == 'replicate' && secrets.REPLICATE_API_TOKEN || '' }}
+          # Clé Anthropic seulement quand Claude lit (pas avec LLM_PROVIDER=replicate).
+          ANTHROPIC_API_KEY: ${{ vars.LLM_PROVIDER != 'replicate' && secrets.ANTHROPIC_API_KEY || '' }}
+          FACT_IDS: ${{ inputs.fact_ids }}
+        run: |
+          set -euo pipefail
+          read -ra ids <<< "${FACT_IDS//,/ }"
+          args=(--dry-run)
+          for id in "${ids[@]}"; do args+=(--fact-id "$id"); done
+          python -m src.information_agent_auto_publication_arbiter "${args[@]}"
