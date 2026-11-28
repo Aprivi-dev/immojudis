@@ -30,7 +30,8 @@ Test à blanc (``python -m src.information_agent_auto_publication_arbiter --dry-
 ``information-agent-arbiter-dry-run.yml``) : pour 1 à 5 faits choisis à la main, ce que Haiku déciderait, SANS RIEN
 INSCRIRE. Les filtres de sélection (liste fermée, prestataire du pied, état des analyses, mode) y sont relevés comme
 codes au lieu d'écarter le fait ; les garde-fous du texte (expurgation, délimitation, 12 000 caractères, consigne
-adressée à un modèle) et la validation de la sortie restent ceux de l'arbitre. Ce contournement n'existe que dans
+adressée à un modèle) et la validation de la sortie restent ceux de l'arbitre. Une opposition (contact ou dossier)
+n'est jamais contournée : aucun appel (``CONTACT_OPPOSED``). Ce contournement n'existe que dans
 ``run_dry_run`` : la passe réelle n'a aucun paramètre pour l'obtenir. Lectures seules (transport qui refuse toute
 requête autre que GET) ; sortie en codes seulement (journaux publics).
 """
@@ -710,6 +711,9 @@ def dry_run_fact(
     blocks = _structural_blocks(
         client, base_url, key, mode=mode, fact=fact, message=message, case=case, sale=sale, value=value
     )
+    # Une opposition (du contact ou du dossier) n'est jamais contournée, même à blanc : rien n'est envoyé au modèle.
+    if "contact_opposed" in blocks:
+        return report(ArbiterVerdict("skipped", error_code="CONTACT_OPPOSED"), fact_key, blocks)
     # Le prompt réel juge une valeur numérique : une autre valeur (identifiant d'une pièce jointe…) n'est pas envoyée.
     if value is None:
         return report(ArbiterVerdict("skipped", error_code="VALUE_NOT_NUMERIC"), fact_key, blocks)

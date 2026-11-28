@@ -528,7 +528,8 @@ mode) : il les relève dans `structural_blocks` (`field_not_eligible`, `ai_provi
 `message_not_fully_read`, etc.) au lieu d’écarter le fait. Il garde les garde-fous du texte de l’arbitre (expurgation,
 délimitation, 12 000 caractères, aucun appel sur une consigne adressée à un modèle), le prompt réel (un champ hors de
 la liste fermée y est nommé par sa clé) et la validation de la sortie. Une valeur qui n’est pas un nombre (pièce
-jointe `document` : identifiant de la pièce) n’est jamais envoyée (`VALUE_NOT_NUMERIC`). Attention : le contournement
+jointe `document` : identifiant de la pièce) n’est jamais envoyée (`VALUE_NOT_NUMERIC`). Une opposition du contact ou
+du dossier n’est jamais contournée : aucun appel (`CONTACT_OPPOSED`). Attention : le contournement
 du prestataire envoie la réponse (expurgée) à un prestataire que le pied du message n’a peut-être pas nommé.
 Sortie : une ligne JSON par fait et un tableau dans le résumé de l’exécution, **des codes seulement** (identifiant et
 clé du fait, statut, `publish`, `reason_code`, `confidence`, code d’erreur, modèle, version du prompt, conditions

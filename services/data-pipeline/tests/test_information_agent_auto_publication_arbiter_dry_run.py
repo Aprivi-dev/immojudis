@@ -285,6 +285,24 @@ def test_each_structural_condition_is_reported(change: Any, code: str) -> None:
     assert report.structural_blocks == (code,)
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda rest: rest.case.update(contact_opposed="true"),
+        lambda rest: rest.opposed_contacts.append(RECIPIENT),
+    ],
+)
+def test_an_opposition_is_never_bypassed_and_the_model_is_not_called(change: Any) -> None:
+    rest = DryRunRest()
+    rest.add_fact(FACT_A)
+    change(rest)
+    model = FakeModel({"publish": True, "reason_code": "clear_statement"})
+    (report,) = dry_run(rest, model, [FACT_A])
+    assert model.calls == []
+    assert (report.status, report.publish, report.error_code) == ("skipped", False, "CONTACT_OPPOSED")
+    assert "contact_opposed" in report.structural_blocks
+
+
 def test_the_structural_conditions_repeat_the_selection_rpc() -> None:
     # Lien rendu visible : les conditions redites ici sont celles de list_information_agent_facts_to_arbitrate.
     sql = (ROOT / "supabase/migrations/20261211100000_information_agent_auto_publication_live.sql").read_text(
